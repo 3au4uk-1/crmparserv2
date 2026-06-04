@@ -2,7 +2,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { config } from '../config.js';
 import { getDb } from '../db/connection.js';
-import { authenticate, getSessionCookies, getCalToken } from './auth.js';
+import { authenticate, getCalToken, getCrmRequestHeaders } from './auth.js';
 import { parseDealDescription } from './html-parser.js';
 import { parseDealTitle } from './title-parser.js';
 import { classifyItems } from './classifier.js';
@@ -22,11 +22,10 @@ function contentHash(str) {
 
 async function fetchEvents(startUnix, endUnix) {
   const token = getCalToken();
-  const cookies = getSessionCookies();
   const url = buildUrl(`includes/cal_events.php?token=${token}&start=${startUnix}&end=${endUnix}`);
 
   const resp = await axios.get(url, {
-    headers: { Cookie: cookies },
+    headers: getCrmRequestHeaders(),
     timeout: 30000,
   });
 
@@ -34,19 +33,22 @@ async function fetchEvents(startUnix, endUnix) {
 }
 
 async function fetchDescription(eventId) {
-  const cookies = getSessionCookies();
   const url = buildUrl('includes/cal_description.php');
 
-  const resp = await axios.post(url, new URLSearchParams({
-    id: eventId,
-    mode: 'edit',
-  }).toString(), {
-    headers: {
-      Cookie: cookies,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    timeout: 30000,
-  });
+  const resp = await axios.post(
+    url,
+    new URLSearchParams({
+      id: eventId,
+      mode: 'edit',
+    }).toString(),
+    {
+      headers: {
+        ...getCrmRequestHeaders(),
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      timeout: 30000,
+    }
+  );
 
   return resp.data;
 }

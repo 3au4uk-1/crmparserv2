@@ -59,7 +59,7 @@ export default function Settings() {
               onChange={e => setCookieValue(e.target.value)}
               onBlur={() => updateSetting.mutate({ key: 'crm_cookies', value: cookieValue })}
               className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-full h-20 font-mono"
-              placeholder="Вставьте cookies из DevTools..."
+              placeholder="filter-closed=true; PHPSESSID=... (из Network → Cookie, одной строкой)"
             />
           </div>
         </div>
