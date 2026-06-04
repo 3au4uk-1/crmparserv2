@@ -1,0 +1,21 @@
+services:
+  crmparser:
+    image: ghcr.io/3au4uk-1/crmparserv2:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - crmparser-data:/app/data
+    environment:
+      - CRM_BASE_URL=${CRM_BASE_URL:-https://apihide.com/bitrix/calendar/}
+      - CRM_LOGIN=${CRM_LOGIN}
+      - CRM_PASSWORD=${CRM_PASSWORD}
+      - LLM_API_URL=${LLM_API_URL}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_MODEL=${LLM_MODEL}
+      - TWENTY_API_URL=${TWENTY_API_URL}
+      - TWENTY_API_TOKEN=${TWENTY_API_TOKEN}
+      - SESSION_SECRET=${SESSION_SECRET:-change-me-in-production}
+    restart: unless-stopped
+
+volumes:
+  crmparser-data:
