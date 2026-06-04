@@ -1,0 +1,199 @@
+import axios from 'axios';
+import crypto from 'crypto';
+import { config } from '../config.js';
+import { getDb } from '../db/connection.js';
+import { authenticate, getSessionCookies, getCalToken } from './auth.js';
+import { parseDealDescription } from './html-parser.js';
+import { parseDealTitle } from './title-parser.js';
+import { classifyItems } from './classifier.js';
+
+function buildUrl(path) {
+  const base = config.crmBaseUrl.replace(/\/$/, '');
+  return `${base}/${path}`;
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function contentHash(str) {
+  return crypto.createHash('sha256').update(str).digest('hex');
+}
+
+async function fetchEvents(startUnix, endUnix) {
+  const token = getCalToken();
+  const cookies = getSessionCookies();
+  const url = buildUrl(`includes/cal_events.php?token=${token}&start=${startUnix}&end=${endUnix}`);
+
+  const resp = await axios.get(url, {
+    headers: { Cookie: cookies },
+    timeout: 30000,
+  });
+
+  return resp.data;
+}
+
+async function fetchDescription(eventId) {
+  const cookies = getSessionCookies();
+  const url = buildUrl('includes/cal_description.php');
+
+  const resp = await axios.post(url, new URLSearchParams({
+    id: eventId,
+    mode: 'edit',
+  }).toString(), {
+    headers: {
+      Cookie: cookies,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    timeout: 30000,
+  });
+
+  return resp.data;
+}
+
+function getSetting(key) {
+  const db = getDb();
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  return row?.value || '';
+}
+
+export async function runParsing(startDate, endDate) {
+  const db = getDb();
+
+  const run = db.prepare(
+    'INSERT INTO parse_runs (status) VALUES (?)'
+  ).run('running');
+  const runId = run.lastInsertRowid;
+
+  try {
+    await authenticate();
+
+    const startUnix = Math.floor(new Date(startDate).getTime() / 1000);
+    const endUnix = Math.floor(new Date(endDate).getTime() / 1000);
+
+    const events = await fetchEvents(startUnix, endUnix);
+
+    if (!Array.isArray(events)) {
+      throw new Error('CRM returned non-array response for events');
+    }
+
+    const keywords = JSON.parse(getSetting('keywords') || '[]');
+    const llmPrompt = getSetting('llm_prompt') || '';
+
+    let newDeals = 0;
+    let updatedDeals = 0;
+    let skippedDeals = 0;
+
+    for (const event of events) {
+      const eventId = String(event.original_id || event.id);
+      if (!eventId) continue;
+
+      await delay(350);
+
+      let descJson;
+      try {
+        descJson = await fetchDescription(eventId);
+      } catch (err) {
+        console.error(`Failed to fetch description for event ${eventId}:`, err.message);
+        continue;
+      }
+
+      const descHtml = typeof descJson === 'string'
+        ? JSON.parse(descJson).description
+        : descJson.description;
+
+      if (!descHtml) continue;
+
+      const hash = contentHash(descHtml);
+
+      const existing = db.prepare(
+        'SELECT id, content_hash FROM deals WHERE crm_event_id = ?'
+      ).get(eventId);
+
+      if (existing && existing.content_hash === hash) {
+        skippedDeals++;
+        continue;
+      }
+
+      const parsed = parseDealDescription(descHtml);
+      const titleInfo = parseDealTitle(event.title || '');
+
+      const classifiedItems = await classifyItems(parsed.items, keywords, llmPrompt);
+
+      if (existing) {
+        db.prepare(`
+          UPDATE deals SET
+            title = ?, company_code = ?, manager_name = ?,
+            start_date = ?, end_date = ?, department = ?,
+            status = ?, legal_entity = ?, invoice_number = ?,
+            budget = ?, discount = ?, contact_name = ?,
+            contact_email = ?, contact_company = ?, contact_phone = ?,
+            address = ?, venue_type = ?, content_hash = ?,
+            raw_description = ?, crm_lead_id = ?,
+            updated_at = datetime('now')
+          WHERE id = ?
+        `).run(
+          event.title, titleInfo.companyCode, titleInfo.managerName,
+          event.start, event.end, event.department,
+          parsed.meta.status, parsed.meta.legalEntity, parsed.meta.invoiceNumber,
+          parsed.meta.budget, parsed.meta.discount, parsed.contact.name,
+          parsed.contact.email, parsed.contact.company, parsed.contact.phone,
+          parsed.event.address, parsed.event.venueType, hash,
+          descHtml, event.leadid,
+          existing.id
+        );
+
+        db.prepare('DELETE FROM deal_items WHERE deal_id = ?').run(existing.id);
+
+        for (const item of classifiedItems) {
+          db.prepare(`
+            INSERT INTO deal_items (deal_id, name, price, quantity, discount, classification, classification_confidence)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `).run(existing.id, item.name, item.price, item.quantity, item.discount, item.classification, item.classification_confidence);
+        }
+
+        updatedDeals++;
+      } else {
+        const insert = db.prepare(`
+          INSERT INTO deals (
+            crm_event_id, crm_lead_id, title, company_code, manager_name,
+            start_date, end_date, department, status, legal_entity,
+            invoice_number, budget, discount, contact_name, contact_email,
+            contact_company, contact_phone, address, venue_type,
+            content_hash, raw_description
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          eventId, event.leadid, event.title, titleInfo.companyCode, titleInfo.managerName,
+          event.start, event.end, event.department, parsed.meta.status, parsed.meta.legalEntity,
+          parsed.meta.invoiceNumber, parsed.meta.budget, parsed.meta.discount, parsed.contact.name,
+          parsed.contact.email, parsed.contact.company, parsed.contact.phone,
+          parsed.event.address, parsed.event.venueType, hash, descHtml
+        );
+
+        const dealId = insert.lastInsertRowid;
+        for (const item of classifiedItems) {
+          db.prepare(`
+            INSERT INTO deal_items (deal_id, name, price, quantity, discount, classification, classification_confidence)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `).run(dealId, item.name, item.price, item.quantity, item.discount, item.classification, item.classification_confidence);
+        }
+
+        newDeals++;
+      }
+    }
+
+    db.prepare(`
+      UPDATE parse_runs SET
+        finished_at = datetime('now'), status = 'completed',
+        total_events = ?, new_deals = ?, updated_deals = ?, skipped_deals = ?
+      WHERE id = ?
+    `).run(events.length, newDeals, updatedDeals, skippedDeals, runId);
+
+    return { runId, total: events.length, newDeals, updatedDeals, skippedDeals };
+  } catch (err) {
+    db.prepare(`
+      UPDATE parse_runs SET finished_at = datetime('now'), status = 'failed', error = ? WHERE id = ?
+    `).run(err.message, runId);
+    throw err;
+  }
+}
