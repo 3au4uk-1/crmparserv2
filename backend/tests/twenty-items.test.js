@@ -28,6 +28,15 @@ describe('twenty-items', () => {
     expect(isItemEligibleForTwenty(item)).toBe(false);
   });
 
+  it('matches SQL count logic for null override + keyword_match', () => {
+    const items = [
+      { classification: 'keyword_match', sync_override: null },
+      { classification: 'keyword_match', sync_override: undefined },
+      { classification: 'unclassified', sync_override: null },
+    ];
+    expect(getItemsForTwenty(items).length).toBe(2);
+  });
+
   it('filters list to eligible only', () => {
     const items = [
       { id: 1, classification: 'keyword_match', sync_override: null },

@@ -27,10 +27,10 @@ export function enrichDealItems(items) {
   }));
 }
 
+/** Must mirror isItemEligibleForTwenty — NULL != 'exclude' is NULL in SQL, not TRUE. */
 export const TWENTY_ELIGIBLE_COUNT_SQL = `
   (SELECT COUNT(*) FROM deal_items di
     WHERE di.deal_id = d.id
-      AND di.sync_override != 'exclude'
       AND (
         di.sync_override = 'include'
         OR (

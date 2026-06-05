@@ -7,18 +7,38 @@ import {
   enrichDealItems,
 } from './twenty-items.js';
 
-function gql(apiUrl, apiToken, query, variables = {}) {
-  return axios.post(
-    apiUrl,
-    { query, variables },
-    {
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 15000,
-    }
-  );
+async function gql(apiUrl, apiToken, query, variables = {}) {
+  try {
+    return await axios.post(
+      apiUrl,
+      { query, variables },
+      {
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 15000,
+        validateStatus: () => true,
+      }
+    );
+  } catch (err) {
+    throw new Error(err.message || 'Twenty API request failed');
+  }
+}
+
+function assertHttpSuccess(resp, apiUrl) {
+  if (resp.status === 404) {
+    throw new Error(
+      `Twenty GraphQL endpoint not found (${apiUrl}). ` +
+      'Use URL вида https://your-domain/graphql (не /rest).'
+    );
+  }
+  if (resp.status === 401 || resp.status === 403) {
+    throw new Error('Twenty API: неверный токен или нет доступа (401/403)');
+  }
+  if (resp.status >= 400) {
+    throw new Error(`Twenty API error: HTTP ${resp.status}`);
+  }
 }
 
 function assertGqlSuccess(resp, fallbackMessage) {
@@ -56,6 +76,7 @@ async function findOrCreateCompany(apiUrl, apiToken, code) {
     }`,
     { name: company.full_name }
   );
+  assertHttpSuccess(searchResp, apiUrl);
   assertGqlSuccess(searchResp, 'Failed to search company in Twenty');
 
   const existing = searchResp.data?.data?.companies?.edges?.[0]?.node;
@@ -72,6 +93,7 @@ async function findOrCreateCompany(apiUrl, apiToken, code) {
     }`,
     { input: { name: company.full_name } }
   );
+  assertHttpSuccess(createResp, apiUrl);
   assertGqlSuccess(createResp, 'Failed to create company in Twenty');
 
   const newId = createResp.data?.data?.createCompany?.id;
@@ -95,6 +117,7 @@ async function findOrCreatePerson(apiUrl, apiToken, managerName, companyTwentyId
     }`,
     { lastName: managerName }
   );
+  assertHttpSuccess(searchResp, apiUrl);
   assertGqlSuccess(searchResp, 'Failed to search person in Twenty');
 
   const existing = searchResp.data?.data?.people?.edges?.[0]?.node;
@@ -120,6 +143,7 @@ async function findOrCreatePerson(apiUrl, apiToken, managerName, companyTwentyId
     }`,
     { input }
   );
+  assertHttpSuccess(createResp, apiUrl);
   assertGqlSuccess(createResp, 'Failed to create person in Twenty');
 
   const newId = createResp.data?.data?.createPerson?.id;
@@ -146,6 +170,7 @@ export function buildSyncPreview(dealId) {
   return {
     configured: Boolean(twenty.apiUrl && twenty.apiToken),
     configSource: twenty.source,
+    apiUrl: twenty.apiUrl || null,
     eligibleCount: eligibleItems.length,
     totalCount: allItems.length,
     eligibleAmount,
@@ -205,6 +230,7 @@ export async function syncDealToTwenty(dealId) {
       }`,
       { input: oppInput }
     );
+    assertHttpSuccess(oppResp, twenty.apiUrl);
     assertGqlSuccess(oppResp, 'Failed to create opportunity in Twenty');
 
     const oppId = oppResp.data?.data?.createOpportunity?.id;
@@ -228,6 +254,7 @@ export async function syncDealToTwenty(dealId) {
         },
       }
     );
+    assertHttpSuccess(noteResp, twenty.apiUrl);
     assertGqlSuccess(noteResp, 'Failed to create note in Twenty');
 
     db.prepare(`

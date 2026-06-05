@@ -157,6 +157,7 @@ export default function Settings() {
       <Section title="Twenty CRM">
         <p className="text-xs text-gray-500 mb-3">
           Если TWENTY_API_URL и TWENTY_API_TOKEN заданы в .env или docker-compose, они имеют приоритет над полями ниже.
+          Укажите GraphQL endpoint: <span className="font-mono">https://your-domain/graphql</span> (если введёте /rest — будет преобразовано автоматически).
         </p>
         <div className="space-y-3 max-w-md">
           <div>
@@ -165,6 +166,7 @@ export default function Settings() {
               defaultValue={settings?.twenty_api_url || ''}
               onBlur={e => updateSetting.mutate({ key: 'twenty_api_url', value: e.target.value })}
               className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-full font-mono"
+              placeholder="https://twenty.example.com/graphql"
             />
           </div>
           <div>
