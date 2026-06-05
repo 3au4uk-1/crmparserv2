@@ -6,6 +6,7 @@ import {
   getItemEligibleReason,
   enrichDealItems,
 } from './twenty-items.js';
+import { buildNoteCreateInput, formatItemsAsNoteMarkdown } from './twenty-note.js';
 
 async function gql(apiUrl, apiToken, query, variables = {}) {
   try {
@@ -236,10 +237,6 @@ export async function syncDealToTwenty(dealId) {
     const oppId = oppResp.data?.data?.createOpportunity?.id;
     if (!oppId) throw new Error('Failed to create opportunity in Twenty');
 
-    const itemsText = items
-      .map((i) => `• ${i.name} — ${i.price?.toLocaleString('ru-RU')} руб. × ${i.quantity}`)
-      .join('\n');
-
     const noteResp = await gql(
       twenty.apiUrl,
       twenty.apiToken,
@@ -247,11 +244,11 @@ export async function syncDealToTwenty(dealId) {
         createNote(data: $input) { id }
       }`,
       {
-        input: {
-          title: 'Позиции брендинга',
-          body: itemsText,
-          activityTargets: [{ opportunityId: oppId }],
-        },
+        input: buildNoteCreateInput(
+          'Позиции брендинга',
+          formatItemsAsNoteMarkdown(items),
+          oppId
+        ),
       }
     );
     assertHttpSuccess(noteResp, twenty.apiUrl);
