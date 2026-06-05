@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getDb } from '../db/connection.js';
 import { runParsing } from '../services/parser.js';
+import { getDefaultParseRange } from '../utils/crm-dates.js';
 
 const router = Router();
 
@@ -15,9 +16,9 @@ router.post('/run', async (req, res, next) => {
     parsingInProgress = true;
     const { startDate, endDate } = req.body;
 
-    const now = new Date();
-    const start = startDate || new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    const end = endDate || new Date(now.getFullYear(), now.getMonth() + 2, 0).toISOString();
+    const defaults = getDefaultParseRange();
+    const start = startDate || defaults.start;
+    const end = endDate || defaults.end;
 
     const result = await runParsing(start, end);
     res.json(result);

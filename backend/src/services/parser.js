@@ -6,6 +6,7 @@ import { authenticate, getCalToken, getCrmRequestHeaders } from './auth.js';
 import { parseDealDescription } from './html-parser.js';
 import { parseDealTitle } from './title-parser.js';
 import { classifyItems } from './classifier.js';
+import { formatCrmDateTime } from '../utils/crm-dates.js';
 
 function buildUrl(path) {
   const base = config.crmBaseUrl.replace(/\/$/, '');
@@ -20,16 +21,41 @@ function contentHash(str) {
   return crypto.createHash('sha256').update(str).digest('hex');
 }
 
-async function fetchEvents(startUnix, endUnix) {
+function normalizeEventsResponse(data) {
+  if (Array.isArray(data)) return data;
+
+  if (typeof data === 'string') {
+    const trimmed = data.trim();
+    if (trimmed.startsWith('[')) {
+      return JSON.parse(trimmed);
+    }
+    if (trimmed.startsWith('<')) {
+      throw new Error(
+        'CRM returned HTML instead of events JSON. Session may be invalid — refresh PHPSESSID cookies.'
+      );
+    }
+  }
+
+  throw new Error(`CRM returned unexpected events format: ${typeof data}`);
+}
+
+async function fetchEvents(startDate, endDate) {
   const token = getCalToken();
-  const url = buildUrl(`includes/cal_events.php?token=${token}&start=${startUnix}&end=${endUnix}`);
+  const start = formatCrmDateTime(startDate);
+  const end = formatCrmDateTime(endDate);
+  const url = buildUrl(
+    `includes/cal_events.php?token=${encodeURIComponent(token)}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`
+  );
 
   const resp = await axios.get(url, {
-    headers: getCrmRequestHeaders(),
+    headers: {
+      ...getCrmRequestHeaders(),
+      Accept: 'application/json, text/javascript, */*; q=0.01',
+    },
     timeout: 30000,
   });
 
-  return resp.data;
+  return normalizeEventsResponse(resp.data);
 }
 
 async function fetchDescription(eventId) {
@@ -70,13 +96,12 @@ export async function runParsing(startDate, endDate) {
   try {
     await authenticate();
 
-    const startUnix = Math.floor(new Date(startDate).getTime() / 1000);
-    const endUnix = Math.floor(new Date(endDate).getTime() / 1000);
+    const events = await fetchEvents(startDate, endDate);
 
-    const events = await fetchEvents(startUnix, endUnix);
-
-    if (!Array.isArray(events)) {
-      throw new Error('CRM returned non-array response for events');
+    if (events.length === 0) {
+      console.warn(
+        `CRM returned 0 events for range ${formatCrmDateTime(startDate)} → ${formatCrmDateTime(endDate)}`
+      );
     }
 
     const keywords = JSON.parse(getSetting('keywords') || '[]');

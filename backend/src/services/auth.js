@@ -6,6 +6,7 @@ import { getDb } from '../db/connection.js';
 let sessionCookies = '';
 let calToken = '';
 let keepAliveTimer = null;
+let keepAliveDisabled = false;
 
 const BROWSER_HEADERS = {
   'User-Agent':
@@ -146,13 +147,22 @@ async function extractToken() {
 
 function startKeepAlive() {
   if (keepAliveTimer) clearInterval(keepAliveTimer);
+  if (keepAliveDisabled) return;
+
   keepAliveTimer = setInterval(async () => {
     try {
-      await axios.get(buildUrl('keep.php'), {
+      const resp = await axios.get(buildUrl('keep.php'), {
         headers: dashboardHeaders(),
+        validateStatus: () => true,
       });
+      if (resp.status === 404) {
+        keepAliveDisabled = true;
+        clearInterval(keepAliveTimer);
+        keepAliveTimer = null;
+        console.warn('keep.php not found (404); session keep-alive disabled');
+      }
     } catch (err) {
-      console.error('Keep-alive failed:', err.message);
+      console.warn('Keep-alive failed:', err.message);
     }
   }, 5 * 60 * 1000);
 }

@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { getDb } from '../db/connection.js';
 import { runParsing } from './parser.js';
 import { syncDealToTwenty } from './twenty-sync.js';
+import { getDefaultParseRange } from '../utils/crm-dates.js';
 
 let scheduledTask = null;
 
@@ -14,10 +15,7 @@ function getSetting(key) {
 async function scheduledParse() {
   console.log(`[${new Date().toISOString()}] Scheduled parsing started`);
   try {
-    const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    const end = new Date(now.getFullYear(), now.getMonth() + 2, 0).toISOString();
-
+    const { start, end } = getDefaultParseRange();
     await runParsing(start, end);
 
     const approvalMode = getSetting('approval_mode');
