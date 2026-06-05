@@ -13,13 +13,6 @@ router.get('/', (req, res) => {
   res.json(settings);
 });
 
-router.put('/:key', (req, res) => {
-  const { value } = req.body;
-  const db = getDb();
-  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(req.params.key, value);
-  res.json({ success: true });
-});
-
 router.get('/keywords', (req, res) => {
   const db = getDb();
   const row = db.prepare("SELECT value FROM settings WHERE key = 'keywords'").get();
@@ -28,9 +21,14 @@ router.get('/keywords', (req, res) => {
 
 router.put('/keywords', (req, res) => {
   const { keywords } = req.body;
+  if (!Array.isArray(keywords)) {
+    return res.status(400).json({ error: 'keywords array required' });
+  }
   const db = getDb();
-  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('keywords', ?)").run(JSON.stringify(keywords));
-  res.json({ success: true });
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('keywords', ?)").run(
+    JSON.stringify(keywords)
+  );
+  res.json({ success: true, count: keywords.length });
 });
 
 router.get('/companies', (req, res) => {
@@ -65,6 +63,19 @@ router.post('/clear-parsing-data', (req, res) => {
   });
 
   res.json({ success: true, deleted: clear() });
+});
+
+/** Generic setting update — must be after specific /keywords, /companies/* routes */
+router.put('/:key', (req, res) => {
+  const reserved = new Set(['keywords', 'companies']);
+  if (reserved.has(req.params.key)) {
+    return res.status(400).json({ error: 'Use dedicated endpoint for this setting' });
+  }
+
+  const value = req.body?.value ?? '';
+  const db = getDb();
+  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(req.params.key, value);
+  res.json({ success: true });
 });
 
 export default router;
