@@ -1,12 +1,19 @@
-/** Build NoteCreateInput for current Twenty API (bodyV2, not legacy body). */
-export function buildNoteCreateInput(title, markdown, opportunityId) {
+/** Build NoteCreateInput for current Twenty API (bodyV2, no activityTargets). */
+export function buildNoteCreateInput(title, markdown) {
   return {
     title,
     bodyV2: {
       markdown,
       blocknote: null,
     },
-    activityTargets: [{ opportunityId }],
+  };
+}
+
+/** Link note to opportunity via NoteTarget (morph relation). */
+export function buildNoteTargetCreateInput(noteId, opportunityId) {
+  return {
+    noteId,
+    targetOpportunityId: opportunityId,
   };
 }
 

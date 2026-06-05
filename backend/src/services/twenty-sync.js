@@ -6,7 +6,11 @@ import {
   getItemEligibleReason,
   enrichDealItems,
 } from './twenty-items.js';
-import { buildNoteCreateInput, formatItemsAsNoteMarkdown } from './twenty-note.js';
+import {
+  buildNoteCreateInput,
+  buildNoteTargetCreateInput,
+  formatItemsAsNoteMarkdown,
+} from './twenty-note.js';
 
 async function gql(apiUrl, apiToken, query, variables = {}) {
   try {
@@ -246,13 +250,26 @@ export async function syncDealToTwenty(dealId) {
       {
         input: buildNoteCreateInput(
           'Позиции брендинга',
-          formatItemsAsNoteMarkdown(items),
-          oppId
+          formatItemsAsNoteMarkdown(items)
         ),
       }
     );
     assertHttpSuccess(noteResp, twenty.apiUrl);
     assertGqlSuccess(noteResp, 'Failed to create note in Twenty');
+
+    const noteId = noteResp.data?.data?.createNote?.id;
+    if (!noteId) throw new Error('Failed to create note in Twenty');
+
+    const targetResp = await gql(
+      twenty.apiUrl,
+      twenty.apiToken,
+      `mutation CreateNoteTarget($input: NoteTargetCreateInput!) {
+        createNoteTarget(data: $input) { id }
+      }`,
+      { input: buildNoteTargetCreateInput(noteId, oppId) }
+    );
+    assertHttpSuccess(targetResp, twenty.apiUrl);
+    assertGqlSuccess(targetResp, 'Failed to link note to opportunity in Twenty');
 
     db.prepare(`
       UPDATE deals SET

@@ -1,12 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import { buildNoteCreateInput, formatItemsAsNoteMarkdown } from '../src/services/twenty-note.js';
+import {
+  buildNoteCreateInput,
+  buildNoteTargetCreateInput,
+  formatItemsAsNoteMarkdown,
+} from '../src/services/twenty-note.js';
 
 describe('twenty-note', () => {
-  it('uses bodyV2 with markdown for Twenty API', () => {
-    const input = buildNoteCreateInput('Title', 'line1\nline2', 'opp-123');
+  it('uses bodyV2 without activityTargets', () => {
+    const input = buildNoteCreateInput('Title', 'line1\nline2');
     expect(input.bodyV2).toEqual({ markdown: 'line1\nline2', blocknote: null });
-    expect(input.body).toBeUndefined();
-    expect(input.activityTargets).toEqual([{ opportunityId: 'opp-123' }]);
+    expect(input.activityTargets).toBeUndefined();
+  });
+
+  it('links note to opportunity via NoteTarget', () => {
+    const input = buildNoteTargetCreateInput('note-123', 'opp-456');
+    expect(input).toEqual({
+      noteId: 'note-123',
+      targetOpportunityId: 'opp-456',
+    });
   });
 
   it('formats items as markdown list', () => {
