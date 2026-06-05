@@ -1,26 +1,75 @@
-import { useDealStats, useRunParsing, useParsingStatus, useParseRuns } from '../api';
+import { useState, useEffect } from 'react';
+import {
+  useDealStats,
+  useRunParsing,
+  useParsingStatus,
+  useParseRuns,
+  useParseDefaults,
+} from '../api';
 import StatCard from '../components/StatCard';
 
 export default function Dashboard() {
   const { data: stats } = useDealStats();
   const { data: parsingStatus } = useParsingStatus();
   const { data: runs } = useParseRuns();
+  const { data: defaults } = useParseDefaults();
   const parsing = useRunParsing();
+
+  const [dateRange, setDateRange] = useState({ from: '', to: '' });
+
+  useEffect(() => {
+    if (defaults?.startDate && defaults?.endDate) {
+      setDateRange({ from: defaults.startDate, to: defaults.endDate });
+    }
+  }, [defaults?.startDate, defaults?.endDate]);
 
   const lastRun = runs?.[0];
 
+  function runParsing() {
+    parsing.mutate({
+      startDate: dateRange.from || undefined,
+      endDate: dateRange.to || undefined,
+    });
+  }
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <h2 className="text-xl font-semibold text-gray-800">Дашборд</h2>
-        <button
-          onClick={() => parsing.mutate({})}
-          disabled={parsing.isPending || parsingStatus?.inProgress}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {parsing.isPending || parsingStatus?.inProgress ? 'Парсинг...' : 'Запустить парсинг'}
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-1.5 text-sm text-gray-600">
+            С:
+            <input
+              type="date"
+              value={dateRange.from}
+              min={defaults?.startDate || undefined}
+              onChange={(e) => setDateRange((prev) => ({ ...prev, from: e.target.value }))}
+              className="border border-gray-300 rounded-md px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="flex items-center gap-1.5 text-sm text-gray-600">
+            По:
+            <input
+              type="date"
+              value={dateRange.to}
+              min={dateRange.from || defaults?.startDate || undefined}
+              onChange={(e) => setDateRange((prev) => ({ ...prev, to: e.target.value }))}
+              className="border border-gray-300 rounded-md px-2 py-1.5 text-sm"
+            />
+          </label>
+          <button
+            onClick={runParsing}
+            disabled={parsing.isPending || parsingStatus?.inProgress}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {parsing.isPending || parsingStatus?.inProgress ? 'Парсинг...' : 'Запустить парсинг'}
+          </button>
+        </div>
       </div>
+
+      <p className="text-xs text-gray-500 mb-4">
+        Парсятся только сделки с выбранной даты. Даты раньше сегодняшней недоступны.
+      </p>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         <StatCard label="Всего сделок" value={stats?.total ?? '—'} color="gray" />

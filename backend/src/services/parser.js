@@ -6,7 +6,7 @@ import { authenticate, getCalToken, getCrmRequestHeaders } from './auth.js';
 import { parseDealDescription } from './html-parser.js';
 import { parseDealTitle } from './title-parser.js';
 import { classifyItems } from './classifier.js';
-import { formatCrmDateTime, isEventInRange } from '../utils/crm-dates.js';
+import { formatCrmDateTime, isEventInRange, parseEventDate } from '../utils/crm-dates.js';
 
 function buildUrl(path) {
   const base = config.crmBaseUrl.replace(/\/$/, '');
@@ -96,7 +96,11 @@ export async function runParsing(startDate, endDate) {
   try {
     await authenticate();
 
-    const events = await fetchEvents(startDate, endDate);
+    const events = (await fetchEvents(startDate, endDate)).sort((a, b) => {
+      const da = parseEventDate(a.start ?? a.start_date)?.getTime() ?? 0;
+      const db = parseEventDate(b.start ?? b.start_date)?.getTime() ?? 0;
+      return da - db;
+    });
 
     const keywords = JSON.parse(getSetting('keywords') || '[]');
     const llmPrompt = getSetting('llm_prompt') || '';

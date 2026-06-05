@@ -11,5 +11,6 @@ export const config = {
   twentyApiUrl: process.env.TWENTY_API_URL || '',
   twentyApiToken: process.env.TWENTY_API_TOKEN || '',
   sessionSecret: process.env.SESSION_SECRET || 'dev-secret',
+  appPassword: process.env.APP_PASSWORD || '',
   dbPath: process.env.DB_PATH || './data/crmparser.db',
 };

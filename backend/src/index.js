@@ -9,6 +9,8 @@ import dealsRouter from './routes/deals.js';
 import parsingRouter from './routes/parsing.js';
 import settingsRouter from './routes/settings.js';
 import logsRouter from './routes/logs.js';
+import authRouter from './routes/auth.js';
+import { appAuthMiddleware } from './middleware/app-auth.js';
 import { initScheduler } from './services/scheduler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -16,6 +18,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(express.json());
 
+app.use('/api/auth', authRouter);
+app.use('/api', appAuthMiddleware);
 app.use('/api/deals', dealsRouter);
 app.use('/api/parsing', parsingRouter);
 app.use('/api/settings', settingsRouter);

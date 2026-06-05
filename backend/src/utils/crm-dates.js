@@ -26,15 +26,68 @@ export function getCrmCalendarDate(now = new Date()) {
   return { year: get('year'), month: get('month'), day: get('day') };
 }
 
-/** Default parse window: start of current month → end of next month (Moscow TZ). */
+/** Start of today in CRM timezone (no past deals). */
+export function getMinParseStart(now = new Date()) {
+  const { year, month, day } = getCrmCalendarDate(now);
+  const start = new Date(year, month - 1, day, 0, 0, 0);
+  return formatCrmDateTime(start);
+}
+
+/** Default parse window: today → end of next month (Moscow TZ). */
 export function getDefaultParseRange(now = new Date()) {
   const { year, month } = getCrmCalendarDate(now);
-  const start = new Date(year, month - 1, 1, 0, 0, 0);
+  const start = getMinParseStart(now);
   const end = new Date(year, month + 1, 0, 23, 59, 59);
   return {
-    start: formatCrmDateTime(start),
+    start,
     end: formatCrmDateTime(end),
+    startDate: toInputDate(start),
+    endDate: toInputDate(formatCrmDateTime(end)),
   };
+}
+
+/** YYYY-MM-DD for HTML date inputs. */
+export function toInputDate(value) {
+  const parsed = parseEventDate(value);
+  if (!parsed) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: CRM_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(parsed);
+  const get = (type) => parts.find((p) => p.type === type)?.value;
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+const DATE_INPUT_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Normalize UI/API dates and never parse before today. */
+export function normalizeParseRange(startDate, endDate, now = new Date()) {
+  const defaults = getDefaultParseRange(now);
+  let start = startDate || defaults.start;
+  let end = endDate || defaults.end;
+
+  if (DATE_INPUT_RE.test(start)) {
+    start = `${start}T00:00:00${crmOffsetSuffix()}`;
+  }
+  if (DATE_INPUT_RE.test(end)) {
+    end = `${end}T23:59:59${crmOffsetSuffix()}`;
+  }
+
+  const minStart = getMinParseStart(now);
+  const minTs = parseEventDate(minStart)?.getTime() ?? -Infinity;
+  const startTs = parseEventDate(start)?.getTime() ?? minTs;
+  if (startTs < minTs) {
+    start = minStart;
+  }
+
+  const endTs = parseEventDate(end)?.getTime() ?? Infinity;
+  if (endTs < minTs) {
+    end = `${toInputDate(minStart)}T23:59:59${crmOffsetSuffix()}`;
+  }
+
+  return { start, end };
 }
 
 export function parseEventDate(value) {

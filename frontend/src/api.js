@@ -1,7 +1,63 @@
 import axios from 'axios';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
+const TOKEN_KEY = 'app_token';
+
 const api = axios.create({ baseURL: '/api' });
+
+export function getAuthToken() {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setAuthToken(token) {
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
+}
+
+api.interceptors.request.use((config) => {
+  const token = getAuthToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 && getAuthToken()) {
+      setAuthToken(null);
+      window.dispatchEvent(new Event('auth:logout'));
+    }
+    return Promise.reject(error);
+  }
+);
+
+export function useAuthStatus() {
+  return useQuery({
+    queryKey: ['auth-status'],
+    queryFn: () => api.get('/auth/status').then((r) => r.data),
+    retry: false,
+  });
+}
+
+export function useLogin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (password) => {
+      try {
+        return await api.post('/auth/login', { password }).then((r) => r.data);
+      } catch (err) {
+        const message = err.response?.data?.error || 'Ошибка входа';
+        throw new Error(message);
+      }
+    },
+    onSuccess: (data) => {
+      if (data.token) setAuthToken(data.token);
+      qc.invalidateQueries({ queryKey: ['auth-status'] });
+    },
+  });
+}
 
 export function useDeals(params = {}) {
   return useQuery({
@@ -99,6 +155,13 @@ export function useDeleteAllRejected() {
       qc.invalidateQueries({ queryKey: ['deals'] });
       qc.invalidateQueries({ queryKey: ['deal-stats'] });
     },
+  });
+}
+
+export function useParseDefaults() {
+  return useQuery({
+    queryKey: ['parse-defaults'],
+    queryFn: () => api.get('/parsing/defaults').then((r) => r.data),
   });
 }
 

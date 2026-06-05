@@ -1,8 +1,12 @@
+import { useEffect } from 'react';
 import { Routes, Route, NavLink } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import Dashboard from './pages/Dashboard';
 import Deals from './pages/Deals';
 import Settings from './pages/Settings';
 import Logs from './pages/Logs';
+import Login from './pages/Login';
+import { useAuthStatus, setAuthToken } from './api';
 
 const navItems = [
   { to: '/', label: 'Дашборд', icon: '◻' },
@@ -12,6 +16,36 @@ const navItems = [
 ];
 
 export default function App() {
+  const { data: authStatus, isLoading, isError } = useAuthStatus();
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    function onLogout() {
+      setAuthToken(null);
+      qc.invalidateQueries({ queryKey: ['auth-status'] });
+    }
+    window.addEventListener('auth:logout', onLogout);
+    return () => window.removeEventListener('auth:logout', onLogout);
+  }, [qc]);
+
+  const needsLogin =
+    authStatus?.required &&
+    !authStatus?.authenticated &&
+    !isLoading &&
+    !isError;
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center text-sm text-gray-500">
+        Загрузка...
+      </div>
+    );
+  }
+
+  if (needsLogin) {
+    return <Login />;
+  }
+
   return (
     <div className="flex h-screen bg-gray-50">
       <aside className="w-56 bg-white border-r border-gray-200 flex flex-col">
