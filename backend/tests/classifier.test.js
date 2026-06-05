@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyByKeywords } from '../src/services/classifier.js';
+import { classifyByKeywords, keywordMatchesItemName } from '../src/services/classifier.js';
 
 const keywords = ['брендинг', 'баннер', 'печать', 'наклейка', 'логотип'];
 
@@ -34,6 +34,17 @@ describe('classifyByKeywords', () => {
       keywords
     );
     expect(result[0].classification).toBe('keyword_match');
+  });
+
+  it('does not match keyword inside another word', () => {
+    expect(keywordMatchesItemName('цыплёнка', 'плёнка')).toBe(false);
+    expect(keywordMatchesItemName('антипленка защитная', 'пленка')).toBe(false);
+  });
+
+  it('still matches keyword at word start after delimiter', () => {
+    expect(keywordMatchesItemName('Плёнка ПВХ 3мм', 'плёнка')).toBe(true);
+    expect(keywordMatchesItemName('Монтаж (пленка)', 'плёнка')).toBe(true);
+    expect(keywordMatchesItemName('Монтаж стенок (баннера)', 'баннер')).toBe(true);
   });
 
   it('processes multiple items', () => {

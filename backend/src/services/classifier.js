@@ -1,10 +1,26 @@
 import axios from 'axios';
 import { config } from '../config.js';
 
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeMatchText(text) {
+  return text.toLowerCase().replace(/ё/g, 'е');
+}
+
+/** Match keyword only at a word boundary (not inside another word like «плёнка» in «цыплёнка»). */
+export function keywordMatchesItemName(itemName, keyword) {
+  const text = normalizeMatchText(itemName);
+  const kw = escapeRegExp(normalizeMatchText(keyword));
+  if (!kw) return false;
+  const re = new RegExp(`(?<![\\p{L}\\p{N}])${kw}`, 'iu');
+  return re.test(text);
+}
+
 export function classifyByKeywords(items, keywords) {
   return items.map(item => {
-    const nameLower = item.name.toLowerCase();
-    const matched = keywords.some(kw => nameLower.includes(kw.toLowerCase()));
+    const matched = keywords.some((kw) => keywordMatchesItemName(item.name, kw));
     return {
       ...item,
       classification: matched ? 'keyword_match' : 'unclassified',
