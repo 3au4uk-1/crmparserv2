@@ -17,6 +17,26 @@ function Section({ title, children }) {
   );
 }
 
+function parseKeywordInput(text) {
+  return text
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function mergeKeywords(existing, incoming) {
+  const seen = new Set((existing || []).map((kw) => kw.toLowerCase()));
+  const result = [...(existing || [])];
+  for (const kw of incoming) {
+    const key = kw.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(kw);
+    }
+  }
+  return result;
+}
+
 export default function Settings() {
   const { data: settings } = useSettings();
   const { data: keywords } = useKeywords();
@@ -33,9 +53,9 @@ export default function Settings() {
   }, [settings?.crm_cookies]);
 
   function addKeyword() {
-    if (!newKeyword.trim()) return;
-    const updated = [...(keywords || []), newKeyword.trim()];
-    updateKeywords.mutate(updated);
+    const parsed = parseKeywordInput(newKeyword);
+    if (parsed.length === 0) return;
+    updateKeywords.mutate(mergeKeywords(keywords, parsed));
     setNewKeyword('');
   }
 
@@ -82,15 +102,22 @@ export default function Settings() {
             </span>
           ))}
         </div>
-        <div className="flex gap-2">
-          <input
+        <p className="text-xs text-gray-500 mb-2">
+          Можно добавить одно слово или несколько через запятую.
+        </p>
+        <div className="flex gap-2 items-start">
+          <textarea
             value={newKeyword}
-            onChange={e => setNewKeyword(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && addKeyword()}
-            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm flex-1 max-w-xs"
-            placeholder="Новое ключевое слово..."
+            onChange={(e) => setNewKeyword(e.target.value)}
+            rows={2}
+            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm flex-1 max-w-lg"
+            placeholder="баннер, печать, наклейка, логотип"
           />
-          <button onClick={addKeyword} className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700">
+          <button
+            onClick={addKeyword}
+            disabled={!newKeyword.trim()}
+            className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
+          >
             Добавить
           </button>
         </div>
