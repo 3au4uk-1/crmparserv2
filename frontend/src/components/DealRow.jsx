@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useDeal, useApproveDeal, useRejectDeal } from '../api';
+import { useDeal, useApproveDeal, useRejectDeal, useDeleteDeal } from '../api';
 import StatusBadge from './StatusBadge';
 import DealItems from './DealItems';
 
@@ -8,6 +8,7 @@ export default function DealRow({ deal, selected, onSelect }) {
   const { data: details } = useDeal(expanded ? deal.id : null);
   const approve = useApproveDeal();
   const reject = useRejectDeal();
+  const deleteDeal = useDeleteDeal();
 
   return (
     <>
@@ -48,6 +49,18 @@ export default function DealRow({ deal, selected, onSelect }) {
                 ✗
               </button>
             </div>
+          )}
+          {deal.approval_status === 'rejected' && (
+            <button
+              onClick={() => {
+                if (!confirm('Удалить эту сделку?')) return;
+                deleteDeal.mutate(deal.id);
+              }}
+              disabled={deleteDeal.isPending}
+              className="px-2 py-1 bg-gray-700 text-white text-xs rounded hover:bg-gray-800 disabled:opacity-50"
+            >
+              Удалить
+            </button>
           )}
         </td>
       </tr>

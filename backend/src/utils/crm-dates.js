@@ -13,12 +13,43 @@ export function formatCrmDateTime(date) {
   return `${local}${crmOffsetSuffix()}`;
 }
 
-/** Default parse window: previous month → end of next month (covers visible calendar range). */
+/** Calendar date parts in CRM timezone (for month boundaries in Docker UTC). */
+export function getCrmCalendarDate(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: CRM_TIMEZONE,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  }).formatToParts(now);
+
+  const get = (type) => Number(parts.find((p) => p.type === type)?.value);
+  return { year: get('year'), month: get('month'), day: get('day') };
+}
+
+/** Default parse window: start of current month → end of next month (Moscow TZ). */
 export function getDefaultParseRange(now = new Date()) {
-  const start = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0);
-  const end = new Date(now.getFullYear(), now.getMonth() + 2, 0, 23, 59, 59);
+  const { year, month } = getCrmCalendarDate(now);
+  const start = new Date(year, month - 1, 1, 0, 0, 0);
+  const end = new Date(year, month + 1, 0, 23, 59, 59);
   return {
     start: formatCrmDateTime(start),
     end: formatCrmDateTime(end),
   };
+}
+
+export function parseEventDate(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number') return new Date(value < 1e12 ? value * 1000 : value);
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+export function isEventInRange(event, startDate, endDate) {
+  const eventStart = parseEventDate(event.start ?? event.start_date);
+  if (!eventStart) return true;
+
+  const rangeStart = parseEventDate(startDate)?.getTime() ?? -Infinity;
+  const rangeEnd = parseEventDate(endDate)?.getTime() ?? Infinity;
+  const t = eventStart.getTime();
+  return t >= rangeStart && t <= rangeEnd;
 }

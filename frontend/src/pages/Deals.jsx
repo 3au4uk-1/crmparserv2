@@ -1,18 +1,60 @@
 import { useState } from 'react';
-import { useDeals, useBulkApprove, useBulkReject } from '../api';
+import {
+  useDeals,
+  useBulkApprove,
+  useBulkReject,
+  useBulkDeleteDeals,
+  useDeleteAllRejected,
+} from '../api';
 import DealRow from '../components/DealRow';
 
+const PAGE_SIZE = 50;
+
+function startOfCurrentMonth() {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  return `${now.getFullYear()}-${month}-01`;
+}
+
 export default function Deals() {
-  const [filters, setFilters] = useState({ status: '', company: '' });
+  const [filters, setFilters] = useState({
+    status: '',
+    company: '',
+    from: startOfCurrentMonth(),
+    to: '',
+  });
+  const [page, setPage] = useState(0);
   const [selectedIds, setSelectedIds] = useState(new Set());
-  const { data, isLoading } = useDeals(filters);
+
+  const { data, isLoading } = useDeals({
+    ...filters,
+    limit: PAGE_SIZE,
+    offset: page * PAGE_SIZE,
+  });
   const bulkApprove = useBulkApprove();
   const bulkReject = useBulkReject();
+  const bulkDelete = useBulkDeleteDeals();
+  const deleteAllRejected = useDeleteAllRejected();
 
   const deals = data?.deals || [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageStart = total === 0 ? 0 : page * PAGE_SIZE + 1;
+  const pageEnd = Math.min((page + 1) * PAGE_SIZE, total);
+
+  const selectedRejected = [...selectedIds].filter((id) => {
+    const deal = deals.find((d) => d.id === id);
+    return deal?.approval_status === 'rejected';
+  });
+
+  function updateFilters(next) {
+    setFilters(next);
+    setPage(0);
+    setSelectedIds(new Set());
+  }
 
   function toggleSelect(id) {
-    setSelectedIds(prev => {
+    setSelectedIds((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
@@ -23,7 +65,7 @@ export default function Deals() {
     if (selectedIds.size === deals.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(deals.map(d => d.id)));
+      setSelectedIds(new Set(deals.map((d) => d.id)));
     }
   }
 
@@ -31,10 +73,10 @@ export default function Deals() {
     <div>
       <h2 className="text-xl font-semibold text-gray-800 mb-4">Сделки</h2>
 
-      <div className="flex gap-3 mb-4 items-center">
+      <div className="flex flex-wrap gap-3 mb-4 items-center">
         <select
           value={filters.status}
-          onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}
+          onChange={(e) => updateFilters({ ...filters, status: e.target.value })}
           className="border border-gray-300 rounded-md px-3 py-1.5 text-sm"
         >
           <option value="">Все статусы</option>
@@ -45,7 +87,7 @@ export default function Deals() {
         </select>
         <select
           value={filters.company}
-          onChange={e => setFilters(f => ({ ...f, company: e.target.value }))}
+          onChange={(e) => updateFilters({ ...filters, company: e.target.value })}
           className="border border-gray-300 rounded-md px-3 py-1.5 text-sm"
         >
           <option value="">Все компании</option>
@@ -53,22 +95,71 @@ export default function Deals() {
           <option value="АРТ">АРТ</option>
           <option value="АРЕНДА">АРЕНДА</option>
         </select>
+        <label className="flex items-center gap-1.5 text-sm text-gray-600">
+          С:
+          <input
+            type="date"
+            value={filters.from}
+            onChange={(e) => updateFilters({ ...filters, from: e.target.value })}
+            className="border border-gray-300 rounded-md px-2 py-1.5 text-sm"
+          />
+        </label>
+        <label className="flex items-center gap-1.5 text-sm text-gray-600">
+          По:
+          <input
+            type="date"
+            value={filters.to}
+            onChange={(e) => updateFilters({ ...filters, to: e.target.value })}
+            className="border border-gray-300 rounded-md px-2 py-1.5 text-sm"
+          />
+        </label>
 
         {selectedIds.size > 0 && (
           <div className="flex gap-2 ml-auto">
             <button
-              onClick={() => { bulkApprove.mutate([...selectedIds]); setSelectedIds(new Set()); }}
+              onClick={() => {
+                bulkApprove.mutate([...selectedIds]);
+                setSelectedIds(new Set());
+              }}
               className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-md hover:bg-green-700"
             >
               Одобрить ({selectedIds.size})
             </button>
             <button
-              onClick={() => { bulkReject.mutate([...selectedIds]); setSelectedIds(new Set()); }}
+              onClick={() => {
+                bulkReject.mutate([...selectedIds]);
+                setSelectedIds(new Set());
+              }}
               className="px-3 py-1.5 bg-red-600 text-white text-sm rounded-md hover:bg-red-700"
             >
               Отклонить ({selectedIds.size})
             </button>
+            {selectedRejected.length > 0 && (
+              <button
+                onClick={() => {
+                  if (!confirm(`Удалить ${selectedRejected.length} отклонённых сделок?`)) return;
+                  bulkDelete.mutate(selectedRejected);
+                  setSelectedIds(new Set());
+                }}
+                className="px-3 py-1.5 bg-gray-700 text-white text-sm rounded-md hover:bg-gray-800"
+              >
+                Удалить ({selectedRejected.length})
+              </button>
+            )}
           </div>
+        )}
+
+        {filters.status === 'rejected' && total > 0 && selectedIds.size === 0 && (
+          <button
+            onClick={() => {
+              if (!confirm(`Удалить все ${total} отклонённых сделок?`)) return;
+              deleteAllRejected.mutate();
+              setPage(0);
+            }}
+            className="px-3 py-1.5 bg-gray-700 text-white text-sm rounded-md hover:bg-gray-800 ml-auto"
+          >
+            Удалить все отклонённые
+          </button>
         )}
       </div>
 
@@ -82,7 +173,12 @@ export default function Deals() {
             <thead>
               <tr className="bg-gray-50 text-left text-xs text-gray-500 uppercase">
                 <th className="p-3">
-                  <input type="checkbox" onChange={toggleAll} checked={selectedIds.size === deals.length && deals.length > 0} className="rounded" />
+                  <input
+                    type="checkbox"
+                    onChange={toggleAll}
+                    checked={selectedIds.size === deals.length && deals.length > 0}
+                    className="rounded"
+                  />
                 </th>
                 <th className="p-3">Дата</th>
                 <th className="p-3">Название</th>
@@ -95,7 +191,7 @@ export default function Deals() {
               </tr>
             </thead>
             <tbody>
-              {deals.map(deal => (
+              {deals.map((deal) => (
                 <DealRow
                   key={deal.id}
                   deal={deal}
@@ -107,6 +203,33 @@ export default function Deals() {
           </table>
         )}
       </div>
+
+      {total > 0 && (
+        <div className="flex items-center justify-between mt-4 text-sm text-gray-600">
+          <span>
+            Показано {pageStart}–{pageEnd} из {total}
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-40 hover:bg-gray-50"
+            >
+              Назад
+            </button>
+            <span className="px-2 py-1.5">
+              {page + 1} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              disabled={page >= totalPages - 1}
+              className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-40 hover:bg-gray-50"
+            >
+              Вперёд
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

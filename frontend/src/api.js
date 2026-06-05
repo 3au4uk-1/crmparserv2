@@ -69,6 +69,39 @@ export function useBulkReject() {
   });
 }
 
+export function useDeleteDeal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => api.delete(`/deals/${id}`).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal-stats'] });
+    },
+  });
+}
+
+export function useBulkDeleteDeals() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ids) => api.post('/deals/bulk-delete', { ids }).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal-stats'] });
+    },
+  });
+}
+
+export function useDeleteAllRejected() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.delete('/deals/rejected').then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal-stats'] });
+    },
+  });
+}
+
 export function useRunParsing() {
   const qc = useQueryClient();
   return useMutation({

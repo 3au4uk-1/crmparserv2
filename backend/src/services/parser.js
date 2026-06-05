@@ -6,7 +6,7 @@ import { authenticate, getCalToken, getCrmRequestHeaders } from './auth.js';
 import { parseDealDescription } from './html-parser.js';
 import { parseDealTitle } from './title-parser.js';
 import { classifyItems } from './classifier.js';
-import { formatCrmDateTime } from '../utils/crm-dates.js';
+import { formatCrmDateTime, isEventInRange } from '../utils/crm-dates.js';
 
 function buildUrl(path) {
   const base = config.crmBaseUrl.replace(/\/$/, '');
@@ -98,20 +98,20 @@ export async function runParsing(startDate, endDate) {
 
     const events = await fetchEvents(startDate, endDate);
 
-    if (events.length === 0) {
-      console.warn(
-        `CRM returned 0 events for range ${formatCrmDateTime(startDate)} → ${formatCrmDateTime(endDate)}`
-      );
-    }
-
     const keywords = JSON.parse(getSetting('keywords') || '[]');
     const llmPrompt = getSetting('llm_prompt') || '';
 
     let newDeals = 0;
     let updatedDeals = 0;
     let skippedDeals = 0;
+    let outOfRange = 0;
 
     for (const event of events) {
+      if (!isEventInRange(event, startDate, endDate)) {
+        outOfRange++;
+        continue;
+      }
+
       const eventId = String(event.original_id || event.id);
       if (!eventId) continue;
 
@@ -209,14 +209,24 @@ export async function runParsing(startDate, endDate) {
       }
     }
 
+    const inRangeCount = events.length - outOfRange;
+    if (inRangeCount === 0) {
+      console.warn(
+        `CRM returned 0 in-range events for ${formatCrmDateTime(startDate)} → ${formatCrmDateTime(endDate)}` +
+          (outOfRange > 0 ? ` (${outOfRange} outside range skipped)` : '')
+      );
+    } else if (outOfRange > 0) {
+      console.log(`Skipped ${outOfRange} events outside parse range`);
+    }
+
     db.prepare(`
       UPDATE parse_runs SET
         finished_at = datetime('now'), status = 'completed',
         total_events = ?, new_deals = ?, updated_deals = ?, skipped_deals = ?
       WHERE id = ?
-    `).run(events.length, newDeals, updatedDeals, skippedDeals, runId);
+    `).run(inRangeCount, newDeals, updatedDeals, skippedDeals, runId);
 
-    return { runId, total: events.length, newDeals, updatedDeals, skippedDeals };
+    return { runId, total: inRangeCount, newDeals, updatedDeals, skippedDeals, outOfRange };
   } catch (err) {
     db.prepare(`
       UPDATE parse_runs SET finished_at = datetime('now'), status = 'failed', error = ? WHERE id = ?
