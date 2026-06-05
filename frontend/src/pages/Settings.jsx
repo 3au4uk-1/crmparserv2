@@ -1,5 +1,12 @@
 import { useState, useEffect } from 'react';
-import { useSettings, useUpdateSetting, useKeywords, useUpdateKeywords, useCompanies } from '../api';
+import {
+  useSettings,
+  useUpdateSetting,
+  useKeywords,
+  useUpdateKeywords,
+  useCompanies,
+  useClearParsingData,
+} from '../api';
 
 function Section({ title, children }) {
   return (
@@ -16,6 +23,7 @@ export default function Settings() {
   const { data: companies } = useCompanies();
   const updateSetting = useUpdateSetting();
   const updateKeywords = useUpdateKeywords();
+  const clearParsingData = useClearParsingData();
 
   const [newKeyword, setNewKeyword] = useState('');
   const [cookieValue, setCookieValue] = useState('');
@@ -147,6 +155,9 @@ export default function Settings() {
       </Section>
 
       <Section title="Twenty CRM">
+        <p className="text-xs text-gray-500 mb-3">
+          Если TWENTY_API_URL и TWENTY_API_TOKEN заданы в .env или docker-compose, они имеют приоритет над полями ниже.
+        </p>
         <div className="space-y-3 max-w-md">
           <div>
             <label className="block text-sm text-gray-600 mb-1">API URL</label>
@@ -166,6 +177,31 @@ export default function Settings() {
             />
           </div>
         </div>
+      </Section>
+
+      <Section title="Данные парсинга">
+        <p className="text-sm text-gray-600 mb-3">
+          Удаляет все сделки, позиции и логи парсинга/синхронизации. Настройки и справочники сохраняются.
+        </p>
+        <button
+          onClick={() => {
+            if (!confirm('Удалить все данные парсинга? Это действие нельзя отменить.')) return;
+            clearParsingData.mutate();
+          }}
+          disabled={clearParsingData.isPending}
+          className="px-4 py-2 bg-red-600 text-white text-sm rounded-md hover:bg-red-700 disabled:opacity-50"
+        >
+          {clearParsingData.isPending ? 'Очистка...' : 'Очистить данные парсинга'}
+        </button>
+        {clearParsingData.isSuccess && (
+          <p className="text-sm text-green-600 mt-2">
+            Удалено: {clearParsingData.data.deleted.deals} сделок,{' '}
+            {clearParsingData.data.deleted.parseRuns} записей парсинга
+          </p>
+        )}
+        {clearParsingData.isError && (
+          <p className="text-sm text-red-600 mt-2">{clearParsingData.error.message}</p>
+        )}
       </Section>
 
       <Section title="Справочник компаний">

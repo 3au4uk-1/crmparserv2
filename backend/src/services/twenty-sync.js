@@ -1,14 +1,19 @@
 import axios from 'axios';
-import { config } from '../config.js';
 import { getDb } from '../db/connection.js';
+import { getTwentyConfig, requireTwentyConfig } from './twenty-config.js';
+import {
+  getItemsForTwenty,
+  getItemEligibleReason,
+  enrichDealItems,
+} from './twenty-items.js';
 
-function gql(query, variables = {}) {
+function gql(apiUrl, apiToken, query, variables = {}) {
   return axios.post(
-    config.twentyApiUrl,
+    apiUrl,
     { query, variables },
     {
       headers: {
-        'Authorization': `Bearer ${config.twentyApiToken}`,
+        Authorization: `Bearer ${apiToken}`,
         'Content-Type': 'application/json',
       },
       timeout: 15000,
@@ -16,16 +21,42 @@ function gql(query, variables = {}) {
   );
 }
 
-async function findOrCreateCompany(code) {
+function assertGqlSuccess(resp, fallbackMessage) {
+  const errors = resp.data?.errors;
+  if (errors?.length) {
+    throw new Error(errors[0].message || fallbackMessage);
+  }
+}
+
+function getOpportunityStage() {
+  const db = getDb();
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'opportunity_stage'").get();
+  return row?.value?.trim() || 'NEW';
+}
+
+function logSyncRun(dealId, status, twentyId, error) {
+  const db = getDb();
+  db.prepare(
+    'INSERT INTO sync_runs (deal_id, status, twenty_id, error) VALUES (?, ?, ?, ?)'
+  ).run(dealId, status, twentyId || null, error || null);
+}
+
+async function findOrCreateCompany(apiUrl, apiToken, code) {
   const db = getDb();
   const company = db.prepare('SELECT * FROM companies WHERE code = ?').get(code);
   if (!company) return null;
 
   if (company.twenty_id) return company.twenty_id;
 
-  const searchResp = await gql(`
-    query { companies(filter: { name: { eq: "${company.full_name}" } }) { edges { node { id } } } }
-  `);
+  const searchResp = await gql(
+    apiUrl,
+    apiToken,
+    `query FindCompany($name: String!) {
+      companies(filter: { name: { eq: $name } }) { edges { node { id } } }
+    }`,
+    { name: company.full_name }
+  );
+  assertGqlSuccess(searchResp, 'Failed to search company in Twenty');
 
   const existing = searchResp.data?.data?.companies?.edges?.[0]?.node;
   if (existing) {
@@ -33,9 +64,15 @@ async function findOrCreateCompany(code) {
     return existing.id;
   }
 
-  const createResp = await gql(`
-    mutation($input: CompanyCreateInput!) { createCompany(data: $input) { id } }
-  `, { input: { name: company.full_name } });
+  const createResp = await gql(
+    apiUrl,
+    apiToken,
+    `mutation CreateCompany($input: CompanyCreateInput!) {
+      createCompany(data: $input) { id }
+    }`,
+    { input: { name: company.full_name } }
+  );
+  assertGqlSuccess(createResp, 'Failed to create company in Twenty');
 
   const newId = createResp.data?.data?.createCompany?.id;
   if (newId) {
@@ -44,18 +81,21 @@ async function findOrCreateCompany(code) {
   return newId;
 }
 
-async function findOrCreatePerson(managerName, companyTwentyId) {
+async function findOrCreatePerson(apiUrl, apiToken, managerName, companyTwentyId) {
   const db = getDb();
 
-  const manager = db.prepare(
-    'SELECT * FROM managers WHERE name = ?'
-  ).get(managerName);
-
+  const manager = db.prepare('SELECT * FROM managers WHERE name = ?').get(managerName);
   if (manager?.twenty_id) return manager.twenty_id;
 
-  const searchResp = await gql(`
-    query { people(filter: { name: { lastName: { eq: "${managerName}" } } }) { edges { node { id } } } }
-  `);
+  const searchResp = await gql(
+    apiUrl,
+    apiToken,
+    `query FindPerson($lastName: String!) {
+      people(filter: { name: { lastName: { eq: $lastName } } }) { edges { node { id } } }
+    }`,
+    { lastName: managerName }
+  );
+  assertGqlSuccess(searchResp, 'Failed to search person in Twenty');
 
   const existing = searchResp.data?.data?.people?.edges?.[0]?.node;
   if (existing) {
@@ -72,9 +112,15 @@ async function findOrCreatePerson(managerName, companyTwentyId) {
   };
   if (companyTwentyId) input.companyId = companyTwentyId;
 
-  const createResp = await gql(`
-    mutation($input: PersonCreateInput!) { createPerson(data: $input) { id } }
-  `, { input });
+  const createResp = await gql(
+    apiUrl,
+    apiToken,
+    `mutation CreatePerson($input: PersonCreateInput!) {
+      createPerson(data: $input) { id }
+    }`,
+    { input }
+  );
+  assertGqlSuccess(createResp, 'Failed to create person in Twenty');
 
   const newId = createResp.data?.data?.createPerson?.id;
   if (newId) {
@@ -87,65 +133,120 @@ async function findOrCreatePerson(managerName, companyTwentyId) {
   return newId;
 }
 
-export async function syncDealToTwenty(dealId) {
-  if (!config.twentyApiUrl || !config.twentyApiToken) {
-    throw new Error('Twenty CRM not configured');
-  }
+export function buildSyncPreview(dealId) {
+  const twenty = getTwentyConfig();
+  const db = getDb();
+  const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(dealId);
+  if (!deal) throw new Error(`Deal ${dealId} not found`);
 
+  const allItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(dealId);
+  const eligibleItems = getItemsForTwenty(allItems);
+  const eligibleAmount = eligibleItems.reduce((sum, i) => sum + (i.price || 0), 0);
+
+  return {
+    configured: Boolean(twenty.apiUrl && twenty.apiToken),
+    configSource: twenty.source,
+    eligibleCount: eligibleItems.length,
+    totalCount: allItems.length,
+    eligibleAmount,
+    eligibleItems: eligibleItems.map((item) => ({
+      id: item.id,
+      name: item.name,
+      reason: getItemEligibleReason(item),
+    })),
+    alreadySynced: Boolean(deal.twenty_id),
+    twentyId: deal.twenty_id || null,
+    twentyError: deal.twenty_error || null,
+  };
+}
+
+export async function syncDealToTwenty(dealId) {
+  const twenty = requireTwentyConfig();
   const db = getDb();
   const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(dealId);
   if (!deal) throw new Error(`Deal ${dealId} not found`);
   if (deal.twenty_id) return { twentyId: deal.twenty_id, action: 'already_synced' };
 
-  const items = db.prepare(
-    "SELECT * FROM deal_items WHERE deal_id = ? AND classification IN ('keyword_match', 'llm_confirmed')"
-  ).all(dealId);
+  const allItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(dealId);
+  const items = getItemsForTwenty(allItems);
 
-  const companyTwentyId = deal.company_code
-    ? await findOrCreateCompany(deal.company_code)
-    : null;
-
-  const personTwentyId = deal.manager_name
-    ? await findOrCreatePerson(deal.manager_name, companyTwentyId)
-    : null;
-
-  const brandingBudget = items.reduce((sum, i) => sum + (i.price || 0), 0);
-
-  const oppInput = {
-    name: deal.title || `Deal ${deal.crm_event_id}`,
-    stage: 'NEW',
-    closeDate: deal.end_date || deal.start_date || new Date().toISOString(),
-    amount: { amountMicros: Math.round(brandingBudget * 1000000), currencyCode: 'RUB' },
-  };
-  if (companyTwentyId) oppInput.companyId = companyTwentyId;
-  if (personTwentyId) oppInput.pointOfContactId = personTwentyId;
-
-  const oppResp = await gql(`
-    mutation($input: OpportunityCreateInput!) { createOpportunity(data: $input) { id } }
-  `, { input: oppInput });
-
-  const oppId = oppResp.data?.data?.createOpportunity?.id;
-  if (!oppId) throw new Error('Failed to create opportunity in Twenty');
-
-  if (items.length > 0) {
-    const itemsText = items
-      .map(i => `• ${i.name} — ${i.price?.toLocaleString('ru-RU')} руб. × ${i.quantity}`)
-      .join('\n');
-
-    await gql(`
-      mutation($input: NoteCreateInput!) { createNote(data: $input) { id } }
-    `, {
-      input: {
-        title: 'Позиции брендинга',
-        body: itemsText,
-        activityTargets: [{ opportunityId: oppId }],
-      },
-    });
+  if (items.length === 0) {
+    const message = 'Нет позиций для переноса в Twenty';
+    db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(message, dealId);
+    logSyncRun(dealId, 'failed', null, message);
+    throw new Error(message);
   }
 
-  db.prepare(
-    "UPDATE deals SET twenty_id = ?, synced_at = datetime('now'), approval_status = 'synced' WHERE id = ?"
-  ).run(oppId, dealId);
+  try {
+    const companyTwentyId = deal.company_code
+      ? await findOrCreateCompany(twenty.apiUrl, twenty.apiToken, deal.company_code)
+      : null;
 
-  return { twentyId: oppId, action: 'created' };
+    const personTwentyId = deal.manager_name
+      ? await findOrCreatePerson(twenty.apiUrl, twenty.apiToken, deal.manager_name, companyTwentyId)
+      : null;
+
+    const brandingBudget = items.reduce((sum, i) => sum + (i.price || 0), 0);
+
+    const oppInput = {
+      name: deal.title || `Deal ${deal.crm_event_id}`,
+      stage: getOpportunityStage(),
+      closeDate: deal.end_date || deal.start_date || new Date().toISOString(),
+      amount: { amountMicros: Math.round(brandingBudget * 1000000), currencyCode: 'RUB' },
+    };
+    if (companyTwentyId) oppInput.companyId = companyTwentyId;
+    if (personTwentyId) oppInput.pointOfContactId = personTwentyId;
+
+    const oppResp = await gql(
+      twenty.apiUrl,
+      twenty.apiToken,
+      `mutation CreateOpportunity($input: OpportunityCreateInput!) {
+        createOpportunity(data: $input) { id }
+      }`,
+      { input: oppInput }
+    );
+    assertGqlSuccess(oppResp, 'Failed to create opportunity in Twenty');
+
+    const oppId = oppResp.data?.data?.createOpportunity?.id;
+    if (!oppId) throw new Error('Failed to create opportunity in Twenty');
+
+    const itemsText = items
+      .map((i) => `• ${i.name} — ${i.price?.toLocaleString('ru-RU')} руб. × ${i.quantity}`)
+      .join('\n');
+
+    const noteResp = await gql(
+      twenty.apiUrl,
+      twenty.apiToken,
+      `mutation CreateNote($input: NoteCreateInput!) {
+        createNote(data: $input) { id }
+      }`,
+      {
+        input: {
+          title: 'Позиции брендинга',
+          body: itemsText,
+          activityTargets: [{ opportunityId: oppId }],
+        },
+      }
+    );
+    assertGqlSuccess(noteResp, 'Failed to create note in Twenty');
+
+    db.prepare(`
+      UPDATE deals SET
+        twenty_id = ?,
+        synced_at = datetime('now'),
+        approval_status = 'synced',
+        twenty_error = NULL
+      WHERE id = ?
+    `).run(oppId, dealId);
+
+    logSyncRun(dealId, 'success', oppId, null);
+
+    return { twentyId: oppId, action: 'created', itemCount: items.length };
+  } catch (err) {
+    db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
+    logSyncRun(dealId, 'failed', null, err.message);
+    throw err;
+  }
 }
+
+export { enrichDealItems };

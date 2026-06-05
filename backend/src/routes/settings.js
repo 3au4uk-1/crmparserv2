@@ -53,4 +53,18 @@ router.post('/companies', (req, res) => {
   res.json({ id: result.lastInsertRowid });
 });
 
+router.post('/clear-parsing-data', (req, res) => {
+  const db = getDb();
+
+  const clear = db.transaction(() => {
+    const syncRuns = db.prepare('DELETE FROM sync_runs').run().changes;
+    const dealItems = db.prepare('DELETE FROM deal_items').run().changes;
+    const deals = db.prepare('DELETE FROM deals').run().changes;
+    const parseRuns = db.prepare('DELETE FROM parse_runs').run().changes;
+    return { syncRuns, dealItems, deals, parseRuns };
+  });
+
+  res.json({ success: true, deleted: clear() });
+});
+
 export default router;

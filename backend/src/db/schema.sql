@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS deals (
   content_hash TEXT,
   approval_status TEXT NOT NULL DEFAULT 'pending',
   twenty_id TEXT,
+  twenty_error TEXT,
   synced_at TEXT,
   raw_description TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -37,6 +38,16 @@ CREATE TABLE IF NOT EXISTS deal_items (
   discount REAL,
   classification TEXT NOT NULL DEFAULT 'unclassified',
   classification_confidence REAL,
+  sync_override TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS sync_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+  status TEXT NOT NULL,
+  twenty_id TEXT,
+  error TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

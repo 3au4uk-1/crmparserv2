@@ -28,9 +28,18 @@ export default function DealRow({ deal, selected, onSelect }) {
         <td className="p-3 text-sm font-medium max-w-xs truncate">{deal.title}</td>
         <td className="p-3 text-sm">{deal.company_code}</td>
         <td className="p-3 text-sm">{deal.manager_name}</td>
-        <td className="p-3 text-sm">{deal.branding_count}/{deal.total_items}</td>
+        <td className="p-3 text-sm" title="Позиций в Twenty / всего">
+          {deal.branding_count}/{deal.total_items}
+        </td>
         <td className="p-3 text-sm">{deal.budget}</td>
-        <td className="p-3"><StatusBadge status={deal.approval_status} /></td>
+        <td className="p-3">
+          <StatusBadge status={deal.approval_status} />
+          {deal.twenty_error && (
+            <p className="text-xs text-red-600 mt-1 max-w-[10rem] truncate" title={deal.twenty_error}>
+              {deal.twenty_error}
+            </p>
+          )}
+        </td>
         <td className="p-3" onClick={e => e.stopPropagation()}>
           {deal.approval_status === 'pending' && (
             <div className="flex gap-1">
@@ -74,7 +83,11 @@ export default function DealRow({ deal, selected, onSelect }) {
                 <div><span className="text-gray-500">Компания:</span> {details?.contact_company}</div>
                 <div><span className="text-gray-500">Адрес:</span> {details?.address}</div>
               </div>
-              <DealItems items={details?.items} />
+              <DealItems
+                dealId={deal.id}
+                items={details?.items}
+                readOnly={deal.approval_status === 'synced'}
+              />
             </div>
           </td>
         </tr>

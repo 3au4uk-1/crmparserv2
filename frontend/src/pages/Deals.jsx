@@ -184,7 +184,7 @@ export default function Deals() {
                 <th className="p-3">Название</th>
                 <th className="p-3">Компания</th>
                 <th className="p-3">Менеджер</th>
-                <th className="p-3">Брендинг</th>
+                <th className="p-3" title="Позиций в Twenty / всего">Twenty</th>
                 <th className="p-3">Бюджет</th>
                 <th className="p-3">Статус</th>
                 <th className="p-3">Действия</th>

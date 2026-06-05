@@ -15,6 +15,7 @@ services:
       - TWENTY_API_URL=${TWENTY_API_URL}
       - TWENTY_API_TOKEN=${TWENTY_API_TOKEN}
       - SESSION_SECRET=${SESSION_SECRET:-change-me-in-production}
+      - APP_PASSWORD=${APP_PASSWORD}
     restart: unless-stopped
 
 volumes:

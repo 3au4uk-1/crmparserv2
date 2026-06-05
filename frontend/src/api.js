@@ -81,6 +81,30 @@ export function useDeal(id) {
   });
 }
 
+export function useUpdateItemSyncOverride() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ dealId, itemId, syncOverride }) =>
+      api.patch(`/deals/${dealId}/items/${itemId}/sync-override`, { syncOverride }).then((r) => r.data),
+    onSuccess: (_, { dealId }) => {
+      qc.invalidateQueries({ queryKey: ['deal', dealId] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+    },
+  });
+}
+
+export function useResetSyncOverrides() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dealId) =>
+      api.post(`/deals/${dealId}/items/reset-sync-overrides`).then((r) => r.data),
+    onSuccess: (_, dealId) => {
+      qc.invalidateQueries({ queryKey: ['deal', dealId] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+    },
+  });
+}
+
 export function useApproveDeal() {
   const qc = useQueryClient();
   return useMutation({
@@ -207,6 +231,21 @@ export function useUpdateSetting() {
   });
 }
 
+export function useClearParsingData() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post('/settings/clear-parsing-data').then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal-stats'] });
+      qc.invalidateQueries({ queryKey: ['deal'] });
+      qc.invalidateQueries({ queryKey: ['logs'] });
+      qc.invalidateQueries({ queryKey: ['sync-logs'] });
+      qc.invalidateQueries({ queryKey: ['parse-runs'] });
+    },
+  });
+}
+
 export function useKeywords() {
   return useQuery({
     queryKey: ['keywords'],
@@ -232,7 +271,14 @@ export function useCompanies() {
 export function useLogs(params = {}) {
   return useQuery({
     queryKey: ['logs', params],
-    queryFn: () => api.get('/logs', { params }).then(r => r.data),
+    queryFn: () => api.get('/logs', { params }).then((r) => r.data),
+  });
+}
+
+export function useSyncLogs(params = {}) {
+  return useQuery({
+    queryKey: ['sync-logs', params],
+    queryFn: () => api.get('/logs', { params: { ...params, type: 'sync' } }).then((r) => r.data),
   });
 }
 
