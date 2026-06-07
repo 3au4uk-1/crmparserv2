@@ -18,6 +18,7 @@ export function migrate() {
   db.exec(schema);
 
   ensureColumn(db, 'deal_items', 'sync_override', 'TEXT');
+  ensureColumn(db, 'deal_items', 'twenty_id', 'TEXT');
   ensureColumn(db, 'deals', 'twenty_error', 'TEXT');
 
   console.log('Database migrated successfully');

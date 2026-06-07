@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS deal_items (
   classification TEXT NOT NULL DEFAULT 'unclassified',
   classification_confidence REAL,
   sync_override TEXT,
+  twenty_id TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

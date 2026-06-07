@@ -7,10 +7,10 @@ import {
   enrichDealItems,
 } from './twenty-items.js';
 import {
-  buildNoteCreateInput,
-  buildNoteTargetCreateInput,
-  formatItemsAsNoteMarkdown,
-} from './twenty-note.js';
+  buildWarehouseItemCreateInput,
+  buildLineItemCreateInput,
+  buildLineItemUpdateInput,
+} from './twenty-line-item.js';
 
 async function gql(apiUrl, apiToken, query, variables = {}) {
   try {
@@ -64,6 +64,54 @@ function logSyncRun(dealId, status, twentyId, error) {
   db.prepare(
     'INSERT INTO sync_runs (deal_id, status, twenty_id, error) VALUES (?, ?, ?, ?)'
   ).run(dealId, status, twentyId || null, error || null);
+}
+
+async function findOrCreateWarehouseItem(apiUrl, apiToken, name) {
+  const searchResp = await gql(
+    apiUrl,
+    apiToken,
+    `query FindWarehouseItem($name: String!) {
+      products(filter: { name: { eq: $name } }) { edges { node { id } } }
+    }`,
+    { name }
+  );
+  assertHttpSuccess(searchResp, apiUrl);
+  assertGqlSuccess(searchResp, 'Failed to search warehouse item in Twenty');
+
+  const existing = searchResp.data?.data?.products?.edges?.[0]?.node;
+  if (existing) return existing.id;
+
+  const createResp = await gql(
+    apiUrl,
+    apiToken,
+    `mutation CreateWarehouseItem($input: ProductCreateInput!) {
+      createProduct(data: $input) { id }
+    }`,
+    { input: buildWarehouseItemCreateInput(name) }
+  );
+  assertHttpSuccess(createResp, apiUrl);
+  assertGqlSuccess(createResp, `Failed to create warehouse item "${name}" in Twenty`);
+
+  const newId = createResp.data?.data?.createProduct?.id;
+  if (!newId) throw new Error(`Failed to create warehouse item "${name}" in Twenty`);
+  return newId;
+}
+
+async function findLineItemByNameAndOpp(apiUrl, apiToken, name, oppId) {
+  const resp = await gql(
+    apiUrl,
+    apiToken,
+    `query FindLineItem($name: String!, $oppId: ID!) {
+      dealLineItems(filter: { and: [
+        { name: { eq: $name } },
+        { opportunityId: { eq: $oppId } }
+      ]}) { edges { node { id } } }
+    }`,
+    { name, oppId }
+  );
+  assertHttpSuccess(resp, apiUrl);
+  assertGqlSuccess(resp, 'Failed to search line item in Twenty');
+  return resp.data?.data?.dealLineItems?.edges?.[0]?.node?.id || null;
 }
 
 async function findOrCreateCompany(apiUrl, apiToken, code) {
@@ -241,35 +289,47 @@ export async function syncDealToTwenty(dealId) {
     const oppId = oppResp.data?.data?.createOpportunity?.id;
     if (!oppId) throw new Error('Failed to create opportunity in Twenty');
 
-    const noteResp = await gql(
-      twenty.apiUrl,
-      twenty.apiToken,
-      `mutation CreateNote($input: NoteCreateInput!) {
-        createNote(data: $input) { id }
-      }`,
-      {
-        input: buildNoteCreateInput(
-          'Позиции брендинга',
-          formatItemsAsNoteMarkdown(items)
-        ),
+    const lineItemIds = [];
+    for (let i = 0; i < items.length; i++) {
+      const warehouseItemId = await findOrCreateWarehouseItem(
+        twenty.apiUrl, twenty.apiToken, items[i].name
+      );
+
+      const existingId = await findLineItemByNameAndOpp(
+        twenty.apiUrl, twenty.apiToken, items[i].name, oppId
+      );
+
+      let lineItemId;
+      if (existingId) {
+        const updateResp = await gql(
+          twenty.apiUrl,
+          twenty.apiToken,
+          `mutation UpdateDealLineItem($id: ID!, $input: DealLineItemUpdateInput!) {
+            updateDealLineItem(id: $id, data: $input) { id }
+          }`,
+          { id: existingId, input: buildLineItemUpdateInput(items[i]) }
+        );
+        assertHttpSuccess(updateResp, twenty.apiUrl);
+        assertGqlSuccess(updateResp, `Failed to update line item "${items[i].name}" in Twenty`);
+        lineItemId = existingId;
+      } else {
+        const createResp = await gql(
+          twenty.apiUrl,
+          twenty.apiToken,
+          `mutation CreateDealLineItem($input: DealLineItemCreateInput!) {
+            createDealLineItem(data: $input) { id }
+          }`,
+          { input: buildLineItemCreateInput(items[i], warehouseItemId, oppId, i === 0 ? 'first' : i) }
+        );
+        assertHttpSuccess(createResp, twenty.apiUrl);
+        assertGqlSuccess(createResp, `Failed to create line item "${items[i].name}" in Twenty`);
+        lineItemId = createResp.data?.data?.createDealLineItem?.id;
+        if (!lineItemId) throw new Error(`Failed to create line item "${items[i].name}" in Twenty`);
       }
-    );
-    assertHttpSuccess(noteResp, twenty.apiUrl);
-    assertGqlSuccess(noteResp, 'Failed to create note in Twenty');
 
-    const noteId = noteResp.data?.data?.createNote?.id;
-    if (!noteId) throw new Error('Failed to create note in Twenty');
-
-    const targetResp = await gql(
-      twenty.apiUrl,
-      twenty.apiToken,
-      `mutation CreateNoteTarget($input: NoteTargetCreateInput!) {
-        createNoteTarget(data: $input) { id }
-      }`,
-      { input: buildNoteTargetCreateInput(noteId, oppId) }
-    );
-    assertHttpSuccess(targetResp, twenty.apiUrl);
-    assertGqlSuccess(targetResp, 'Failed to link note to opportunity in Twenty');
+      lineItemIds.push(lineItemId);
+      db.prepare('UPDATE deal_items SET twenty_id = ? WHERE id = ?').run(lineItemId, items[i].id);
+    }
 
     db.prepare(`
       UPDATE deals SET
@@ -282,7 +342,7 @@ export async function syncDealToTwenty(dealId) {
 
     logSyncRun(dealId, 'success', oppId, null);
 
-    return { twentyId: oppId, action: 'created', itemCount: items.length };
+    return { twentyId: oppId, action: 'created', itemCount: items.length, lineItemIds };
   } catch (err) {
     db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
     logSyncRun(dealId, 'failed', null, err.message);
