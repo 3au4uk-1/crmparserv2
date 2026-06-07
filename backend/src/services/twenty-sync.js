@@ -284,7 +284,7 @@ export async function syncDealToTwenty(dealId) {
     if (deal.crm_lead_id) {
       const leadId = deal.crm_lead_id.trim();
       oppInput.bitrixLink = {
-        primaryLinkUrl: `https://prointeractive.bitrix24.ru/crm/deal/details/${leadId}/`,
+        primaryLinkUrl: `https://prointeractive.bitrix24.ru/crm/deal/details/${leadId}/?any`,
         primaryLinkLabel: `Bitrix #${leadId}`,
       };
     }
