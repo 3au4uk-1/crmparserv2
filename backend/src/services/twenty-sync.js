@@ -282,9 +282,10 @@ export async function syncDealToTwenty(dealId) {
       };
     }
     if (deal.crm_lead_id) {
+      const leadId = deal.crm_lead_id.trim();
       oppInput.bitrixLink = {
-        primaryLinkUrl: `https://prointeractive.bitrix24.ru/crm/deal/details/${deal.crm_lead_id}/`,
-        primaryLinkLabel: `Bitrix #${deal.crm_lead_id}`,
+        primaryLinkUrl: `https://prointeractive.bitrix24.ru/crm/deal/details/${leadId}/`,
+        primaryLinkLabel: `Bitrix #${leadId}`,
       };
     }
 
