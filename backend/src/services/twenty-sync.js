@@ -269,7 +269,7 @@ export async function syncDealToTwenty(dealId) {
     const oppInput = {
       name: deal.title || `Deal ${deal.crm_event_id}`,
       stage: getOpportunityStage(),
-      closeDate: deal.end_date || deal.start_date || new Date().toISOString(),
+      closeDate: deal.start_date || deal.end_date || new Date().toISOString(),
       amount: { amountMicros: Math.round(brandingBudget * 1000000), currencyCode: 'RUB' },
     };
     if (companyTwentyId) oppInput.companyId = companyTwentyId;
