@@ -275,6 +275,24 @@ export async function syncDealToTwenty(dealId) {
     if (companyTwentyId) oppInput.companyId = companyTwentyId;
     if (personTwentyId) oppInput.pointOfContactId = personTwentyId;
 
+    if (deal.tony_order_id) {
+      oppInput.tonyLink = {
+        primaryLinkUrl: `https://crm.apihide.com/orders/orders_edit/?id=${deal.tony_order_id}`,
+        primaryLinkLabel: `Tony #${deal.tony_order_id}`,
+      };
+    }
+    if (deal.crm_lead_id) {
+      oppInput.bitrixLink = {
+        primaryLinkUrl: `https://prointeractive.bitrix24.ru/crm/deal/details/${deal.crm_lead_id}/`,
+        primaryLinkLabel: `Bitrix #${deal.crm_lead_id}`,
+      };
+    }
+
+    if (deal.arrival_time) oppInput.arrivalTime = deal.arrival_time;
+    if (deal.ready_time) oppInput.readyTime = deal.ready_time;
+    if (deal.work_time) oppInput.workTime = deal.work_time;
+    if (deal.dismantle_time) oppInput.dismantleTime = deal.dismantle_time;
+
     const oppResp = await gql(
       twenty.apiUrl,
       twenty.apiToken,

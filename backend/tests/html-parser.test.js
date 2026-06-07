@@ -44,6 +44,14 @@ describe('parseDealDescription', () => {
     expect(branding.quantity).toBe('2 шт.');
   });
 
+  it('extracts time fields from fixture HTML', () => {
+    const { event } = parseDealDescription(fixtureHtml);
+    expect(event.arrivalTime).toBe('00:00');
+    expect(event.readyTime).toBe('08:00');
+    expect(event.workTime).toBe('08:00 - 20:00');
+    expect(event.dismantleTime).toBe('00:00');
+  });
+
   it('returns empty items and empty status for empty HTML', () => {
     const result = parseDealDescription('');
     expect(result.items).toEqual([]);

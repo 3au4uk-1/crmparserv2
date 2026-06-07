@@ -159,8 +159,10 @@ export async function runParsing(startDate, endDate) {
             status = ?, legal_entity = ?, invoice_number = ?,
             budget = ?, discount = ?, contact_name = ?,
             contact_email = ?, contact_company = ?, contact_phone = ?,
-            address = ?, venue_type = ?, content_hash = ?,
-            raw_description = ?, crm_lead_id = ?,
+            address = ?, venue_type = ?,
+            arrival_time = ?, ready_time = ?, work_time = ?, dismantle_time = ?,
+            content_hash = ?,
+            raw_description = ?, crm_lead_id = ?, tony_order_id = ?,
             updated_at = datetime('now')
           WHERE id = ?
         `).run(
@@ -169,8 +171,11 @@ export async function runParsing(startDate, endDate) {
           parsed.meta.status, parsed.meta.legalEntity, parsed.meta.invoiceNumber,
           parsed.meta.budget, parsed.meta.discount, parsed.contact.name,
           parsed.contact.email, parsed.contact.company, parsed.contact.phone,
-          parsed.event.address, parsed.event.venueType, hash,
-          descHtml, event.leadid,
+          parsed.event.address, parsed.event.venueType,
+          parsed.event.arrivalTime || null, parsed.event.readyTime || null,
+          parsed.event.workTime || null, parsed.event.dismantleTime || null,
+          hash,
+          descHtml, event.leadid, titleInfo.tonyOrderId || null,
           existing.id
         );
 
@@ -191,14 +196,18 @@ export async function runParsing(startDate, endDate) {
             start_date, end_date, department, status, legal_entity,
             invoice_number, budget, discount, contact_name, contact_email,
             contact_company, contact_phone, address, venue_type,
-            content_hash, raw_description
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            arrival_time, ready_time, work_time, dismantle_time,
+            tony_order_id, content_hash, raw_description
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           eventId, event.leadid, event.title, titleInfo.companyCode, titleInfo.managerName,
           event.start, event.end, event.department, parsed.meta.status, parsed.meta.legalEntity,
           parsed.meta.invoiceNumber, parsed.meta.budget, parsed.meta.discount, parsed.contact.name,
           parsed.contact.email, parsed.contact.company, parsed.contact.phone,
-          parsed.event.address, parsed.event.venueType, hash, descHtml
+          parsed.event.address, parsed.event.venueType,
+          parsed.event.arrivalTime || null, parsed.event.readyTime || null,
+          parsed.event.workTime || null, parsed.event.dismantleTime || null,
+          titleInfo.tonyOrderId || null, hash, descHtml
         );
 
         const dealId = insert.lastInsertRowid;

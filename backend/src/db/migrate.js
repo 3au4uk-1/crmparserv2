@@ -20,6 +20,11 @@ export function migrate() {
   ensureColumn(db, 'deal_items', 'sync_override', 'TEXT');
   ensureColumn(db, 'deal_items', 'twenty_id', 'TEXT');
   ensureColumn(db, 'deals', 'twenty_error', 'TEXT');
+  ensureColumn(db, 'deals', 'tony_order_id', 'TEXT');
+  ensureColumn(db, 'deals', 'arrival_time', 'TEXT');
+  ensureColumn(db, 'deals', 'ready_time', 'TEXT');
+  ensureColumn(db, 'deals', 'work_time', 'TEXT');
+  ensureColumn(db, 'deals', 'dismantle_time', 'TEXT');
 
   console.log('Database migrated successfully');
 }

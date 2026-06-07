@@ -17,6 +17,10 @@ const EMPTY_RESULT = {
   event: {
     address: '',
     venueType: '',
+    arrivalTime: '',
+    readyTime: '',
+    workTime: '',
+    dismantleTime: '',
   },
   items: [],
 };
@@ -97,6 +101,10 @@ export function parseDealDescription(html) {
     event: {
       address: extractField(text, 'Адрес проведения'),
       venueType: extractField(text, 'Место проведения'),
+      arrivalTime: extractField(text, 'Время приезда'),
+      readyTime: extractField(text, 'Готовность'),
+      workTime: extractField(text, 'Время работы'),
+      dismantleTime: extractField(text, 'Время демонтажа'),
     },
     items: parseItemsTable(html),
   };

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDealTitle } from '../src/services/title-parser.js';
+import { parseDealTitle, extractTonyOrderId } from '../src/services/title-parser.js';
 
 describe('parseDealTitle', () => {
   it('extracts company and manager from standard format', () => {
@@ -39,5 +39,54 @@ describe('parseDealTitle', () => {
     const result = parseDealTitle(' ПРО / 29.05 / Шунькин ');
     expect(result.companyCode).toBe('ПРО');
     expect(result.managerName).toBe('Шунькин');
+  });
+
+  it('includes tonyOrderId in parsed result', () => {
+    const result = parseDealTitle('ПРО/ЯУЗА DFF // Артем // 6 июня // 167910 // ПОСТОПЛАТА/Титова');
+    expect(result.tonyOrderId).toBe('167910');
+  });
+
+  it('returns null tonyOrderId when no number in title', () => {
+    const result = parseDealTitle('ПРО/Сидоров');
+    expect(result.tonyOrderId).toBe(null);
+  });
+});
+
+describe('extractTonyOrderId', () => {
+  it('extracts ID from standard double-slash format', () => {
+    expect(extractTonyOrderId(
+      'ПРО/ЯУЗА DFF // Артем // 6 июня // 167910 // ПОСТОПЛАТА/Титова'
+    )).toBe('167910');
+  });
+
+  it('extracts ID from slash-separated format', () => {
+    expect(extractTonyOrderId(
+      'АРТ/06.05/Владислава мебель/167099/Клепикова'
+    )).toBe('167099');
+  });
+
+  it('extracts last ID when embedded in segment text', () => {
+    expect(extractTonyOrderId(
+      'БС/35610 РБ Ева ротанг 6.06. 169283/Радченкова'
+    )).toBe('169283');
+  });
+
+  it('returns last ID when multiple are present', () => {
+    expect(extractTonyOrderId(
+      'ПРО/29.05-05.06./КАПЫ/ЛУЖНИКИ/В МОМЕНТЕ/167015 /ДОЗАБОР+ПРОДЛЕНИЕ/168973/Шунькин'
+    )).toBe('168973');
+  });
+
+  it('returns null when no 5+ digit number found', () => {
+    expect(extractTonyOrderId('ПРО/Сидоров')).toBe(null);
+  });
+
+  it('returns null for empty/null input', () => {
+    expect(extractTonyOrderId(null)).toBe(null);
+    expect(extractTonyOrderId('')).toBe(null);
+  });
+
+  it('ignores short numbers like dates', () => {
+    expect(extractTonyOrderId('АРТ/06.05/Иванов')).toBe(null);
   });
 });
