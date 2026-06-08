@@ -1,33 +1,43 @@
+import { findBlacklistMatch, isBlacklisted } from './blacklist.js';
+
 const AUTO_ELIGIBLE = new Set(['keyword_match', 'llm_confirmed']);
 
-export function isItemEligibleForTwenty(item) {
+export function isItemEligibleForTwenty(item, blacklist = []) {
   if (item.sync_override === 'include') return true;
   if (item.sync_override === 'exclude') return false;
+  if (isBlacklisted(item.name, blacklist)) return false;
   return AUTO_ELIGIBLE.has(item.classification);
 }
 
-export function getItemEligibleReason(item) {
-  if (!isItemEligibleForTwenty(item)) return null;
+export function getItemEligibleReason(item, blacklist = []) {
+  if (!isItemEligibleForTwenty(item, blacklist)) return null;
   if (item.sync_override === 'include') return 'manual_include';
   if (item.classification === 'keyword_match') return 'keyword_match';
   if (item.classification === 'llm_confirmed') return 'llm_confirmed';
   return 'auto';
 }
 
-export function getItemsForTwenty(items) {
-  return items.filter(isItemEligibleForTwenty);
+export function getItemsForTwenty(items, blacklist = []) {
+  return items.filter((item) => isItemEligibleForTwenty(item, blacklist));
 }
 
-export function enrichDealItems(items) {
-  return items.map((item) => ({
-    ...item,
-    eligibleForTwenty: isItemEligibleForTwenty(item),
-    syncMode: item.sync_override ? 'manual' : 'auto',
-    eligibleReason: getItemEligibleReason(item),
-  }));
+export function enrichDealItems(items, blacklist = []) {
+  return items.map((item) => {
+    const match = findBlacklistMatch(item.name, blacklist);
+    return {
+      ...item,
+      blacklisted: Boolean(match),
+      blacklistMatch: match
+        ? { id: match.id, pattern: match.pattern, matchType: match.matchType }
+        : null,
+      eligibleForTwenty: isItemEligibleForTwenty(item, blacklist),
+      syncMode: item.sync_override ? 'manual' : 'auto',
+      eligibleReason: getItemEligibleReason(item, blacklist),
+    };
+  });
 }
 
-/** Must mirror isItemEligibleForTwenty — NULL != 'exclude' is NULL in SQL, not TRUE. */
+/** @deprecated Use enrichDealItems counts in JS — SQL cannot express substring blacklist */
 export const TWENTY_ELIGIBLE_COUNT_SQL = `
   (SELECT COUNT(*) FROM deal_items di
     WHERE di.deal_id = d.id

@@ -261,6 +261,51 @@ export function useUpdateKeywords() {
   });
 }
 
+export function useBlacklist() {
+  return useQuery({
+    queryKey: ['blacklist'],
+    queryFn: () => api.get('/blacklist').then((r) => r.data.items),
+  });
+}
+
+export function useAddBlacklistItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ pattern, matchType, sourceName }) =>
+      api.post('/blacklist', { pattern, matchType, sourceName }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['blacklist'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal'] });
+    },
+  });
+}
+
+export function useRemoveBlacklistItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => api.delete(`/blacklist/${id}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['blacklist'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal'] });
+    },
+  });
+}
+
+export function useAddItemToBlacklist() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ dealId, itemId }) =>
+      api.post(`/deals/${dealId}/items/${itemId}/blacklist`).then((r) => r.data),
+    onSuccess: (_, { dealId }) => {
+      qc.invalidateQueries({ queryKey: ['blacklist'] });
+      qc.invalidateQueries({ queryKey: ['deal', dealId] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+    },
+  });
+}
+
 export function useCompanies() {
   return useQuery({
     queryKey: ['companies'],

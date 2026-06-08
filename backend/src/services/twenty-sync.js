@@ -1,10 +1,10 @@
 import axios from 'axios';
 import { getDb } from '../db/connection.js';
 import { getTwentyConfig, requireTwentyConfig } from './twenty-config.js';
+import { loadBlacklist } from './blacklist.js';
 import {
   getItemsForTwenty,
   getItemEligibleReason,
-  enrichDealItems,
 } from './twenty-items.js';
 import {
   buildWarehouseItemCreateInput,
@@ -217,7 +217,8 @@ export function buildSyncPreview(dealId) {
   if (!deal) throw new Error(`Deal ${dealId} not found`);
 
   const allItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(dealId);
-  const eligibleItems = getItemsForTwenty(allItems);
+  const blacklist = loadBlacklist(db);
+  const eligibleItems = getItemsForTwenty(allItems, blacklist);
   const eligibleAmount = eligibleItems.reduce((sum, i) => sum + (i.price || 0), 0);
 
   return {
@@ -230,7 +231,7 @@ export function buildSyncPreview(dealId) {
     eligibleItems: eligibleItems.map((item) => ({
       id: item.id,
       name: item.name,
-      reason: getItemEligibleReason(item),
+      reason: getItemEligibleReason(item, blacklist),
     })),
     alreadySynced: Boolean(deal.twenty_id),
     twentyId: deal.twenty_id || null,
@@ -246,7 +247,8 @@ export async function syncDealToTwenty(dealId) {
   if (deal.twenty_id) return { twentyId: deal.twenty_id, action: 'already_synced' };
 
   const allItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(dealId);
-  const items = getItemsForTwenty(allItems);
+  const blacklist = loadBlacklist(db);
+  const items = getItemsForTwenty(allItems, blacklist);
 
   if (items.length === 0) {
     const message = 'Нет позиций для переноса в Twenty';
@@ -368,5 +370,3 @@ export async function syncDealToTwenty(dealId) {
     throw err;
   }
 }
-
-export { enrichDealItems };

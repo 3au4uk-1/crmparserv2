@@ -6,6 +6,9 @@ import {
   useUpdateKeywords,
   useCompanies,
   useClearParsingData,
+  useBlacklist,
+  useAddBlacklistItem,
+  useRemoveBlacklistItem,
 } from '../api';
 
 function Section({ title, children }) {
@@ -40,12 +43,18 @@ function mergeKeywords(existing, incoming) {
 export default function Settings() {
   const { data: settings } = useSettings();
   const { data: keywords } = useKeywords();
+  const { data: blacklist } = useBlacklist();
   const { data: companies } = useCompanies();
   const updateSetting = useUpdateSetting();
   const updateKeywords = useUpdateKeywords();
+  const addBlacklistItem = useAddBlacklistItem();
+  const removeBlacklistItem = useRemoveBlacklistItem();
   const clearParsingData = useClearParsingData();
 
   const [newKeyword, setNewKeyword] = useState('');
+  const [newBlacklistPattern, setNewBlacklistPattern] = useState('');
+  const [newBlacklistMatchType, setNewBlacklistMatchType] = useState('exact');
+  const [blacklistError, setBlacklistError] = useState('');
   const [cookieValue, setCookieValue] = useState('');
 
   useEffect(() => {
@@ -117,6 +126,72 @@ export default function Settings() {
             onClick={addKeyword}
             disabled={!newKeyword.trim()}
             className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
+          >
+            Добавить
+          </button>
+        </div>
+      </Section>
+
+      <Section title="Блеклист позиций">
+        <p className="text-xs text-gray-500 mb-3">
+          Позиции в блеклисте не попадают в Twenty автоматически. Ручная галочка в сделке перебивает блеклист.
+        </p>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {(blacklist || []).map((entry) => (
+            <span
+              key={entry.id}
+              className="inline-flex items-center gap-1 bg-red-50 text-red-700 px-2 py-1 rounded-md text-sm"
+            >
+              {entry.sourceName || entry.pattern}
+              <span className="text-xs text-red-400">
+                ({entry.matchType === 'exact' ? 'точное' : 'фрагмент'})
+              </span>
+              <button
+                onClick={() => removeBlacklistItem.mutate(entry.id)}
+                className="text-red-400 hover:text-red-600"
+              >
+                &times;
+              </button>
+            </span>
+          ))}
+        </div>
+        {blacklistError && (
+          <p className="text-xs text-red-600 mb-2">{blacklistError}</p>
+        )}
+        <div className="flex flex-wrap gap-2 items-end">
+          <input
+            type="text"
+            value={newBlacklistPattern}
+            onChange={(e) => setNewBlacklistPattern(e.target.value)}
+            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm flex-1 min-w-[12rem] max-w-lg"
+            placeholder="Стойка указатель напольная А4"
+          />
+          <select
+            value={newBlacklistMatchType}
+            onChange={(e) => setNewBlacklistMatchType(e.target.value)}
+            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm"
+          >
+            <option value="exact">Точное</option>
+            <option value="substring">Фрагмент</option>
+          </select>
+          <button
+            onClick={() => {
+              setBlacklistError('');
+              addBlacklistItem.mutate(
+                { pattern: newBlacklistPattern, matchType: newBlacklistMatchType },
+                {
+                  onSuccess: () => setNewBlacklistPattern(''),
+                  onError: (err) => {
+                    const msg = err.response?.status === 409
+                      ? 'Уже в блеклисте'
+                      : err.response?.data?.error || 'Ошибка добавления';
+                    setBlacklistError(msg);
+                  },
+                }
+              );
+            }}
+            disabled={!newBlacklistPattern.trim() || addBlacklistItem.isPending}
+            className="px-3 py-1.5 bg-red-600 text-white text-sm rounded-md hover:bg-red-700 disabled:opacity-50"
           >
             Добавить
           </button>

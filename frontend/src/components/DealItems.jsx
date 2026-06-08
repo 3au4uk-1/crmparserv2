@@ -1,4 +1,4 @@
-import { useUpdateItemSyncOverride, useResetSyncOverrides } from '../api';
+import { useUpdateItemSyncOverride, useResetSyncOverrides, useAddItemToBlacklist } from '../api';
 
 const classColors = {
   keyword_match: 'bg-green-50 border-l-4 border-green-400',
@@ -17,10 +17,17 @@ const classLabels = {
 export default function DealItems({ dealId, items, readOnly = false }) {
   const updateOverride = useUpdateItemSyncOverride();
   const resetOverrides = useResetSyncOverrides();
+  const addToBlacklist = useAddItemToBlacklist();
 
   if (!items?.length) return <p className="text-sm text-gray-500 p-3">Нет позиций</p>;
 
   const eligibleCount = items.filter((i) => i.eligibleForTwenty).length;
+
+  function syncLabel(item) {
+    if (item.syncMode === 'manual') return 'вручную';
+    if (item.blacklisted) return 'блеклист';
+    return 'авто';
+  }
 
   function handleCheckboxChange(item, checked) {
     updateOverride.mutate({
@@ -55,6 +62,7 @@ export default function DealItems({ dealId, items, readOnly = false }) {
             <th className="p-2">Цена</th>
             <th className="p-2">Кол-во</th>
             <th className="p-2">Классификация</th>
+            {!readOnly && <th className="p-2 w-28">Действия</th>}
           </tr>
         </thead>
         <tbody>
@@ -69,9 +77,7 @@ export default function DealItems({ dealId, items, readOnly = false }) {
                     onChange={(e) => handleCheckboxChange(item, e.target.checked)}
                     className="rounded"
                   />
-                  <span className="text-xs text-gray-500">
-                    {item.syncMode === 'manual' ? 'вручную' : 'авто'}
-                  </span>
+                  <span className="text-xs text-gray-500">{syncLabel(item)}</span>
                 </label>
               </td>
               <td className="p-2 font-medium">{item.name}</td>
@@ -80,6 +86,22 @@ export default function DealItems({ dealId, items, readOnly = false }) {
               <td className="p-2">
                 <span className="text-xs">{classLabels[item.classification] || item.classification}</span>
               </td>
+              {!readOnly && (
+                <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                  {item.blacklisted ? (
+                    <span className="text-xs text-red-600">блеклист</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => addToBlacklist.mutate({ dealId, itemId: item.id })}
+                      disabled={addToBlacklist.isPending}
+                      className="text-xs text-red-600 hover:text-red-800 disabled:opacity-50"
+                    >
+                      В блеклист
+                    </button>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

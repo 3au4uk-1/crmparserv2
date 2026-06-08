@@ -1,11 +1,37 @@
 import { Router } from 'express';
 import { getDb } from '../db/connection.js';
-import { syncDealToTwenty, buildSyncPreview, enrichDealItems } from '../services/twenty-sync.js';
-import { TWENTY_ELIGIBLE_COUNT_SQL } from '../services/twenty-items.js';
+import { syncDealToTwenty, buildSyncPreview } from '../services/twenty-sync.js';
+import { enrichDealItems } from '../services/twenty-items.js';
+import { loadBlacklist, createBlacklistEntry } from '../services/blacklist.js';
 
 const router = Router();
 
 const VALID_SYNC_OVERRIDES = new Set(['include', 'exclude', null]);
+
+function attachDealItemCounts(deals, db) {
+  if (!deals.length) return deals;
+  const blacklist = loadBlacklist(db);
+  const ids = deals.map((d) => d.id);
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = db
+    .prepare(`SELECT * FROM deal_items WHERE deal_id IN (${placeholders})`)
+    .all(...ids);
+
+  const byDeal = new Map();
+  for (const row of rows) {
+    if (!byDeal.has(row.deal_id)) byDeal.set(row.deal_id, []);
+    byDeal.get(row.deal_id).push(row);
+  }
+
+  return deals.map((deal) => {
+    const enriched = enrichDealItems(byDeal.get(deal.id) || [], blacklist);
+    return {
+      ...deal,
+      branding_count: enriched.filter((i) => i.eligibleForTwenty).length,
+      total_items: enriched.length,
+    };
+  });
+}
 
 router.get('/', (req, res) => {
   const db = getDb();
@@ -21,14 +47,13 @@ router.get('/', (req, res) => {
   if (from) { where += ' AND d.start_date >= ?'; params.push(from); }
   if (to) { where += ' AND d.start_date <= ?'; params.push(to); }
 
-  const deals = db.prepare(`
-    SELECT d.*,
-      ${TWENTY_ELIGIBLE_COUNT_SQL} as branding_count,
-      (SELECT COUNT(*) FROM deal_items WHERE deal_id = d.id) as total_items
+  const rawDeals = db.prepare(`
+    SELECT d.*
     FROM deals d WHERE ${where}
     ORDER BY d.start_date DESC LIMIT ? OFFSET ?
   `).all(...params, limit, offset);
 
+  const deals = attachDealItemCounts(rawDeals, db);
   const total = db.prepare(`SELECT COUNT(*) as count FROM deals d WHERE ${where}`).get(...params);
 
   res.json({ deals, total: total.count, limit, offset });
@@ -58,8 +83,9 @@ router.get('/:id', (req, res) => {
   const db = getDb();
   const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
   if (!deal) return res.status(404).json({ error: 'Deal not found' });
+  const blacklist = loadBlacklist(db);
   const items = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(req.params.id);
-  const enrichedItems = enrichDealItems(items);
+  const enrichedItems = enrichDealItems(items, blacklist);
   res.json({
     ...deal,
     items: enrichedItems,
@@ -178,6 +204,25 @@ router.patch('/:dealId/items/:itemId/sync-override', (req, res) => {
 
   db.prepare('UPDATE deal_items SET sync_override = ? WHERE id = ?').run(syncOverride, item.id);
   res.json({ success: true });
+});
+
+router.post('/:dealId/items/:itemId/blacklist', (req, res) => {
+  const db = getDb();
+  const item = db
+    .prepare('SELECT id, name FROM deal_items WHERE id = ? AND deal_id = ?')
+    .get(req.params.itemId, req.params.dealId);
+  if (!item) return res.status(404).json({ error: 'Item not found' });
+
+  try {
+    const entry = createBlacklistEntry(db, {
+      pattern: item.name,
+      matchType: 'exact',
+      sourceName: item.name,
+    });
+    res.status(201).json({ item: entry });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
 });
 
 router.patch('/:dealId/items/:itemId', (req, res) => {

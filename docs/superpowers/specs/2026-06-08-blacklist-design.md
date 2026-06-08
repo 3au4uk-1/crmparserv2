@@ -1,7 +1,7 @@
 # Item Blacklist — Design Spec
 
 **Date:** 2026-06-08  
-**Status:** Draft (pending user review)
+**Status:** Approved
 
 ## Problem
 

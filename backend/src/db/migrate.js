@@ -17,6 +17,17 @@ export function migrate() {
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8');
   db.exec(schema);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS blacklist_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pattern TEXT NOT NULL,
+      match_type TEXT NOT NULL CHECK (match_type IN ('exact', 'substring')),
+      source_name TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (pattern, match_type)
+    );
+  `);
+
   ensureColumn(db, 'deal_items', 'sync_override', 'TEXT');
   ensureColumn(db, 'deal_items', 'twenty_id', 'TEXT');
   ensureColumn(db, 'deals', 'twenty_error', 'TEXT');

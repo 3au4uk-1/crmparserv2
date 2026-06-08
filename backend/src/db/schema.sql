@@ -89,6 +89,15 @@ CREATE TABLE IF NOT EXISTS managers (
   UNIQUE(name, company_id)
 );
 
+CREATE TABLE IF NOT EXISTS blacklist_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  pattern TEXT NOT NULL,
+  match_type TEXT NOT NULL CHECK (match_type IN ('exact', 'substring')),
+  source_name TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (pattern, match_type)
+);
+
 INSERT OR IGNORE INTO companies (code, full_name) VALUES ('ПРО', 'ProInteractive');
 INSERT OR IGNORE INTO companies (code, full_name) VALUES ('АРТ', 'Art-Active');
 INSERT OR IGNORE INTO companies (code, full_name) VALUES ('АРЕНДА', 'Arenda');
