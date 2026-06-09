@@ -2,6 +2,7 @@ import {
   buildLineItemCreateInput,
   buildLineItemUpdateInput,
 } from './twenty-line-item.js';
+import { logTwentyStep } from './twenty-sync-log.js';
 
 export function computeLineItemDiff(existingLineItems, eligibleItems) {
   const eligibleNames = new Set(eligibleItems.map((i) => i.name));
@@ -68,13 +69,23 @@ export async function syncLineItemsDiff({
     eligibleItems
   );
 
+  logTwentyStep('line_items.diff', {
+    toUpdate: toUpdate.length,
+    toCreate: toCreate.length,
+    toDelete: toDelete.length,
+    updateNames: toUpdate.map((x) => x.item.name).slice(0, 5),
+    createNames: toCreate.map((x) => x.name).slice(0, 5),
+  });
+
   for (const lineItemId of toDelete) {
+    logTwentyStep('line_items.delete', { lineItemId });
     const resp = await deleteLineItem(gql, apiUrl, apiToken, lineItemId);
     assertHttpSuccess(resp, apiUrl);
     assertGqlSuccess(resp, 'Failed to delete line item in Twenty');
   }
 
   for (const { twentyId, item } of toUpdate) {
+    logTwentyStep('line_items.update', { lineItemId: twentyId, name: item.name, price: item.price });
     const resp = await gql(
       apiUrl,
       apiToken,
@@ -90,6 +101,7 @@ export async function syncLineItemsDiff({
 
   let position = 0;
   for (const item of toCreate) {
+    logTwentyStep('line_items.create', { name: item.name, price: item.price });
     const warehouseItemId = await findOrCreateWarehouseItem(apiUrl, apiToken, item.name);
     const resp = await gql(
       apiUrl,

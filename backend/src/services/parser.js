@@ -241,13 +241,19 @@ export async function runParsing(startDate, endDate) {
       WHERE id = ?
     `).run(inRangeCount, newDeals, updatedDeals, skippedDeals, runId);
 
+    if (dealsToResync.length > 0) {
+      console.log(`[twenty-sync] ${new Date().toISOString()} parse.resync_queue {"count":${dealsToResync.length},"dealIds":${JSON.stringify(dealsToResync)}}`);
+    }
+
     for (let i = 0; i < dealsToResync.length; i++) {
       const dealId = dealsToResync[i];
       if (i > 0) await delay(1000);
+      console.log(`[twenty-sync] ${new Date().toISOString()} parse.resync_start {"dealId":${dealId},"index":${i + 1},"total":${dealsToResync.length}}`);
       try {
         await syncDealToTwenty(dealId);
+        console.log(`[twenty-sync] ${new Date().toISOString()} parse.resync_done {"dealId":${dealId}}`);
       } catch (err) {
-        console.error(`Re-sync failed for deal ${dealId}:`, err.message);
+        console.error(`[twenty-sync] ${new Date().toISOString()} parse.resync_failed {"dealId":${dealId},"error":${JSON.stringify(err.message)}}`);
       }
     }
 

@@ -13,6 +13,14 @@ import {
   listLineItemsForOpportunity,
   syncLineItemsDiff,
 } from './twenty-line-items-sync.js';
+import {
+  beginTwentySyncContext,
+  endTwentySyncContext,
+  logTwenty,
+  logTwentyStep,
+  parseGqlOperation,
+  summarizeGqlVariables,
+} from './twenty-sync-log.js';
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -25,9 +33,20 @@ function isTimeoutError(err) {
 async function gql(apiUrl, apiToken, query, variables = {}, attempt = 0) {
   const maxAttempts = 3;
   const timeoutMs = config.twentyApiTimeoutMs;
+  const operation = parseGqlOperation(query);
+  const startedAt = Date.now();
+
+  logTwenty('info', `gql request start`, {
+    operation,
+    attempt: attempt + 1,
+    maxAttempts,
+    timeoutMs,
+    apiUrl,
+    variables: summarizeGqlVariables(variables),
+  });
 
   try {
-    return await axios.post(
+    const resp = await axios.post(
       apiUrl,
       { query, variables },
       {
@@ -39,17 +58,53 @@ async function gql(apiUrl, apiToken, query, variables = {}, attempt = 0) {
         validateStatus: () => true,
       }
     );
+
+    const durationMs = Date.now() - startedAt;
+    const gqlErrors = resp.data?.errors?.map((e) => e.message) || [];
+
+    logTwenty('info', `gql request done`, {
+      operation,
+      attempt: attempt + 1,
+      durationMs,
+      httpStatus: resp.status,
+      gqlErrors: gqlErrors.length ? gqlErrors : undefined,
+    });
+
+    return resp;
   } catch (err) {
+    const durationMs = Date.now() - startedAt;
+
     if (isTimeoutError(err) && attempt < maxAttempts - 1) {
       const waitMs = 2000 * (attempt + 1);
-      console.warn(`Twenty API timeout (${timeoutMs}ms), retry ${attempt + 2}/${maxAttempts} in ${waitMs}ms`);
+      logTwenty('warn', `gql timeout, retrying`, {
+        operation,
+        attempt: attempt + 1,
+        maxAttempts,
+        durationMs,
+        waitMs,
+        apiUrl,
+      });
       await delay(waitMs);
       return gql(apiUrl, apiToken, query, variables, attempt + 1);
     }
+
+    logTwenty('error', `gql request failed`, {
+      operation,
+      attempt: attempt + 1,
+      maxAttempts,
+      durationMs,
+      apiUrl,
+      error: err.message,
+      code: err.code,
+      variables: summarizeGqlVariables(variables),
+    });
+
     if (isTimeoutError(err)) {
-      throw new Error(`Twenty API timeout after ${maxAttempts} attempts (${timeoutMs}ms each)`);
+      throw new Error(
+        `Twenty API timeout on ${operation} after ${maxAttempts} attempts (${timeoutMs}ms each, apiUrl=${apiUrl})`
+      );
     }
-    throw new Error(err.message || 'Twenty API request failed');
+    throw new Error(`${operation}: ${err.message || 'Twenty API request failed'}`);
   }
 }
 
@@ -249,12 +304,28 @@ async function updateDealInTwenty(dealId, deal, items, twenty) {
   const db = getDb();
   const oppId = deal.twenty_id;
 
+  logTwentyStep('update.resolve_company_person', {
+    companyCode: deal.company_code || null,
+    managerName: deal.manager_name || null,
+  });
+
   const { companyTwentyId, personTwentyId } = await resolveCompanyAndPerson(deal, twenty);
+
+  logTwentyStep('update.resolve_company_person.done', {
+    companyTwentyId,
+    personTwentyId,
+  });
 
   const oppInput = buildOpportunityInput(deal, items, {
     includeStage: false,
     companyTwentyId,
     personTwentyId,
+  });
+
+  logTwentyStep('update.opportunity', {
+    oppId,
+    eligibleItems: items.length,
+    amountMicros: oppInput.amount?.amountMicros,
   });
 
   const oppResp = await gql(
@@ -268,9 +339,16 @@ async function updateDealInTwenty(dealId, deal, items, twenty) {
   assertHttpSuccess(oppResp, twenty.apiUrl);
   assertGqlSuccess(oppResp, 'Failed to update opportunity in Twenty');
 
+  logTwentyStep('update.list_line_items', { oppId });
+
   const existingLineItems = await listLineItemsForOpportunity(
     gql, twenty.apiUrl, twenty.apiToken, oppId
   );
+
+  logTwentyStep('update.line_items_diff', {
+    existingCount: existingLineItems.length,
+    eligibleCount: items.length,
+  });
 
   const warehouseCache = new Map();
   await syncLineItemsDiff({
@@ -290,6 +368,7 @@ async function updateDealInTwenty(dealId, deal, items, twenty) {
   `).run(dealId);
 
   logSyncRun(dealId, 'success', oppId, null, action);
+  logTwentyStep('update.done', { action, itemCount: items.length });
   return { twentyId: oppId, action, itemCount: items.length };
 }
 
@@ -381,29 +460,50 @@ export async function syncDealToTwenty(dealId) {
   const allItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(dealId);
   const blacklist = loadBlacklist(db);
   const items = getItemsForTwenty(allItems, blacklist);
+  const mode = deal.twenty_id ? 'update' : 'create';
 
-  if (deal.twenty_id) {
-    try {
-      return await updateDealInTwenty(dealId, deal, items, twenty);
-    } catch (err) {
-      db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
-      logSyncRun(dealId, 'failed', deal.twenty_id, err.message, 'updated');
-      throw err;
-    }
-  }
+  beginTwentySyncContext({
+    dealId,
+    twentyId: deal.twenty_id || null,
+    mode,
+    title: deal.title,
+  });
 
-  if (items.length === 0) {
-    const message = 'Нет позиций для переноса в Twenty';
-    db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(message, dealId);
-    logSyncRun(dealId, 'failed', null, message, 'created');
-    throw new Error(message);
-  }
+  logTwentyStep('sync.start', {
+    mode,
+    apiUrl: twenty.apiUrl,
+    configSource: twenty.source,
+    timeoutMs: config.twentyApiTimeoutMs,
+    totalItems: allItems.length,
+    eligibleItems: items.length,
+    eligibleNames: items.map((i) => i.name).slice(0, 10),
+  });
 
   try {
+    if (deal.twenty_id) {
+      return await updateDealInTwenty(dealId, deal, items, twenty);
+    }
+
+    if (items.length === 0) {
+      const message = 'Нет позиций для переноса в Twenty';
+      db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(message, dealId);
+      logSyncRun(dealId, 'failed', null, message, 'created');
+      logTwenty('warn', 'sync.aborted', { reason: message });
+      throw new Error(message);
+    }
+
     return await createDealInTwenty(dealId, deal, items, twenty);
   } catch (err) {
-    db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
-    logSyncRun(dealId, 'failed', null, err.message, 'created');
+    logTwenty('error', 'sync.failed', { mode, error: err.message });
+    if (deal.twenty_id) {
+      db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
+      logSyncRun(dealId, 'failed', deal.twenty_id, err.message, 'updated');
+    } else {
+      db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
+      logSyncRun(dealId, 'failed', null, err.message, 'created');
+    }
     throw err;
+  } finally {
+    endTwentySyncContext();
   }
 }
