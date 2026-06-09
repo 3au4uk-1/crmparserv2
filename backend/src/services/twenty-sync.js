@@ -6,11 +6,12 @@ import {
   getItemsForTwenty,
   getItemEligibleReason,
 } from './twenty-items.js';
+import { buildWarehouseItemCreateInput } from './twenty-line-item.js';
+import { buildOpportunityInput } from './twenty-opportunity.js';
 import {
-  buildWarehouseItemCreateInput,
-  buildLineItemCreateInput,
-  buildLineItemUpdateInput,
-} from './twenty-line-item.js';
+  listLineItemsForOpportunity,
+  syncLineItemsDiff,
+} from './twenty-line-items-sync.js';
 
 async function gql(apiUrl, apiToken, query, variables = {}) {
   try {
@@ -59,11 +60,11 @@ function getOpportunityStage() {
   return row?.value?.trim() || 'NEW';
 }
 
-function logSyncRun(dealId, status, twentyId, error) {
+function logSyncRun(dealId, status, twentyId, error, action = null) {
   const db = getDb();
   db.prepare(
-    'INSERT INTO sync_runs (deal_id, status, twenty_id, error) VALUES (?, ?, ?, ?)'
-  ).run(dealId, status, twentyId || null, error || null);
+    'INSERT INTO sync_runs (deal_id, status, action, twenty_id, error) VALUES (?, ?, ?, ?, ?)'
+  ).run(dealId, status, action, twentyId || null, error || null);
 }
 
 async function findOrCreateWarehouseItem(apiUrl, apiToken, name) {
@@ -95,23 +96,6 @@ async function findOrCreateWarehouseItem(apiUrl, apiToken, name) {
   const newId = createResp.data?.data?.createProduct?.id;
   if (!newId) throw new Error(`Failed to create warehouse item "${name}" in Twenty`);
   return newId;
-}
-
-async function findLineItemByNameAndOpp(apiUrl, apiToken, name, oppId) {
-  const resp = await gql(
-    apiUrl,
-    apiToken,
-    `query FindLineItem($name: String!, $oppId: ID!) {
-      dealLineItems(filter: { and: [
-        { name: { eq: $name } },
-        { opportunityId: { eq: $oppId } }
-      ]}) { edges { node { id } } }
-    }`,
-    { name, oppId }
-  );
-  assertHttpSuccess(resp, apiUrl);
-  assertGqlSuccess(resp, 'Failed to search line item in Twenty');
-  return resp.data?.data?.dealLineItems?.edges?.[0]?.node?.id || null;
 }
 
 async function findOrCreateCompany(apiUrl, apiToken, code) {
@@ -210,6 +194,121 @@ async function findOrCreatePerson(apiUrl, apiToken, managerName, companyTwentyId
   return newId;
 }
 
+async function resolveCompanyAndPerson(deal, twenty) {
+  const companyTwentyId = deal.company_code
+    ? await findOrCreateCompany(twenty.apiUrl, twenty.apiToken, deal.company_code)
+    : null;
+
+  const personTwentyId = deal.manager_name
+    ? await findOrCreatePerson(twenty.apiUrl, twenty.apiToken, deal.manager_name, companyTwentyId)
+    : null;
+
+  return { companyTwentyId, personTwentyId };
+}
+
+const lineItemSyncDeps = {
+  gql,
+  assertHttpSuccess,
+  assertGqlSuccess,
+  findOrCreateWarehouseItem,
+};
+
+async function updateDealInTwenty(dealId, deal, items, twenty) {
+  const db = getDb();
+  const oppId = deal.twenty_id;
+
+  const { companyTwentyId, personTwentyId } = await resolveCompanyAndPerson(deal, twenty);
+
+  const oppInput = buildOpportunityInput(deal, items, {
+    includeStage: false,
+    companyTwentyId,
+    personTwentyId,
+  });
+
+  const oppResp = await gql(
+    twenty.apiUrl,
+    twenty.apiToken,
+    `mutation UpdateOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
+      updateOpportunity(id: $id, data: $input) { id }
+    }`,
+    { id: oppId, input: oppInput }
+  );
+  assertHttpSuccess(oppResp, twenty.apiUrl);
+  assertGqlSuccess(oppResp, 'Failed to update opportunity in Twenty');
+
+  const existingLineItems = await listLineItemsForOpportunity(
+    gql, twenty.apiUrl, twenty.apiToken, oppId
+  );
+
+  await syncLineItemsDiff({
+    ...lineItemSyncDeps,
+    apiUrl: twenty.apiUrl,
+    apiToken: twenty.apiToken,
+    oppId,
+    eligibleItems: items,
+    existingLineItems,
+    db,
+  });
+
+  const action = items.length === 0 ? 'updated_empty' : 'updated';
+
+  db.prepare(`
+    UPDATE deals SET synced_at = datetime('now'), twenty_error = NULL WHERE id = ?
+  `).run(dealId);
+
+  logSyncRun(dealId, 'success', oppId, null, action);
+  return { twentyId: oppId, action, itemCount: items.length };
+}
+
+async function createDealInTwenty(dealId, deal, items, twenty) {
+  const db = getDb();
+
+  const { companyTwentyId, personTwentyId } = await resolveCompanyAndPerson(deal, twenty);
+
+  const oppInput = buildOpportunityInput(deal, items, {
+    includeStage: true,
+    stage: getOpportunityStage(),
+    companyTwentyId,
+    personTwentyId,
+  });
+
+  const oppResp = await gql(
+    twenty.apiUrl,
+    twenty.apiToken,
+    `mutation CreateOpportunity($input: OpportunityCreateInput!) {
+      createOpportunity(data: $input) { id }
+    }`,
+    { input: oppInput }
+  );
+  assertHttpSuccess(oppResp, twenty.apiUrl);
+  assertGqlSuccess(oppResp, 'Failed to create opportunity in Twenty');
+
+  const oppId = oppResp.data?.data?.createOpportunity?.id;
+  if (!oppId) throw new Error('Failed to create opportunity in Twenty');
+
+  await syncLineItemsDiff({
+    ...lineItemSyncDeps,
+    apiUrl: twenty.apiUrl,
+    apiToken: twenty.apiToken,
+    oppId,
+    eligibleItems: items,
+    existingLineItems: [],
+    db,
+  });
+
+  db.prepare(`
+    UPDATE deals SET
+      twenty_id = ?,
+      synced_at = datetime('now'),
+      approval_status = 'synced',
+      twenty_error = NULL
+    WHERE id = ?
+  `).run(oppId, dealId);
+
+  logSyncRun(dealId, 'success', oppId, null, 'created');
+  return { twentyId: oppId, action: 'created', itemCount: items.length };
+}
+
 export function buildSyncPreview(dealId) {
   const twenty = getTwentyConfig();
   const db = getDb();
@@ -244,129 +343,33 @@ export async function syncDealToTwenty(dealId) {
   const db = getDb();
   const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(dealId);
   if (!deal) throw new Error(`Deal ${dealId} not found`);
-  if (deal.twenty_id) return { twentyId: deal.twenty_id, action: 'already_synced' };
 
   const allItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(dealId);
   const blacklist = loadBlacklist(db);
   const items = getItemsForTwenty(allItems, blacklist);
 
+  if (deal.twenty_id) {
+    try {
+      return await updateDealInTwenty(dealId, deal, items, twenty);
+    } catch (err) {
+      db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
+      logSyncRun(dealId, 'failed', deal.twenty_id, err.message, 'updated');
+      throw err;
+    }
+  }
+
   if (items.length === 0) {
     const message = 'Нет позиций для переноса в Twenty';
     db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(message, dealId);
-    logSyncRun(dealId, 'failed', null, message);
+    logSyncRun(dealId, 'failed', null, message, 'created');
     throw new Error(message);
   }
 
   try {
-    const companyTwentyId = deal.company_code
-      ? await findOrCreateCompany(twenty.apiUrl, twenty.apiToken, deal.company_code)
-      : null;
-
-    const personTwentyId = deal.manager_name
-      ? await findOrCreatePerson(twenty.apiUrl, twenty.apiToken, deal.manager_name, companyTwentyId)
-      : null;
-
-    const brandingBudget = items.reduce((sum, i) => sum + (i.price || 0), 0);
-
-    const oppInput = {
-      name: deal.title || `Deal ${deal.crm_event_id}`,
-      stage: getOpportunityStage(),
-      closeDate: deal.start_date || deal.end_date || new Date().toISOString(),
-      amount: { amountMicros: Math.round(brandingBudget * 1000000), currencyCode: 'RUB' },
-    };
-    if (companyTwentyId) oppInput.companyId = companyTwentyId;
-    if (personTwentyId) oppInput.pointOfContactId = personTwentyId;
-
-    if (deal.tony_order_id) {
-      oppInput.tonyLink = {
-        primaryLinkUrl: `https://crm.apihide.com/orders/orders_edit/?id=${deal.tony_order_id}`,
-        primaryLinkLabel: `Tony #${deal.tony_order_id}`,
-      };
-    }
-    if (deal.crm_lead_id) {
-      const leadId = deal.crm_lead_id.trim();
-      oppInput.bitrixLink = {
-        primaryLinkUrl: `https://prointeractive.bitrix24.ru/crm/deal/details/${leadId}/?any`,
-        primaryLinkLabel: `Bitrix #${leadId}`,
-      };
-    }
-
-    if (deal.arrival_time) oppInput.arrivalTime = deal.arrival_time;
-    if (deal.ready_time) oppInput.readyTime = deal.ready_time;
-    if (deal.work_time) oppInput.workTime = deal.work_time;
-    if (deal.dismantle_time) oppInput.dismantleTime = deal.dismantle_time;
-
-    const oppResp = await gql(
-      twenty.apiUrl,
-      twenty.apiToken,
-      `mutation CreateOpportunity($input: OpportunityCreateInput!) {
-        createOpportunity(data: $input) { id }
-      }`,
-      { input: oppInput }
-    );
-    assertHttpSuccess(oppResp, twenty.apiUrl);
-    assertGqlSuccess(oppResp, 'Failed to create opportunity in Twenty');
-
-    const oppId = oppResp.data?.data?.createOpportunity?.id;
-    if (!oppId) throw new Error('Failed to create opportunity in Twenty');
-
-    const lineItemIds = [];
-    for (let i = 0; i < items.length; i++) {
-      const warehouseItemId = await findOrCreateWarehouseItem(
-        twenty.apiUrl, twenty.apiToken, items[i].name
-      );
-
-      const existingId = await findLineItemByNameAndOpp(
-        twenty.apiUrl, twenty.apiToken, items[i].name, oppId
-      );
-
-      let lineItemId;
-      if (existingId) {
-        const updateResp = await gql(
-          twenty.apiUrl,
-          twenty.apiToken,
-          `mutation UpdateDealLineItem($id: ID!, $input: DealLineItemUpdateInput!) {
-            updateDealLineItem(id: $id, data: $input) { id }
-          }`,
-          { id: existingId, input: buildLineItemUpdateInput(items[i]) }
-        );
-        assertHttpSuccess(updateResp, twenty.apiUrl);
-        assertGqlSuccess(updateResp, `Failed to update line item "${items[i].name}" in Twenty`);
-        lineItemId = existingId;
-      } else {
-        const createResp = await gql(
-          twenty.apiUrl,
-          twenty.apiToken,
-          `mutation CreateDealLineItem($input: DealLineItemCreateInput!) {
-            createDealLineItem(data: $input) { id }
-          }`,
-          { input: buildLineItemCreateInput(items[i], warehouseItemId, oppId, i === 0 ? 'first' : i) }
-        );
-        assertHttpSuccess(createResp, twenty.apiUrl);
-        assertGqlSuccess(createResp, `Failed to create line item "${items[i].name}" in Twenty`);
-        lineItemId = createResp.data?.data?.createDealLineItem?.id;
-        if (!lineItemId) throw new Error(`Failed to create line item "${items[i].name}" in Twenty`);
-      }
-
-      lineItemIds.push(lineItemId);
-      db.prepare('UPDATE deal_items SET twenty_id = ? WHERE id = ?').run(lineItemId, items[i].id);
-    }
-
-    db.prepare(`
-      UPDATE deals SET
-        twenty_id = ?,
-        synced_at = datetime('now'),
-        approval_status = 'synced',
-        twenty_error = NULL
-      WHERE id = ?
-    `).run(oppId, dealId);
-
-    logSyncRun(dealId, 'success', oppId, null);
-
-    return { twentyId: oppId, action: 'created', itemCount: items.length, lineItemIds };
+    return await createDealInTwenty(dealId, deal, items, twenty);
   } catch (err) {
     db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
-    logSyncRun(dealId, 'failed', null, err.message);
+    logSyncRun(dealId, 'failed', null, err.message, 'created');
     throw err;
   }
 }

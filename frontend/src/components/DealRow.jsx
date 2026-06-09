@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useDeal, useApproveDeal, useRejectDeal, useDeleteDeal } from '../api';
+import { useDeal, useApproveDeal, useRejectDeal, useDeleteDeal, useResyncDeal } from '../api';
 import StatusBadge from './StatusBadge';
 import DealItems from './DealItems';
 
@@ -9,6 +9,7 @@ export default function DealRow({ deal, selected, onSelect }) {
   const approve = useApproveDeal();
   const reject = useRejectDeal();
   const deleteDeal = useDeleteDeal();
+  const resync = useResyncDeal();
 
   return (
     <>
@@ -56,6 +57,22 @@ export default function DealRow({ deal, selected, onSelect }) {
                 className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 disabled:opacity-50"
               >
                 ✗
+              </button>
+            </div>
+          )}
+          {deal.approval_status === 'synced' && (
+            <div className="flex flex-col gap-1">
+              {deal.synced_at && (
+                <span className="text-xs text-gray-500" title={deal.synced_at}>
+                  Синхр. {new Date(deal.synced_at).toLocaleString('ru-RU')}
+                </span>
+              )}
+              <button
+                onClick={() => resync.mutate(deal.id)}
+                disabled={resync.isPending}
+                className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                Пересинхр.
               </button>
             </div>
           )}

@@ -56,6 +56,7 @@ function SyncLogsTable({ logs }) {
           <th className="p-3">Время</th>
           <th className="p-3">Сделка</th>
           <th className="p-3">Статус</th>
+          <th className="p-3">Действие</th>
           <th className="p-3">Twenty ID</th>
           <th className="p-3">Ошибка</th>
         </tr>
@@ -71,6 +72,12 @@ function SyncLogsTable({ logs }) {
               }`}>
                 {log.status}
               </span>
+            </td>
+            <td className="p-3 text-xs text-gray-600">
+              {log.action === 'created' ? 'создание'
+                : log.action === 'updated' ? 'обновление'
+                : log.action === 'updated_empty' ? 'обнуление'
+                : '—'}
             </td>
             <td className="p-3 font-mono text-xs">{log.twenty_id || '—'}</td>
             <td className="p-3 text-red-600 max-w-xs truncate">{log.error || ''}</td>

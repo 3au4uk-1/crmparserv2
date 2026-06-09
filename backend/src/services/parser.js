@@ -7,6 +7,8 @@ import { parseDealDescription } from './html-parser.js';
 import { parseDealTitle } from './title-parser.js';
 import { classifyItems } from './classifier.js';
 import { formatCrmDateTime, isEventInRange, parseEventDate } from '../utils/crm-dates.js';
+import { syncDealToTwenty } from './twenty-sync.js';
+import { buildOverrideMap, replaceDealItemsPreservingOverrides } from './deal-items-update.js';
 
 function buildUrl(path) {
   const base = config.crmBaseUrl.replace(/\/$/, '');
@@ -109,6 +111,7 @@ export async function runParsing(startDate, endDate) {
     let updatedDeals = 0;
     let skippedDeals = 0;
     let outOfRange = 0;
+    const dealsToResync = [];
 
     for (const event of events) {
       if (!isEventInRange(event, startDate, endDate)) {
@@ -138,7 +141,7 @@ export async function runParsing(startDate, endDate) {
       const hash = contentHash(descHtml);
 
       const existing = db.prepare(
-        'SELECT id, content_hash FROM deals WHERE crm_event_id = ?'
+        'SELECT id, content_hash, twenty_id FROM deals WHERE crm_event_id = ?'
       ).get(eventId);
 
       if (existing && existing.content_hash === hash) {
@@ -179,13 +182,12 @@ export async function runParsing(startDate, endDate) {
           existing.id
         );
 
-        db.prepare('DELETE FROM deal_items WHERE deal_id = ?').run(existing.id);
+        const existingItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(existing.id);
+        const overrideMap = buildOverrideMap(existingItems);
+        replaceDealItemsPreservingOverrides(db, existing.id, classifiedItems, overrideMap);
 
-        for (const item of classifiedItems) {
-          db.prepare(`
-            INSERT INTO deal_items (deal_id, name, price, quantity, discount, classification, classification_confidence)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          `).run(existing.id, item.name, item.price, item.quantity, item.discount, item.classification, item.classification_confidence);
+        if (existing.twenty_id) {
+          dealsToResync.push(existing.id);
         }
 
         updatedDeals++;
@@ -238,6 +240,14 @@ export async function runParsing(startDate, endDate) {
         total_events = ?, new_deals = ?, updated_deals = ?, skipped_deals = ?
       WHERE id = ?
     `).run(inRangeCount, newDeals, updatedDeals, skippedDeals, runId);
+
+    for (const dealId of dealsToResync) {
+      try {
+        await syncDealToTwenty(dealId);
+      } catch (err) {
+        console.error(`Re-sync failed for deal ${dealId}:`, err.message);
+      }
+    }
 
     return { runId, total: inRangeCount, newDeals, updatedDeals, skippedDeals, outOfRange };
   } catch (err) {

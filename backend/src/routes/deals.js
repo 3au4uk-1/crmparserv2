@@ -94,6 +94,22 @@ router.get('/:id', (req, res) => {
   });
 });
 
+router.post('/:id/resync', async (req, res, next) => {
+  try {
+    const db = getDb();
+    const dealId = Number(req.params.id);
+    const deal = db.prepare('SELECT id, twenty_id FROM deals WHERE id = ?').get(dealId);
+    if (!deal) return res.status(404).json({ error: 'Deal not found' });
+    if (!deal.twenty_id) {
+      return res.status(400).json({ error: 'Deal is not synced to Twenty yet' });
+    }
+    const result = await syncDealToTwenty(dealId);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.patch('/:id/approve', async (req, res, next) => {
   try {
     const db = getDb();

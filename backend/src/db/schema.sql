@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS sync_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
   status TEXT NOT NULL,
+  action TEXT,
   twenty_id TEXT,
   error TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))

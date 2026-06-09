@@ -116,6 +116,18 @@ export function useApproveDeal() {
   });
 }
 
+export function useResyncDeal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => api.post(`/deals/${id}/resync`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal-stats'] });
+      qc.invalidateQueries({ queryKey: ['sync-logs'] });
+    },
+  });
+}
+
 export function useRejectDeal() {
   const qc = useQueryClient();
   return useMutation({

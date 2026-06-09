@@ -36,6 +36,7 @@ export function migrate() {
   ensureColumn(db, 'deals', 'ready_time', 'TEXT');
   ensureColumn(db, 'deals', 'work_time', 'TEXT');
   ensureColumn(db, 'deals', 'dismantle_time', 'TEXT');
+  ensureColumn(db, 'sync_runs', 'action', 'TEXT');
 
   console.log('Database migrated successfully');
 }
