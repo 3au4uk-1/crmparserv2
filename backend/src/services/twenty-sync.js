@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { config } from '../config.js';
 import { getDb } from '../db/connection.js';
 import { getTwentyConfig, requireTwentyConfig } from './twenty-config.js';
 import { loadBlacklist } from './blacklist.js';
@@ -13,7 +14,18 @@ import {
   syncLineItemsDiff,
 } from './twenty-line-items-sync.js';
 
-async function gql(apiUrl, apiToken, query, variables = {}) {
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTimeoutError(err) {
+  return err.code === 'ECONNABORTED' || /timeout/i.test(err.message || '');
+}
+
+async function gql(apiUrl, apiToken, query, variables = {}, attempt = 0) {
+  const maxAttempts = 3;
+  const timeoutMs = config.twentyApiTimeoutMs;
+
   try {
     return await axios.post(
       apiUrl,
@@ -23,11 +35,20 @@ async function gql(apiUrl, apiToken, query, variables = {}) {
           Authorization: `Bearer ${apiToken}`,
           'Content-Type': 'application/json',
         },
-        timeout: 15000,
+        timeout: timeoutMs,
         validateStatus: () => true,
       }
     );
   } catch (err) {
+    if (isTimeoutError(err) && attempt < maxAttempts - 1) {
+      const waitMs = 2000 * (attempt + 1);
+      console.warn(`Twenty API timeout (${timeoutMs}ms), retry ${attempt + 2}/${maxAttempts} in ${waitMs}ms`);
+      await delay(waitMs);
+      return gql(apiUrl, apiToken, query, variables, attempt + 1);
+    }
+    if (isTimeoutError(err)) {
+      throw new Error(`Twenty API timeout after ${maxAttempts} attempts (${timeoutMs}ms each)`);
+    }
     throw new Error(err.message || 'Twenty API request failed');
   }
 }
@@ -67,7 +88,11 @@ function logSyncRun(dealId, status, twentyId, error, action = null) {
   ).run(dealId, status, action, twentyId || null, error || null);
 }
 
-async function findOrCreateWarehouseItem(apiUrl, apiToken, name) {
+async function findOrCreateWarehouseItem(apiUrl, apiToken, name, warehouseCache) {
+  if (warehouseCache?.has(name)) {
+    return warehouseCache.get(name);
+  }
+
   const searchResp = await gql(
     apiUrl,
     apiToken,
@@ -80,7 +105,10 @@ async function findOrCreateWarehouseItem(apiUrl, apiToken, name) {
   assertGqlSuccess(searchResp, 'Failed to search warehouse item in Twenty');
 
   const existing = searchResp.data?.data?.products?.edges?.[0]?.node;
-  if (existing) return existing.id;
+  if (existing) {
+    warehouseCache?.set(name, existing.id);
+    return existing.id;
+  }
 
   const createResp = await gql(
     apiUrl,
@@ -95,6 +123,7 @@ async function findOrCreateWarehouseItem(apiUrl, apiToken, name) {
 
   const newId = createResp.data?.data?.createProduct?.id;
   if (!newId) throw new Error(`Failed to create warehouse item "${name}" in Twenty`);
+  warehouseCache?.set(name, newId);
   return newId;
 }
 
@@ -206,12 +235,15 @@ async function resolveCompanyAndPerson(deal, twenty) {
   return { companyTwentyId, personTwentyId };
 }
 
-const lineItemSyncDeps = {
-  gql,
-  assertHttpSuccess,
-  assertGqlSuccess,
-  findOrCreateWarehouseItem,
-};
+function createLineItemSyncDeps(warehouseCache) {
+  return {
+    gql,
+    assertHttpSuccess,
+    assertGqlSuccess,
+    findOrCreateWarehouseItem: (apiUrl, apiToken, name) =>
+      findOrCreateWarehouseItem(apiUrl, apiToken, name, warehouseCache),
+  };
+}
 
 async function updateDealInTwenty(dealId, deal, items, twenty) {
   const db = getDb();
@@ -240,8 +272,9 @@ async function updateDealInTwenty(dealId, deal, items, twenty) {
     gql, twenty.apiUrl, twenty.apiToken, oppId
   );
 
+  const warehouseCache = new Map();
   await syncLineItemsDiff({
-    ...lineItemSyncDeps,
+    ...createLineItemSyncDeps(warehouseCache),
     apiUrl: twenty.apiUrl,
     apiToken: twenty.apiToken,
     oppId,
@@ -286,8 +319,9 @@ async function createDealInTwenty(dealId, deal, items, twenty) {
   const oppId = oppResp.data?.data?.createOpportunity?.id;
   if (!oppId) throw new Error('Failed to create opportunity in Twenty');
 
+  const warehouseCache = new Map();
   await syncLineItemsDiff({
-    ...lineItemSyncDeps,
+    ...createLineItemSyncDeps(warehouseCache),
     apiUrl: twenty.apiUrl,
     apiToken: twenty.apiToken,
     oppId,

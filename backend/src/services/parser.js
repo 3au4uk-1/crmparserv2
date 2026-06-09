@@ -241,7 +241,9 @@ export async function runParsing(startDate, endDate) {
       WHERE id = ?
     `).run(inRangeCount, newDeals, updatedDeals, skippedDeals, runId);
 
-    for (const dealId of dealsToResync) {
+    for (let i = 0; i < dealsToResync.length; i++) {
+      const dealId = dealsToResync[i];
+      if (i > 0) await delay(1000);
       try {
         await syncDealToTwenty(dealId);
       } catch (err) {
