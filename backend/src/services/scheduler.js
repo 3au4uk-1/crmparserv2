@@ -1,7 +1,6 @@
 import cron from 'node-cron';
 import { getDb } from '../db/connection.js';
 import { runParsing } from './parser.js';
-import { syncDealToTwenty } from './twenty-sync.js';
 import { getDefaultParseRange } from '../utils/crm-dates.js';
 
 let scheduledTask = null;
@@ -17,25 +16,6 @@ async function scheduledParse() {
   try {
     const { start, end } = getDefaultParseRange();
     await runParsing(start, end);
-
-    const approvalMode = getSetting('approval_mode');
-    if (approvalMode === 'auto' || approvalMode === 'semi') {
-      const db = getDb();
-      let query = "SELECT d.id FROM deals d WHERE d.approval_status = 'pending'";
-
-      if (approvalMode === 'semi') {
-        query += " AND EXISTS (SELECT 1 FROM deal_items di WHERE di.deal_id = d.id AND di.classification = 'keyword_match')";
-      }
-
-      const dealsToSync = db.prepare(query).all();
-      for (const deal of dealsToSync) {
-        try {
-          await syncDealToTwenty(deal.id);
-        } catch (err) {
-          console.error(`Auto-sync failed for deal ${deal.id}:`, err.message);
-        }
-      }
-    }
 
     console.log(`[${new Date().toISOString()}] Scheduled parsing completed`);
   } catch (err) {

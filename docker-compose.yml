@@ -17,7 +17,14 @@ services:
       - TWENTY_API_TIMEOUT_MS=${TWENTY_API_TIMEOUT_MS:-60000}
       - SESSION_SECRET=${SESSION_SECRET:-change-me-in-production}
       - APP_PASSWORD=${APP_PASSWORD}
+    networks:
+      - twenty
     restart: unless-stopped
 
 volumes:
   crmparser-data:
+
+networks:
+  twenty:
+    external: true
+    name: ${TWENTY_DOCKER_NETWORK:-twenty_default}

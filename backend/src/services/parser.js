@@ -8,6 +8,7 @@ import { parseDealTitle } from './title-parser.js';
 import { classifyItems } from './classifier.js';
 import { formatCrmDateTime, isEventInRange, parseEventDate } from '../utils/crm-dates.js';
 import { syncDealToTwenty } from './twenty-sync.js';
+import { processAutoApprovals } from './auto-approve.js';
 import { buildOverrideMap, replaceDealItemsPreservingOverrides } from './deal-items-update.js';
 
 function buildUrl(path) {
@@ -257,7 +258,17 @@ export async function runParsing(startDate, endDate) {
       }
     }
 
-    return { runId, total: inRangeCount, newDeals, updatedDeals, skippedDeals, outOfRange };
+    const autoApprove = await processAutoApprovals();
+
+    return {
+      runId,
+      total: inRangeCount,
+      newDeals,
+      updatedDeals,
+      skippedDeals,
+      outOfRange,
+      autoApprove,
+    };
   } catch (err) {
     db.prepare(`
       UPDATE parse_runs SET finished_at = datetime('now'), status = 'failed', error = ? WHERE id = ?
