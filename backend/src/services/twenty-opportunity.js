@@ -1,4 +1,15 @@
-export const DEFAULT_OPPORTUNITY_STAGE = 'Новый';
+/** Twenty GraphQL enum values for Opportunity.stage (UI labels are localized separately). */
+export const OPPORTUNITY_STAGE_OPTIONS = [
+  { value: 'NOVYY', label: 'Новый' },
+  { value: 'V_RABOTE', label: 'В работе' },
+  { value: 'V_PECHATI', label: 'В печати' },
+  { value: 'OKLEYKA', label: 'Оклейка' },
+  { value: 'RESTOVRACIYA', label: 'Реставрация' },
+  { value: 'GOTOVO', label: 'Готово' },
+  { value: 'OTMENA', label: 'Отмена' },
+];
+
+export const DEFAULT_OPPORTUNITY_STAGE = 'NOVYY';
 
 export function buildOpportunityInput(deal, items, options = {}) {
   const {

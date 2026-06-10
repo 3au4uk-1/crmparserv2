@@ -11,6 +11,16 @@ import {
   useRemoveBlacklistItem,
 } from '../api';
 
+const OPPORTUNITY_STAGES = [
+  { value: 'NOVYY', label: 'Новый' },
+  { value: 'V_RABOTE', label: 'В работе' },
+  { value: 'V_PECHATI', label: 'В печати' },
+  { value: 'OKLEYKA', label: 'Оклейка' },
+  { value: 'RESTOVRACIYA', label: 'Реставрация' },
+  { value: 'GOTOVO', label: 'Готово' },
+  { value: 'OTMENA', label: 'Отмена' },
+];
+
 function Section({ title, children }) {
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
@@ -282,14 +292,19 @@ export default function Settings() {
           </div>
           <div>
             <label className="block text-sm text-gray-600 mb-1">Стадия новой сделки</label>
-            <input
-              defaultValue={settings?.opportunity_stage || 'Новый'}
-              onBlur={e => updateSetting.mutate({ key: 'opportunity_stage', value: e.target.value })}
-              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-full"
-              placeholder="Новый"
-            />
+            <select
+              value={settings?.opportunity_stage || 'NOVYY'}
+              onChange={e => updateSetting.mutate({ key: 'opportunity_stage', value: e.target.value })}
+              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-full max-w-xs"
+            >
+              {OPPORTUNITY_STAGES.map((stage) => (
+                <option key={stage.value} value={stage.value}>
+                  {stage.label} ({stage.value})
+                </option>
+              ))}
+            </select>
             <p className="text-xs text-gray-400 mt-1">
-              Значение поля «Стадия» в Twenty при создании Opportunity (раньше было NEW).
+              В API Twenty передаётся код стадии, не подпись из интерфейса.
             </p>
           </div>
         </div>

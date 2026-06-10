@@ -3,6 +3,10 @@ import { loadBlacklist } from './blacklist.js';
 import { getItemsForTwenty } from './twenty-items.js';
 import { syncDealToTwenty } from './twenty-sync.js';
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function getSetting(key) {
   const db = getDb();
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
@@ -39,12 +43,15 @@ export async function processAutoApprovals() {
 
   const results = { mode, processed: 0, synced: 0, failed: 0, skipped: 0, errors: [] };
 
-  for (const { id } of pending) {
+  for (let i = 0; i < pending.length; i++) {
+    const { id } = pending[i];
     const items = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(id);
     if (!shouldAutoApproveDeal(items, blacklist, mode)) {
       results.skipped++;
       continue;
     }
+
+    if (results.processed > 0) await delay(1000);
 
     results.processed++;
     try {

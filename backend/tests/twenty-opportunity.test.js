@@ -26,7 +26,7 @@ describe('buildOpportunityInput', () => {
     });
 
     expect(input.name).toBe('ПРО Иванов 12345');
-    expect(input.stage).toBe('Новый');
+    expect(input.stage).toBe('NOVYY');
     expect(input.closeDate).toBe('2026-06-10');
     expect(input.amount).toEqual({ amountMicros: 15000000000, currencyCode: 'RUB' });
     expect(input.companyId).toBe('comp-1');

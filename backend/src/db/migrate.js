@@ -39,10 +39,10 @@ export function migrate() {
   ensureColumn(db, 'sync_runs', 'action', 'TEXT');
 
   db.prepare(
-    "INSERT OR IGNORE INTO settings (key, value) VALUES ('opportunity_stage', 'Новый')"
+    "INSERT OR IGNORE INTO settings (key, value) VALUES ('opportunity_stage', 'NOVYY')"
   ).run();
   db.prepare(
-    "UPDATE settings SET value = 'Новый' WHERE key = 'opportunity_stage' AND value = 'NEW'"
+    "UPDATE settings SET value = 'NOVYY' WHERE key = 'opportunity_stage' AND value IN ('NEW', 'Новый')"
   ).run();
 
   console.log('Database migrated successfully');

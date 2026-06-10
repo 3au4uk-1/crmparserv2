@@ -11,6 +11,8 @@ export const config = {
   twentyApiUrl: process.env.TWENTY_API_URL || '',
   twentyApiToken: process.env.TWENTY_API_TOKEN || '',
   twentyApiTimeoutMs: parseInt(process.env.TWENTY_API_TIMEOUT_MS || '60000', 10),
+  twentyApiRateLimitMax: parseInt(process.env.TWENTY_API_RATE_LIMIT_MAX || '95', 10),
+  twentyApiRateLimitWindowMs: parseInt(process.env.TWENTY_API_RATE_LIMIT_WINDOW_MS || '60000', 10),
   sessionSecret: process.env.SESSION_SECRET || 'dev-secret',
   appPassword: process.env.APP_PASSWORD || '',
   dbPath: process.env.DB_PATH || './data/crmparser.db',

@@ -104,7 +104,7 @@ INSERT OR IGNORE INTO companies (code, full_name) VALUES ('АРТ', 'Art-Active'
 INSERT OR IGNORE INTO companies (code, full_name) VALUES ('АРЕНДА', 'Arenda');
 
 INSERT OR IGNORE INTO settings (key, value) VALUES ('approval_mode', 'manual');
-INSERT OR IGNORE INTO settings (key, value) VALUES ('opportunity_stage', 'Новый');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('opportunity_stage', 'NOVYY');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('parse_schedule', '0 18 * * *');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('auth_mode', 'auto');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('keywords', '["брендинг","баннер","печать","плёнка","пленка","наклейка","логотип","вывеска","табличка","ролл-ап","rollup","стенд","press-wall","пресс-волл"]');

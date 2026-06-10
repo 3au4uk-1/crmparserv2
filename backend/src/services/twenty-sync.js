@@ -21,6 +21,11 @@ import {
   parseGqlOperation,
   summarizeGqlVariables,
 } from './twenty-sync-log.js';
+import {
+  acquireTwentyRateLimitSlot,
+  isTwentyRateLimitError,
+  parseTwentyRateLimitWaitMs,
+} from './twenty-rate-limit.js';
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -31,7 +36,7 @@ function isTimeoutError(err) {
 }
 
 async function gql(apiUrl, apiToken, query, variables = {}, attempt = 0) {
-  const maxAttempts = 3;
+  const maxAttempts = 5;
   const timeoutMs = config.twentyApiTimeoutMs;
   const operation = parseGqlOperation(query);
   const startedAt = Date.now();
@@ -46,6 +51,8 @@ async function gql(apiUrl, apiToken, query, variables = {}, attempt = 0) {
   });
 
   try {
+    await acquireTwentyRateLimitSlot();
+
     const resp = await axios.post(
       apiUrl,
       { query, variables },
@@ -61,6 +68,22 @@ async function gql(apiUrl, apiToken, query, variables = {}, attempt = 0) {
 
     const durationMs = Date.now() - startedAt;
     const gqlErrors = resp.data?.errors?.map((e) => e.message) || [];
+    const rateLimitMessage = gqlErrors.find(isTwentyRateLimitError);
+
+    if ((resp.status === 429 || rateLimitMessage) && attempt < maxAttempts - 1) {
+      const waitMs = rateLimitMessage
+        ? parseTwentyRateLimitWaitMs(rateLimitMessage)
+        : config.twentyApiRateLimitWindowMs;
+      logTwenty('warn', `gql rate limited, retrying`, {
+        operation,
+        attempt: attempt + 1,
+        maxAttempts,
+        waitMs,
+        httpStatus: resp.status,
+      });
+      await delay(waitMs);
+      return gql(apiUrl, apiToken, query, variables, attempt + 1);
+    }
 
     logTwenty('info', `gql request done`, {
       operation,
