@@ -1,7 +1,9 @@
+export const DEFAULT_OPPORTUNITY_STAGE = 'Новый';
+
 export function buildOpportunityInput(deal, items, options = {}) {
   const {
     includeStage = false,
-    stage = 'NEW',
+    stage = DEFAULT_OPPORTUNITY_STAGE,
     companyTwentyId = null,
     personTwentyId = null,
   } = options;

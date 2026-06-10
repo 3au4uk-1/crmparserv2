@@ -280,6 +280,18 @@ export default function Settings() {
               className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-full font-mono"
             />
           </div>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Стадия новой сделки</label>
+            <input
+              defaultValue={settings?.opportunity_stage || 'Новый'}
+              onBlur={e => updateSetting.mutate({ key: 'opportunity_stage', value: e.target.value })}
+              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-full"
+              placeholder="Новый"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Значение поля «Стадия» в Twenty при создании Opportunity (раньше было NEW).
+            </p>
+          </div>
         </div>
       </Section>
 

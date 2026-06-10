@@ -38,5 +38,12 @@ export function migrate() {
   ensureColumn(db, 'deals', 'dismantle_time', 'TEXT');
   ensureColumn(db, 'sync_runs', 'action', 'TEXT');
 
+  db.prepare(
+    "INSERT OR IGNORE INTO settings (key, value) VALUES ('opportunity_stage', 'Новый')"
+  ).run();
+  db.prepare(
+    "UPDATE settings SET value = 'Новый' WHERE key = 'opportunity_stage' AND value = 'NEW'"
+  ).run();
+
   console.log('Database migrated successfully');
 }

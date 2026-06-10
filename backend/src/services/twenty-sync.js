@@ -8,7 +8,7 @@ import {
   getItemEligibleReason,
 } from './twenty-items.js';
 import { buildWarehouseItemCreateInput } from './twenty-line-item.js';
-import { buildOpportunityInput } from './twenty-opportunity.js';
+import { buildOpportunityInput, DEFAULT_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
 import {
   listLineItemsForOpportunity,
   syncLineItemsDiff,
@@ -133,7 +133,7 @@ function assertGqlSuccess(resp, fallbackMessage) {
 function getOpportunityStage() {
   const db = getDb();
   const row = db.prepare("SELECT value FROM settings WHERE key = 'opportunity_stage'").get();
-  return row?.value?.trim() || 'NEW';
+  return row?.value?.trim() || DEFAULT_OPPORTUNITY_STAGE;
 }
 
 function logSyncRun(dealId, status, twentyId, error, action = null) {

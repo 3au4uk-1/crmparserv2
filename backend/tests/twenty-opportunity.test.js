@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildOpportunityInput } from '../src/services/twenty-opportunity.js';
+import { buildOpportunityInput, DEFAULT_OPPORTUNITY_STAGE } from '../src/services/twenty-opportunity.js';
 
 describe('buildOpportunityInput', () => {
   const deal = {
@@ -20,13 +20,13 @@ describe('buildOpportunityInput', () => {
   it('builds create input with stage and amount', () => {
     const input = buildOpportunityInput(deal, items, {
       includeStage: true,
-      stage: 'NEW',
+      stage: DEFAULT_OPPORTUNITY_STAGE,
       companyTwentyId: 'comp-1',
       personTwentyId: 'person-1',
     });
 
     expect(input.name).toBe('ПРО Иванов 12345');
-    expect(input.stage).toBe('NEW');
+    expect(input.stage).toBe('Новый');
     expect(input.closeDate).toBe('2026-06-10');
     expect(input.amount).toEqual({ amountMicros: 15000000000, currencyCode: 'RUB' });
     expect(input.companyId).toBe('comp-1');

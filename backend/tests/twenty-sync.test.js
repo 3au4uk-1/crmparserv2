@@ -19,7 +19,7 @@ vi.mock('../src/db/connection.js', () => {
             return deals.get(params[0]) || null;
           }
           if (sql.includes("key = 'opportunity_stage'")) {
-            return { value: 'NEW' };
+            return { value: 'Новый' };
           }
           return null;
         },
