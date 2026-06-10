@@ -66,10 +66,19 @@ export default function Settings() {
   const [newBlacklistMatchType, setNewBlacklistMatchType] = useState('exact');
   const [blacklistError, setBlacklistError] = useState('');
   const [cookieValue, setCookieValue] = useState('');
+  const [parseSchedule, setParseSchedule] = useState('0 18 * * *');
+  const [parseScheduleFocused, setParseScheduleFocused] = useState(false);
+  const [parseScheduleError, setParseScheduleError] = useState('');
 
   useEffect(() => {
     if (settings?.crm_cookies) setCookieValue(settings.crm_cookies);
   }, [settings?.crm_cookies]);
+
+  useEffect(() => {
+    if (!parseScheduleFocused && settings?.parse_schedule != null) {
+      setParseSchedule(settings.parse_schedule || '0 18 * * *');
+    }
+  }, [settings?.parse_schedule, parseScheduleFocused]);
 
   function addKeyword() {
     const parsed = parseKeywordInput(newKeyword);
@@ -213,12 +222,33 @@ export default function Settings() {
           <div>
             <label className="block text-sm text-gray-600 mb-1">Cron-выражение</label>
             <input
-              defaultValue={settings?.parse_schedule || '0 18 * * *'}
-              onBlur={e => updateSetting.mutate({ key: 'parse_schedule', value: e.target.value })}
+              value={parseSchedule}
+              onChange={(e) => {
+                setParseSchedule(e.target.value);
+                setParseScheduleError('');
+              }}
+              onFocus={() => setParseScheduleFocused(true)}
+              onBlur={() => {
+                setParseScheduleFocused(false);
+                const value = parseSchedule.trim();
+                if (!value) return;
+                updateSetting.mutate(
+                  { key: 'parse_schedule', value },
+                  {
+                    onError: (err) => {
+                      const msg = err.response?.data?.error || 'Не удалось сохранить расписание';
+                      setParseScheduleError(msg);
+                    },
+                  },
+                );
+              }}
               className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-full max-w-xs font-mono"
             />
+            {parseScheduleError && (
+              <p className="text-xs text-red-600 mt-1">{parseScheduleError}</p>
+            )}
             <p className="text-xs text-gray-400 mt-1">
-              По умолчанию: 0 18 * * * (каждый день в 18:00 по Москве)
+              Примеры: 0 18 * * * (каждый день в 18:00), 0 */3 * * * (каждые 3 часа) — по Москве
             </p>
           </div>
         </div>
