@@ -1,4 +1,4 @@
-const CRM_TIMEZONE = process.env.CRM_TIMEZONE || 'Europe/Moscow';
+export const CRM_TIMEZONE = process.env.CRM_TIMEZONE || 'Europe/Moscow';
 
 /** Offset suffix for CRM calendar API (Moscow has no DST since 2011). */
 function crmOffsetSuffix() {
@@ -33,11 +33,11 @@ export function getMinParseStart(now = new Date()) {
   return formatCrmDateTime(start);
 }
 
-/** Default parse window: today → end of next month (Moscow TZ). */
+/** Default parse window: today → 2 weeks ahead (Moscow TZ). */
 export function getDefaultParseRange(now = new Date()) {
-  const { year, month } = getCrmCalendarDate(now);
+  const { year, month, day } = getCrmCalendarDate(now);
   const start = getMinParseStart(now);
-  const end = new Date(year, month + 1, 0, 23, 59, 59);
+  const end = new Date(year, month - 1, day + 14, 23, 59, 59);
   return {
     start,
     end: formatCrmDateTime(end),

@@ -7,6 +7,7 @@ import {
   useParseDefaults,
 } from '../api';
 import StatCard from '../components/StatCard';
+import { formatDateTime } from '../utils/dates';
 
 export default function Dashboard() {
   const { data: stats } = useDealStats();
@@ -68,7 +69,7 @@ export default function Dashboard() {
       </div>
 
       <p className="text-xs text-gray-500 mb-4">
-        Парсятся только сделки с выбранной даты. Даты раньше сегодняшней недоступны.
+        По умолчанию парсинг охватывает 2 недели вперёд. Даты раньше сегодняшней недоступны.
       </p>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
@@ -85,7 +86,7 @@ export default function Dashboard() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
               <span className="text-gray-500">Время: </span>
-              <span>{new Date(lastRun.started_at).toLocaleString('ru-RU')}</span>
+              <span>{formatDateTime(lastRun.started_at)}</span>
             </div>
             <div>
               <span className="text-gray-500">Статус: </span>

@@ -6,6 +6,8 @@ services:
     volumes:
       - crmparser-data:/app/data
     environment:
+      - TZ=Europe/Moscow
+      - CRM_TIMEZONE=Europe/Moscow
       - CRM_BASE_URL=${CRM_BASE_URL:-https://apihide.com/bitrix/calendar/}
       - CRM_LOGIN=${CRM_LOGIN}
       - CRM_PASSWORD=${CRM_PASSWORD}

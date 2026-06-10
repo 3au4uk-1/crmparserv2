@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useLogs, useSyncLogs } from '../api';
+import { formatDateTime } from '../utils/dates';
 
 function ParseLogsTable({ logs }) {
   return (
@@ -24,7 +25,7 @@ function ParseLogsTable({ logs }) {
 
           return (
             <tr key={log.id} className="border-t border-gray-100">
-              <td className="p-3">{new Date(log.started_at).toLocaleString('ru-RU')}</td>
+              <td className="p-3">{formatDateTime(log.started_at)}</td>
               <td className="p-3">
                 <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
                   log.status === 'completed' ? 'bg-green-100 text-green-800'
@@ -64,7 +65,7 @@ function SyncLogsTable({ logs }) {
       <tbody>
         {logs.map((log) => (
           <tr key={log.id} className="border-t border-gray-100">
-            <td className="p-3">{new Date(log.created_at).toLocaleString('ru-RU')}</td>
+            <td className="p-3">{formatDateTime(log.created_at)}</td>
             <td className="p-3 max-w-xs truncate">{log.deal_title || `Deal #${log.deal_id}`}</td>
             <td className="p-3">
               <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${

@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { getDb } from '../db/connection.js';
 import { runParsing } from './parser.js';
-import { getDefaultParseRange } from '../utils/crm-dates.js';
+import { CRM_TIMEZONE, getDefaultParseRange } from '../utils/crm-dates.js';
 
 let scheduledTask = null;
 
@@ -31,8 +31,8 @@ export function initScheduler() {
   }
 
   if (cron.validate(schedule)) {
-    scheduledTask = cron.schedule(schedule, scheduledParse);
-    console.log(`Scheduler initialized with cron: ${schedule}`);
+    scheduledTask = cron.schedule(schedule, scheduledParse, { timezone: CRM_TIMEZONE });
+    console.log(`Scheduler initialized with cron: ${schedule} (${CRM_TIMEZONE})`);
   } else {
     console.error(`Invalid cron expression: ${schedule}`);
   }

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { getDb } from '../db/connection.js';
+import { restartScheduler } from '../services/scheduler.js';
 
 const router = Router();
 
@@ -75,6 +76,9 @@ router.put('/:key', (req, res) => {
   const value = req.body?.value ?? '';
   const db = getDb();
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(req.params.key, value);
+  if (req.params.key === 'parse_schedule') {
+    restartScheduler();
+  }
   res.json({ success: true });
 });
 

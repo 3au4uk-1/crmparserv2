@@ -15,4 +15,6 @@ COPY --from=frontend-build /app/frontend/dist ./public
 RUN mkdir -p /app/data
 EXPOSE 3000
 ENV DB_PATH=/app/data/crmparser.db
+ENV TZ=Europe/Moscow
+ENV CRM_TIMEZONE=Europe/Moscow
 CMD ["node", "src/index.js"]

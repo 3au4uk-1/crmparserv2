@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useDeal, useApproveDeal, useRejectDeal, useDeleteDeal, useResyncDeal } from '../api';
+import { formatDate, formatDateTime } from '../utils/dates';
 import StatusBadge from './StatusBadge';
 import DealItems from './DealItems';
 
@@ -25,7 +26,7 @@ export default function DealRow({ deal, selected, onSelect }) {
             className="rounded"
           />
         </td>
-        <td className="p-3 text-sm">{deal.start_date?.slice(0, 10)}</td>
+        <td className="p-3 text-sm">{formatDate(deal.start_date)}</td>
         <td className="p-3 text-sm font-medium max-w-xs truncate">{deal.title}</td>
         <td className="p-3 text-sm">{deal.company_code}</td>
         <td className="p-3 text-sm">{deal.manager_name}</td>
@@ -64,7 +65,7 @@ export default function DealRow({ deal, selected, onSelect }) {
             <div className="flex flex-col gap-1">
               {deal.synced_at && (
                 <span className="text-xs text-gray-500" title={deal.synced_at}>
-                  Синхр. {new Date(deal.synced_at).toLocaleString('ru-RU')}
+                  Синхр. {formatDateTime(deal.synced_at)}
                 </span>
               )}
               <button

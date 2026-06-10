@@ -15,6 +15,11 @@ describe('crm-dates', () => {
     expect(parseEventDate(range.start).getDate()).toBe(5);
   });
 
+  it('default range ends 2 weeks ahead', () => {
+    const range = getDefaultParseRange(now);
+    expect(range.endDate).toBe('2026-06-19');
+  });
+
   it('clamps start date before today', () => {
     const { start } = normalizeParseRange('2026-05-01', '2026-07-31', now);
     expect(start).toBe(getMinParseStart(now));
