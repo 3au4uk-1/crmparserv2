@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  buildCloseDate,
   getDefaultParseRange,
   getMinParseStart,
   normalizeParseRange,
@@ -28,5 +29,33 @@ describe('crm-dates', () => {
   it('keeps valid future start date', () => {
     const { start } = normalizeParseRange('2026-06-10', '2026-07-31', now);
     expect(start).toContain('2026-06-10');
+  });
+});
+
+describe('buildCloseDate', () => {
+  it('combines start_date and arrival_time with Moscow offset', () => {
+    const result = buildCloseDate({
+      start_date: '2026-06-10T00:00:00+03:00',
+      arrival_time: '09:00',
+    });
+    expect(result).toBe('2026-06-10T09:00:00+03:00');
+  });
+
+  it('uses midnight when arrival_time missing', () => {
+    const result = buildCloseDate({ start_date: '2026-06-10' });
+    expect(result).toBe('2026-06-10T00:00:00+03:00');
+  });
+
+  it('falls back to end_date then ignores invalid time', () => {
+    const result = buildCloseDate({
+      end_date: '2026-06-11',
+      arrival_time: 'not-a-time',
+    });
+    expect(result).toBe('2026-06-11T00:00:00+03:00');
+  });
+
+  it('returns ISO string when no dates on deal', () => {
+    const result = buildCloseDate({});
+    expect(result).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
   });
 });

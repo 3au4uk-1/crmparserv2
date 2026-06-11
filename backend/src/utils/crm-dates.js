@@ -106,3 +106,45 @@ export function isEventInRange(event, startDate, endDate) {
   const t = eventStart.getTime();
   return t >= rangeStart && t <= rangeEnd;
 }
+
+const ARRIVAL_TIME_RE = /^(\d{1,2}):(\d{2})$/;
+
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+function calendarPartsFromDeal(deal) {
+  const raw = deal.start_date || deal.end_date;
+  if (!raw) return null;
+  const parsed = parseEventDate(raw);
+  if (!parsed) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: CRM_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(parsed);
+  const get = (type) => parts.find((p) => p.type === type)?.value;
+  return { year: get('year'), month: get('month'), day: get('day') };
+}
+
+export function buildCloseDate(deal) {
+  const parts = calendarPartsFromDeal(deal);
+  if (!parts) return new Date().toISOString();
+
+  const { year, month, day } = parts;
+  let hour = 0;
+  let minute = 0;
+
+  const match = deal.arrival_time?.trim().match(ARRIVAL_TIME_RE);
+  if (match) {
+    hour = Number(match[1]);
+    minute = Number(match[2]);
+    if (hour > 23 || minute > 59) {
+      hour = 0;
+      minute = 0;
+    }
+  }
+
+  return `${year}-${month}-${day}T${pad2(hour)}:${pad2(minute)}:00${crmOffsetSuffix()}`;
+}
