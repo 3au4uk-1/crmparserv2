@@ -27,7 +27,7 @@ describe('buildOpportunityInput', () => {
 
     expect(input.name).toBe('ПРО Иванов 12345');
     expect(input.stage).toBe('NOVYY');
-    expect(input.closeDate).toBe('2026-06-10');
+    expect(input.closeDate).toBe('2026-06-10T09:00:00+03:00');
     expect(input.amount).toEqual({ amountMicros: 15000000000, currencyCode: 'RUB' });
     expect(input.companyId).toBe('comp-1');
     expect(input.pointOfContactId).toBe('person-1');
@@ -45,5 +45,14 @@ describe('buildOpportunityInput', () => {
   it('zero amount when no items', () => {
     const input = buildOpportunityInput(deal, [], { includeStage: false });
     expect(input.amount).toEqual({ amountMicros: 0, currencyCode: 'RUB' });
+  });
+
+  it('closeDate at midnight when no arrival_time', () => {
+    const input = buildOpportunityInput(
+      { ...deal, arrival_time: null },
+      items,
+      { includeStage: false }
+    );
+    expect(input.closeDate).toBe('2026-06-10T00:00:00+03:00');
   });
 });

@@ -1,4 +1,6 @@
 /** Twenty GraphQL enum values for Opportunity.stage (UI labels are localized separately). */
+import { buildCloseDate } from '../utils/crm-dates.js';
+
 export const OPPORTUNITY_STAGE_OPTIONS = [
   { value: 'NOVYY', label: 'Новый' },
   { value: 'V_RABOTE', label: 'В работе' },
@@ -23,7 +25,7 @@ export function buildOpportunityInput(deal, items, options = {}) {
 
   const input = {
     name: deal.title || `Deal ${deal.crm_event_id}`,
-    closeDate: deal.start_date || deal.end_date || new Date().toISOString(),
+    closeDate: buildCloseDate(deal),
     amount: {
       amountMicros: Math.round(brandingBudget * 1_000_000),
       currencyCode: 'RUB',
