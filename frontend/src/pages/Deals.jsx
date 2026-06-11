@@ -8,6 +8,7 @@ import {
   useDeleteAllRejected,
 } from '../api';
 import DealRow from '../components/DealRow';
+import DealCard from '../components/DealCard';
 
 const PAGE_SIZE = 50;
 
@@ -192,46 +193,62 @@ export default function Deals() {
         )}
       </div>
 
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        {isLoading ? (
+      {isLoading ? (
+        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
           <p className="p-4 text-sm text-gray-500">Загрузка...</p>
-        ) : deals.length === 0 ? (
+        </div>
+      ) : deals.length === 0 ? (
+        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
           <p className="p-4 text-sm text-gray-500">Нет сделок</p>
-        ) : (
-          <table className="w-full">
-            <thead>
-              <tr className="bg-gray-50 text-left text-xs text-gray-500 uppercase">
-                <th className="p-3">
-                  <input
-                    type="checkbox"
-                    onChange={toggleAll}
-                    checked={selectedIds.size === deals.length && deals.length > 0}
-                    className="rounded"
+        </div>
+      ) : (
+        <>
+          <div className="hidden md:block bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50 text-left text-xs text-gray-500 uppercase">
+                  <th className="p-3">
+                    <input
+                      type="checkbox"
+                      onChange={toggleAll}
+                      checked={selectedIds.size === deals.length && deals.length > 0}
+                      className="rounded"
+                    />
+                  </th>
+                  <SortableTh column="start_date" label="Дата мероприятия" />
+                  <SortableTh column="title" label="Название" />
+                  <SortableTh column="company_code" label="Компания" />
+                  <SortableTh column="manager_name" label="Менеджер" />
+                  <th className="p-3" title="Позиций в Twenty / всего">Twenty</th>
+                  <SortableTh column="budget" label="Бюджет" />
+                  <SortableTh column="approval_status" label="Статус" />
+                  <th className="p-3">Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deals.map((deal) => (
+                  <DealRow
+                    key={deal.id}
+                    deal={deal}
+                    selected={selectedIds.has(deal.id)}
+                    onSelect={toggleSelect}
                   />
-                </th>
-                <SortableTh column="start_date" label="Дата мероприятия" />
-                <SortableTh column="title" label="Название" />
-                <SortableTh column="company_code" label="Компания" />
-                <SortableTh column="manager_name" label="Менеджер" />
-                <th className="p-3" title="Позиций в Twenty / всего">Twenty</th>
-                <SortableTh column="budget" label="Бюджет" />
-                <SortableTh column="approval_status" label="Статус" />
-                <th className="p-3">Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {deals.map((deal) => (
-                <DealRow
-                  key={deal.id}
-                  deal={deal}
-                  selected={selectedIds.has(deal.id)}
-                  onSelect={toggleSelect}
-                />
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="md:hidden bg-white rounded-lg border border-gray-200 overflow-hidden">
+            {deals.map((deal) => (
+              <DealCard
+                key={deal.id}
+                deal={deal}
+                selected={selectedIds.has(deal.id)}
+                onSelect={toggleSelect}
+              />
+            ))}
+          </div>
+        </>
+      )}
 
       {total > 0 && (
         <div className="flex items-center justify-between mt-4 text-sm text-gray-600">
