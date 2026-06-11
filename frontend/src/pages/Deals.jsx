@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   useDeals,
+  useCompanies,
   useBulkApprove,
   useBulkReject,
   useBulkDeleteDeals,
@@ -26,6 +27,7 @@ export default function Deals() {
   const [page, setPage] = useState(0);
   const [selectedIds, setSelectedIds] = useState(new Set());
 
+  const { data: companies } = useCompanies();
   const { data, isLoading } = useDeals({
     ...filters,
     limit: PAGE_SIZE,
@@ -91,9 +93,9 @@ export default function Deals() {
           className="border border-gray-300 rounded-md px-3 py-1.5 text-sm"
         >
           <option value="">Все компании</option>
-          <option value="ПРО">ПРО</option>
-          <option value="АРТ">АРТ</option>
-          <option value="АРЕНДА">АРЕНДА</option>
+          {(companies || []).map((c) => (
+            <option key={c.id} value={c.code}>{c.code}</option>
+          ))}
         </select>
         <label className="flex items-center gap-1.5 text-sm text-gray-600">
           С:
