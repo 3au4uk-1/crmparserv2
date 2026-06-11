@@ -1,4 +1,4 @@
-const KNOWN_COMPANIES = ['ПРО', 'АРТ', 'АРЕНДА'];
+const DEFAULT_KNOWN = ['ПРО', 'АРТ', 'АРЕНДА'];
 
 export function extractTonyOrderId(title) {
   if (!title) return null;
@@ -7,7 +7,7 @@ export function extractTonyOrderId(title) {
   return matches[matches.length - 1];
 }
 
-export function parseDealTitle(title) {
+export function parseDealTitle(title, knownCodes = DEFAULT_KNOWN) {
   if (!title || !title.includes('/')) {
     return { companyCode: null, managerName: null, tonyOrderId: null, parseError: true, rawTitle: title };
   }
@@ -21,10 +21,10 @@ export function parseDealTitle(title) {
   const companyCode = segments[0];
   const managerName = segments[segments.length - 1];
 
-  const isKnownCompany = KNOWN_COMPANIES.includes(companyCode);
+  const isKnownCompany = knownCodes.includes(companyCode);
 
   return {
-    companyCode: isKnownCompany ? companyCode : companyCode,
+    companyCode,
     managerName,
     tonyOrderId: extractTonyOrderId(title),
     parseError: !isKnownCompany,

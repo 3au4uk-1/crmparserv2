@@ -5,6 +5,7 @@ import { getDb } from '../db/connection.js';
 import { authenticate, getCalToken, getCrmRequestHeaders } from './auth.js';
 import { parseDealDescription } from './html-parser.js';
 import { parseDealTitle } from './title-parser.js';
+import { loadCompanyCodes } from './companies.js';
 import { classifyItems } from './classifier.js';
 import { formatCrmDateTime, isEventInRange, parseEventDate } from '../utils/crm-dates.js';
 import { syncDealToTwenty } from './twenty-sync.js';
@@ -107,6 +108,7 @@ export async function runParsing(startDate, endDate) {
 
     const keywords = JSON.parse(getSetting('keywords') || '[]');
     const llmPrompt = getSetting('llm_prompt') || '';
+    const knownCodes = loadCompanyCodes(db);
 
     let newDeals = 0;
     let updatedDeals = 0;
@@ -151,7 +153,7 @@ export async function runParsing(startDate, endDate) {
       }
 
       const parsed = parseDealDescription(descHtml);
-      const titleInfo = parseDealTitle(event.title || '');
+      const titleInfo = parseDealTitle(event.title || '', knownCodes);
 
       const classifiedItems = await classifyItems(parsed.items, keywords, llmPrompt);
 

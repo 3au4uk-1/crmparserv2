@@ -50,6 +50,17 @@ describe('parseDealTitle', () => {
     const result = parseDealTitle('ПРО/Сидоров');
     expect(result.tonyOrderId).toBe(null);
   });
+
+  it('accepts company from dynamic knownCodes list', () => {
+    const result = parseDealTitle('БС/06.06/ВЫСТАВКА/Радченкова', ['ПРО', 'БС']);
+    expect(result.companyCode).toBe('БС');
+    expect(result.parseError).toBe(false);
+  });
+
+  it('parseError when code not in knownCodes', () => {
+    const result = parseDealTitle('БС/06.06/Иванов', ['ПРО', 'АРТ']);
+    expect(result.parseError).toBe(true);
+  });
 });
 
 describe('extractTonyOrderId', () => {
