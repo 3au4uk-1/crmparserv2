@@ -70,15 +70,44 @@ Four gaps block day-to-day use of the branding parser:
 
 ## 1. Event Date (`closeDate`) + Arrival Time
 
-### Twenty metadata (one-time)
+### Twenty: переименование «Close date» → «Дата мероприятия»
 
-| Action | Detail |
-|--------|--------|
-| Rename label | `closeDate` → **«Дата мероприятия»** |
-| Keep API name | `closeDate` (no parser GraphQL changes) |
-| Field type | If `DATE` rejects time component, change to `DATE_TIME` via Twenty field metadata |
+Переименование — **только отображаемый лейбл** в Twenty UI. Связь парсера с Twenty не ломается, если не трогать системное имя поля.
 
-Can be done manually in Twenty Settings or via `update_field_metadata` MCP tool.
+| Что меняем | Что **не** меняем |
+|------------|-------------------|
+| Label в Twenty: **«Дата мероприятия»** | API / GraphQL имя: `closeDate` |
+| (При необходимости) тип поля: `DATE` → `DATE_TIME` | Имя в `buildOpportunityInput`, мутациях `createOpportunity` / `updateOpportunity` |
+| Подписи в воронках и таблицах Twenty | UUID поля (`0b965158-b133-4016-975e-fdc804e640fe` на Opportunity) |
+
+Парсер по-прежнему пишет `closeDate: buildCloseDate(deal)` — Twenty принимает то же поле, меняется только подпись для пользователей.
+
+**Редактирование через MCP (рекомендуется при реализации):**
+
+Twenty workspace подключён через MCP-сервер `user-twenty`. Метаданные полей можно менять программно, без ручного захода в Settings → Objects:
+
+1. `load_skills` → skill **`metadata-building`** (обязательно перед metadata-инструментами).
+2. `learn_tools` → `get_object_metadata`, `update_field_metadata`.
+3. Найти объект **Opportunity** (`opportunity`), поле **`closeDate`**.
+4. `update_field_metadata` — только `label: "Дата мероприятия"` (и при ошибках синхронизации с временем — `type: DATE_TIME`).
+
+Пример целевого изменения (поля кроме label/type не трогать):
+
+```json
+{
+  "objectMetadataId": "<opportunity object id>",
+  "fieldMetadataId": "0b965158-b133-4016-975e-fdc804e640fe",
+  "label": "Дата мероприятия"
+}
+```
+
+Альтернатива: вручную в Twenty → Настройки → Объекты → Сделки → поле Close date → переименовать лейбл. Результат тот же; MCP удобнее зафиксировать в плане реализации и повторить на другом workspace.
+
+**Совместимость:**
+
+- Код парсера **не** переименовывает поле в GraphQL — только Twenty metadata.
+- Воронка «By Stage» и «Дизайн» ссылаются на `closeDate` по имени поля в view config — после смены лейбла карточки показывают «Дата мероприятия» автоматически.
+- Существующие записи в Twenty сохраняют значения; после деплоя парсера обновлённые дата+время приходят через re-sync.
 
 ### `buildCloseDate(deal)` (new helper in `twenty-opportunity.js` or `crm-dates.js`)
 
@@ -243,11 +272,13 @@ Same sort order as table (API-driven); no separate mobile sort UI in v1.
 4. API sorting + frontend sort headers
 5. `DealCard` + responsive Deals layout
 6. App shell mobile nav
-7. Twenty metadata: rename `closeDate` label (and DATE_TIME if needed)
+7. Twenty metadata via MCP: `update_field_metadata` — label «Дата мероприятия» на `closeDate` (и `DATE_TIME` при необходимости)
 
 ---
 
 ## Rollout Notes
 
+- **Шаг 1 (Twenty):** переименовать лейбл `closeDate` → «Дата мероприятия» через MCP или UI (API-имя не менять).
+- **Шаг 2 (парсер):** деплой с `buildCloseDate`; пересинхронизация подтянет дату+время в то же поле.
 - After deploy, run **Пересинхр.** on active deals or wait for auto re-sync after parse to refresh `closeDate` in Twenty.
 - Add new company codes in **Настройки → Справочник компаний** before parsing deals with those prefixes.
