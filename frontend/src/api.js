@@ -325,6 +325,14 @@ export function useCompanies() {
   });
 }
 
+export function useCreateCompany() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => api.post('/settings/companies', body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['companies'] }),
+  });
+}
+
 export function useLogs(params = {}) {
   return useQuery({
     queryKey: ['logs', params],

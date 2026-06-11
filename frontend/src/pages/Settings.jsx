@@ -5,6 +5,7 @@ import {
   useKeywords,
   useUpdateKeywords,
   useCompanies,
+  useCreateCompany,
   useClearParsingData,
   useBlacklist,
   useAddBlacklistItem,
@@ -60,8 +61,11 @@ export default function Settings() {
   const addBlacklistItem = useAddBlacklistItem();
   const removeBlacklistItem = useRemoveBlacklistItem();
   const clearParsingData = useClearParsingData();
+  const createCompany = useCreateCompany();
 
   const [newKeyword, setNewKeyword] = useState('');
+  const [newCompanyCode, setNewCompanyCode] = useState('');
+  const [newCompanyName, setNewCompanyName] = useState('');
   const [newBlacklistPattern, setNewBlacklistPattern] = useState('');
   const [newBlacklistMatchType, setNewBlacklistMatchType] = useState('exact');
   const [blacklistError, setBlacklistError] = useState('');
@@ -89,6 +93,18 @@ export default function Settings() {
 
   function removeKeyword(kw) {
     updateKeywords.mutate((keywords || []).filter(k => k !== kw));
+  }
+
+  function addCompany() {
+    createCompany.mutate(
+      { code: newCompanyCode, full_name: newCompanyName },
+      {
+        onSuccess: () => {
+          setNewCompanyCode('');
+          setNewCompanyName('');
+        },
+      },
+    );
   }
 
   return (
@@ -368,6 +384,29 @@ export default function Settings() {
       </Section>
 
       <Section title="Справочник компаний">
+        <div className="flex flex-wrap gap-2 items-end mb-3">
+          <input
+            type="text"
+            value={newCompanyCode}
+            onChange={(e) => setNewCompanyCode(e.target.value)}
+            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm flex-1 min-w-[8rem] max-w-xs font-mono"
+            placeholder="Код"
+          />
+          <input
+            type="text"
+            value={newCompanyName}
+            onChange={(e) => setNewCompanyName(e.target.value)}
+            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm flex-1 min-w-[12rem] max-w-lg"
+            placeholder="Полное название"
+          />
+          <button
+            onClick={addCompany}
+            disabled={!newCompanyCode.trim() || !newCompanyName.trim() || createCompany.isPending}
+            className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
+          >
+            Добавить
+          </button>
+        </div>
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-gray-500 uppercase">
