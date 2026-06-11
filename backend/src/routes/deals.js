@@ -8,6 +8,24 @@ const router = Router();
 
 const VALID_SYNC_OVERRIDES = new Set(['include', 'exclude', null]);
 
+const SORT_COLUMNS = {
+  start_date: 'd.start_date',
+  title: 'd.title',
+  company_code: 'd.company_code',
+  manager_name: 'd.manager_name',
+  budget: 'CAST(d.budget AS REAL)',
+  approval_status: 'd.approval_status',
+};
+
+export function buildDealsOrderClause(sortBy, sortDir) {
+  const column = SORT_COLUMNS[sortBy] || SORT_COLUMNS.start_date;
+  const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
+  if (sortBy === 'budget') {
+    return `ORDER BY (d.budget IS NULL), ${column} ${dir}`;
+  }
+  return `ORDER BY ${column} ${dir}`;
+}
+
 function attachDealItemCounts(deals, db) {
   if (!deals.length) return deals;
   const blacklist = loadBlacklist(db);
@@ -47,10 +65,12 @@ router.get('/', (req, res) => {
   if (from) { where += ' AND d.start_date >= ?'; params.push(from); }
   if (to) { where += ' AND d.start_date <= ?'; params.push(to); }
 
+  const orderClause = buildDealsOrderClause(req.query.sortBy, req.query.sortDir);
+
   const rawDeals = db.prepare(`
     SELECT d.*
     FROM deals d WHERE ${where}
-    ORDER BY d.start_date DESC LIMIT ? OFFSET ?
+    ${orderClause} LIMIT ? OFFSET ?
   `).all(...params, limit, offset);
 
   const deals = attachDealItemCounts(rawDeals, db);
