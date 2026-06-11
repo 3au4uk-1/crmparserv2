@@ -15,3 +15,10 @@ export function formatDateTime(value) {
   if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleString('ru-RU', DATETIME_FMT);
 }
+
+export function formatEventDate(date, arrivalTime) {
+  const datePart = formatDate(date);
+  if (!datePart) return '';
+  if (!arrivalTime?.trim()) return datePart;
+  return `${datePart} ${arrivalTime.trim()}`;
+}

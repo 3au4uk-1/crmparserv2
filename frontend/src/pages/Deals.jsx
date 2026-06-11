@@ -26,10 +26,12 @@ export default function Deals() {
   });
   const [page, setPage] = useState(0);
   const [selectedIds, setSelectedIds] = useState(new Set());
+  const [sort, setSort] = useState({ sortBy: 'start_date', sortDir: 'desc' });
 
   const { data: companies } = useCompanies();
   const { data, isLoading } = useDeals({
     ...filters,
+    ...sort,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
   });
@@ -69,6 +71,31 @@ export default function Deals() {
     } else {
       setSelectedIds(new Set(deals.map((d) => d.id)));
     }
+  }
+
+  function toggleSort(column) {
+    setSort((prev) => {
+      if (prev.sortBy !== column) return { sortBy: column, sortDir: 'desc' };
+      return { sortBy: column, sortDir: prev.sortDir === 'desc' ? 'asc' : 'desc' };
+    });
+    setPage(0);
+    setSelectedIds(new Set());
+  }
+
+  function SortableTh({ column, label }) {
+    const active = sort.sortBy === column;
+    const arrow = active ? (sort.sortDir === 'asc' ? ' ↑' : ' ↓') : '';
+    return (
+      <th className="p-3">
+        <button
+          type="button"
+          onClick={() => toggleSort(column)}
+          className="uppercase text-xs text-gray-500 hover:text-gray-800 font-normal"
+        >
+          {label}{arrow}
+        </button>
+      </th>
+    );
   }
 
   return (
@@ -182,13 +209,13 @@ export default function Deals() {
                     className="rounded"
                   />
                 </th>
-                <th className="p-3">Дата</th>
-                <th className="p-3">Название</th>
-                <th className="p-3">Компания</th>
-                <th className="p-3">Менеджер</th>
+                <SortableTh column="start_date" label="Дата мероприятия" />
+                <SortableTh column="title" label="Название" />
+                <SortableTh column="company_code" label="Компания" />
+                <SortableTh column="manager_name" label="Менеджер" />
                 <th className="p-3" title="Позиций в Twenty / всего">Twenty</th>
-                <th className="p-3">Бюджет</th>
-                <th className="p-3">Статус</th>
+                <SortableTh column="budget" label="Бюджет" />
+                <SortableTh column="approval_status" label="Статус" />
                 <th className="p-3">Действия</th>
               </tr>
             </thead>

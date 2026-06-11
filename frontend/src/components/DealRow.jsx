@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useDeal, useApproveDeal, useRejectDeal, useDeleteDeal, useResyncDeal } from '../api';
-import { formatDate, formatDateTime } from '../utils/dates';
+import { formatEventDate, formatDateTime } from '../utils/dates';
 import StatusBadge from './StatusBadge';
 import DealItems from './DealItems';
 
@@ -26,7 +26,7 @@ export default function DealRow({ deal, selected, onSelect }) {
             className="rounded"
           />
         </td>
-        <td className="p-3 text-sm">{formatDate(deal.start_date)}</td>
+        <td className="p-3 text-sm">{formatEventDate(deal.start_date, deal.arrival_time)}</td>
         <td className="p-3 text-sm font-medium max-w-xs truncate">{deal.title}</td>
         <td className="p-3 text-sm">{deal.company_code}</td>
         <td className="p-3 text-sm">{deal.manager_name}</td>
