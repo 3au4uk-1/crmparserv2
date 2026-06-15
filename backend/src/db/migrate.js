@@ -37,6 +37,7 @@ export function migrate() {
   ensureColumn(db, 'deals', 'work_time', 'TEXT');
   ensureColumn(db, 'deals', 'dismantle_time', 'TEXT');
   ensureColumn(db, 'sync_runs', 'action', 'TEXT');
+  ensureColumn(db, 'deals', 'twenty_stage', 'TEXT');
 
   db.prepare(
     "INSERT OR IGNORE INTO settings (key, value) VALUES ('opportunity_stage', 'NOVYY')"

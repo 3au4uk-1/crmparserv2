@@ -12,6 +12,7 @@ export const OPPORTUNITY_STAGE_OPTIONS = [
 ];
 
 export const DEFAULT_OPPORTUNITY_STAGE = 'NOVYY';
+export const CANCELLED_OPPORTUNITY_STAGE = 'OTMENA';
 
 export function buildOpportunityInput(deal, items, options = {}) {
   const {

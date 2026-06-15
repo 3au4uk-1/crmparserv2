@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS deals (
   content_hash TEXT,
   approval_status TEXT NOT NULL DEFAULT 'pending',
   twenty_id TEXT,
+  twenty_stage TEXT,
   twenty_error TEXT,
   synced_at TEXT,
   raw_description TEXT,

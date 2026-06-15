@@ -8,9 +8,14 @@ import { parseDealTitle } from './title-parser.js';
 import { loadCompanyCodes } from './companies.js';
 import { classifyItems } from './classifier.js';
 import { formatCrmDateTime, isEventInRange, parseEventDate } from '../utils/crm-dates.js';
-import { syncDealToTwenty } from './twenty-sync.js';
+import { syncDealToTwenty, cancelDealInTwenty } from './twenty-sync.js';
 import { processAutoApprovals } from './auto-approve.js';
 import { buildOverrideMap, replaceDealItemsPreservingOverrides } from './deal-items-update.js';
+import {
+  collectCalendarEventIds,
+  findDealsMissingFromCalendar,
+} from './calendar-missing.js';
+import { CANCELLED_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
 
 function buildUrl(path) {
   const base = config.crmBaseUrl.replace(/\/$/, '');
@@ -158,6 +163,8 @@ export async function runParsing(startDate, endDate) {
       const classifiedItems = await classifyItems(parsed.items, keywords, llmPrompt);
 
       if (existing) {
+        const wasCancelled = existing.twenty_stage === CANCELLED_OPPORTUNITY_STAGE;
+
         db.prepare(`
           UPDATE deals SET
             title = ?, company_code = ?, manager_name = ?,
@@ -169,6 +176,7 @@ export async function runParsing(startDate, endDate) {
             arrival_time = ?, ready_time = ?, work_time = ?, dismantle_time = ?,
             content_hash = ?,
             raw_description = ?, crm_lead_id = ?, tony_order_id = ?,
+            twenty_stage = CASE WHEN ? THEN NULL ELSE twenty_stage END,
             updated_at = datetime('now')
           WHERE id = ?
         `).run(
@@ -182,6 +190,7 @@ export async function runParsing(startDate, endDate) {
           parsed.event.workTime || null, parsed.event.dismantleTime || null,
           hash,
           descHtml, event.leadid, titleInfo.tonyOrderId || null,
+          wasCancelled ? 1 : 0,
           existing.id
         );
 
@@ -260,6 +269,33 @@ export async function runParsing(startDate, endDate) {
       }
     }
 
+    const calendarEventIds = collectCalendarEventIds(events, startDate, endDate);
+    const missingDeals = findDealsMissingFromCalendar(db, calendarEventIds, startDate, endDate);
+    let cancelledDeals = 0;
+
+    if (missingDeals.length > 0) {
+      console.log(
+        `[twenty-sync] ${new Date().toISOString()} parse.cancel_queue {"count":${missingDeals.length},"dealIds":${JSON.stringify(missingDeals.map((d) => d.id))}}`
+      );
+    }
+
+    for (let i = 0; i < missingDeals.length; i++) {
+      const deal = missingDeals[i];
+      if (i > 0) await delay(1000);
+      console.log(
+        `[twenty-sync] ${new Date().toISOString()} parse.cancel_start {"dealId":${deal.id},"crmEventId":${JSON.stringify(deal.crm_event_id)},"index":${i + 1},"total":${missingDeals.length}}`
+      );
+      try {
+        const result = await cancelDealInTwenty(deal.id);
+        if (result && !result.skipped) cancelledDeals++;
+        console.log(`[twenty-sync] ${new Date().toISOString()} parse.cancel_done {"dealId":${deal.id}}`);
+      } catch (err) {
+        console.error(
+          `[twenty-sync] ${new Date().toISOString()} parse.cancel_failed {"dealId":${deal.id},"error":${JSON.stringify(err.message)}}`
+        );
+      }
+    }
+
     const autoApprove = await processAutoApprovals();
 
     return {
@@ -268,6 +304,7 @@ export async function runParsing(startDate, endDate) {
       newDeals,
       updatedDeals,
       skippedDeals,
+      cancelledDeals,
       outOfRange,
       autoApprove,
     };

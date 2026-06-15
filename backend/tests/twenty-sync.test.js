@@ -50,11 +50,22 @@ vi.mock('../src/db/connection.js', () => {
             return { changes: 1 };
           }
           if (sql.includes('twenty_id = ?') && sql.includes('approval_status')) {
-            const deal = deals.get(params[1]);
+            const deal = deals.get(params[2]);
             if (deal) {
               deal.twenty_id = params[0];
+              deal.twenty_stage = params[1];
               deal.synced_at = 'now';
               deal.approval_status = 'synced';
+            }
+            return { changes: 1 };
+          }
+          if (sql.includes('twenty_stage = ?')) {
+            const deal = deals.get(params[params.length - 1]);
+            if (deal) {
+              deal.twenty_stage = params[0];
+              if (params[1]) deal.status = params[1];
+              deal.synced_at = 'now';
+              deal.twenty_error = null;
             }
             return { changes: 1 };
           }
@@ -96,7 +107,7 @@ vi.mock('../src/services/blacklist.js', () => ({
 }));
 
 import * as dbMock from '../src/db/connection.js';
-import { syncDealToTwenty } from '../src/services/twenty-sync.js';
+import { syncDealToTwenty, cancelDealInTwenty } from '../src/services/twenty-sync.js';
 
 function gqlOk(data) {
   return { status: 200, data: { data } };
@@ -163,5 +174,38 @@ describe('syncDealToTwenty', () => {
 
     const result = await syncDealToTwenty(dealId);
     expect(result.action).toBe('created');
+  });
+
+  it('cancels opportunity when deal disappears from calendar', async () => {
+    const dealId = dbMock.__seedDeal({
+      id: 3,
+      twenty_id: 'opp-cancel',
+      approval_status: 'synced',
+      title: 'Cancelled deal',
+      start_date: '2026-06-10',
+      crm_event_id: 'e3',
+      twenty_stage: null,
+    });
+
+    axiosPost.mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-cancel' } }));
+
+    const result = await cancelDealInTwenty(dealId);
+
+    expect(result.action).toBe('cancelled');
+    expect(axiosPost.mock.calls[0][1].variables.input.stage).toBe('OTMENA');
+  });
+
+  it('skips cancel when deal already cancelled in Twenty', async () => {
+    const dealId = dbMock.__seedDeal({
+      id: 4,
+      twenty_id: 'opp-cancelled',
+      twenty_stage: 'OTMENA',
+      crm_event_id: 'e4',
+    });
+
+    const result = await cancelDealInTwenty(dealId);
+
+    expect(result.skipped).toBe(true);
+    expect(axiosPost).not.toHaveBeenCalled();
   });
 });
