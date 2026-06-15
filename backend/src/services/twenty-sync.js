@@ -18,7 +18,8 @@ import {
   logTwenty,
   logTwentyStep,
 } from './twenty-sync-log.js';
-import { gql } from './twenty-gql.js';
+import { createTwentyGqlClient, gql } from './twenty-gql.js';
+import { refreshPlenkaForOpportunity } from './print-sheet-twenty.js';
 
 function assertHttpSuccess(resp, apiUrl) {
   if (resp.status === 404) {
@@ -53,6 +54,43 @@ function logSyncRun(dealId, status, twentyId, error, action = null) {
   db.prepare(
     'INSERT INTO sync_runs (deal_id, status, action, twenty_id, error) VALUES (?, ?, ?, ?, ?)'
   ).run(dealId, status, action, twentyId || null, error || null);
+}
+
+async function refreshPlenkaAfterSync(twenty, oppId) {
+  if (!oppId) return;
+
+  try {
+    const oppResp = await gql(
+      twenty.apiUrl,
+      twenty.apiToken,
+      `query OpportunityForPlenkaRefresh($id: ID!) {
+        opportunity(id: $id) {
+          id
+          name
+          stage
+          closeDate
+          plenka {
+            markdown
+          }
+        }
+      }`,
+      { id: oppId }
+    );
+    assertHttpSuccess(oppResp, twenty.apiUrl);
+    assertGqlSuccess(oppResp, 'Failed to load opportunity for plenka refresh');
+
+    const opportunity = oppResp.data?.data?.opportunity;
+    if (opportunity?.stage !== 'V_PECHATI') return;
+
+    const gqlClient = createTwentyGqlClient(twenty.apiUrl, twenty.apiToken);
+    await refreshPlenkaForOpportunity(gqlClient, opportunity);
+    logTwentyStep('plenka.refresh.done', { oppId });
+  } catch (err) {
+    logTwenty('warn', 'plenka.refresh.failed', {
+      oppId,
+      error: err.message,
+    });
+  }
 }
 
 async function findOrCreateWarehouseItem(apiUrl, apiToken, name, warehouseCache) {
@@ -393,19 +431,23 @@ export async function syncDealToTwenty(dealId) {
   });
 
   try {
+    let result;
     if (deal.twenty_id) {
-      return await updateDealInTwenty(dealId, deal, items, twenty);
+      result = await updateDealInTwenty(dealId, deal, items, twenty);
+    } else {
+      if (items.length === 0) {
+        const message = 'Нет позиций для переноса в Twenty';
+        db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(message, dealId);
+        logSyncRun(dealId, 'failed', null, message, 'created');
+        logTwenty('warn', 'sync.aborted', { reason: message });
+        throw new Error(message);
+      }
+
+      result = await createDealInTwenty(dealId, deal, items, twenty);
     }
 
-    if (items.length === 0) {
-      const message = 'Нет позиций для переноса в Twenty';
-      db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(message, dealId);
-      logSyncRun(dealId, 'failed', null, message, 'created');
-      logTwenty('warn', 'sync.aborted', { reason: message });
-      throw new Error(message);
-    }
-
-    return await createDealInTwenty(dealId, deal, items, twenty);
+    await refreshPlenkaAfterSync(twenty, result.twentyId);
+    return result;
   } catch (err) {
     logTwenty('error', 'sync.failed', { mode, error: err.message });
     if (deal.twenty_id) {
