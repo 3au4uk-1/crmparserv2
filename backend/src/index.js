@@ -13,6 +13,7 @@ import blacklistRouter from './routes/blacklist.js';
 import authRouter from './routes/auth.js';
 import { appAuthMiddleware } from './middleware/app-auth.js';
 import { initScheduler } from './services/scheduler.js';
+import { initPrintSheetCron } from './services/print-sheet-cron.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -39,6 +40,7 @@ async function start() {
   initDb();
   migrate();
   initScheduler();
+  initPrintSheetCron();
   app.listen(config.port, () => {
     console.log(`CRM Parser running on port ${config.port}`);
   });
