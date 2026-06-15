@@ -16,4 +16,8 @@ export const config = {
   sessionSecret: process.env.SESSION_SECRET || 'dev-secret',
   appPassword: process.env.APP_PASSWORD || '',
   dbPath: process.env.DB_PATH || './data/crmparser.db',
+  printSheetId: process.env.PRINT_SHEET_ID || '',
+  googleServiceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '',
+  googleServiceAccountPrivateKey: (process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+  printSheetCacheTtlMs: parseInt(process.env.PRINT_SHEET_CACHE_TTL_MS || '60000', 10),
 };
