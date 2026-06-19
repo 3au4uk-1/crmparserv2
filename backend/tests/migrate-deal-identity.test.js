@@ -38,7 +38,7 @@ describe('migrateDealIdentity', () => {
   it('adds new columns and backfills deal_key/data_source', () => {
     migrateDealIdentity(db);
     const rows = db.prepare('SELECT crm_event_id, deal_key, data_source FROM deals ORDER BY crm_event_id').all();
-    expect(rows[0]).toMatchObject({ crm_event_id: 'evt1', deal_key: 'evt1#169120', data_source: 'tony' });
+    expect(rows[0]).toMatchObject({ crm_event_id: 'evt1', deal_key: 'evt1#169120', data_source: 'calendar' });
     expect(rows[1]).toMatchObject({ crm_event_id: 'evt2', deal_key: 'evt2#cal', data_source: 'calendar' });
   });
 

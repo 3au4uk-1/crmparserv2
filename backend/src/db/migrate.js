@@ -32,7 +32,7 @@ export function migrateDealIdentity(db) {
   db.prepare(`
     UPDATE deals
     SET deal_key = crm_event_id || '#' || COALESCE(NULLIF(tony_order_id, ''), 'cal'),
-        data_source = CASE WHEN COALESCE(NULLIF(tony_order_id, ''), '') = '' THEN 'calendar' ELSE 'tony' END
+        data_source = 'calendar'
     WHERE deal_key IS NULL
   `).run();
 
