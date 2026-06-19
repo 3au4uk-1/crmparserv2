@@ -7,7 +7,7 @@ import {
   getItemEligibleReason,
 } from './twenty-items.js';
 import { buildWarehouseItemCreateInput } from './twenty-line-item.js';
-import { buildOpportunityInput, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
+import { buildOpportunityInput, parseQuantity, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
 import {
   listLineItemsForOpportunity,
   syncLineItemsDiff,
@@ -382,7 +382,7 @@ export function buildSyncPreview(dealId) {
   const allItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(dealId);
   const blacklist = loadBlacklist(db);
   const eligibleItems = getItemsForTwenty(allItems, blacklist);
-  const eligibleAmount = eligibleItems.reduce((sum, i) => sum + (i.price || 0), 0);
+  const eligibleAmount = eligibleItems.reduce((sum, i) => sum + (i.price || 0) * parseQuantity(i.quantity), 0);
 
   return {
     configured: Boolean(twenty.apiUrl && twenty.apiToken),
