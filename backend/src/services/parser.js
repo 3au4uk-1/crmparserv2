@@ -16,6 +16,12 @@ import {
   findDealsMissingFromCalendar,
 } from './calendar-missing.js';
 import { CANCELLED_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
+import { extractBookingNumbers } from './booking-numbers.js';
+import { tonyLogin, getTonyConfig } from './tony-auth.js';
+import { fetchTonyOrderHtml } from './tony-client.js';
+import { parseTonyOrder } from './tony-parser.js';
+import { buildTonyDealFields, buildTonyItems, tonyContentHash } from './tony-mapping.js';
+import { planEventReconciliation } from './tony-reconcile.js';
 
 function buildUrl(path) {
   const base = config.crmBaseUrl.replace(/\/$/, '');
@@ -94,6 +100,21 @@ function getSetting(key) {
   return row?.value || '';
 }
 
+async function resolveTonyOrders(tonyReady, bookingNumbers) {
+  const orders = new Map(); // bookingNumber -> parsed order
+  if (!tonyReady) return orders;
+  for (const n of bookingNumbers) {
+    await delay(config.tonyRequestDelayMs);
+    try {
+      const html = await fetchTonyOrderHtml(n);
+      if (html) orders.set(n, parseTonyOrder(html));
+    } catch (err) {
+      console.error(`[tony] failed to fetch order ${n}: ${err.message}`);
+    }
+  }
+  return orders;
+}
+
 export async function runParsing(startDate, endDate) {
   const db = getDb();
 
@@ -104,6 +125,17 @@ export async function runParsing(startDate, endDate) {
 
   try {
     await authenticate();
+
+    let tonyReady = false;
+    const tonyCfg = getTonyConfig();
+    if (tonyCfg.login && tonyCfg.password) {
+      try {
+        await tonyLogin();
+        tonyReady = true;
+      } catch (err) {
+        console.warn(`[tony] login failed, falling back to calendar for this run: ${err.message}`);
+      }
+    }
 
     const events = (await fetchEvents(startDate, endDate)).sort((a, b) => {
       const da = parseEventDate(a.start ?? a.start_date)?.getTime() ?? 0;
@@ -119,6 +151,7 @@ export async function runParsing(startDate, endDate) {
     let updatedDeals = 0;
     let skippedDeals = 0;
     let outOfRange = 0;
+    let cancelledDeals = 0;
     const dealsToResync = [];
 
     for (const event of events) {
@@ -146,93 +179,146 @@ export async function runParsing(startDate, endDate) {
 
       if (!descHtml) continue;
 
-      const hash = contentHash(descHtml);
+      const titleInfo = parseDealTitle(event.title || '', knownCodes);
+      const bookingNumbers = extractBookingNumbers(event.title || '');
+      const tonyOrders = await resolveTonyOrders(tonyReady, bookingNumbers);
+      const validBookings = bookingNumbers.filter((n) => tonyOrders.has(n));
 
-      const existing = db.prepare(
-        'SELECT id, content_hash, twenty_id FROM deals WHERE crm_event_id = ?'
-      ).get(eventId);
+      const plan = planEventReconciliation(db, eventId, validBookings);
 
-      if (existing && existing.content_hash === hash) {
-        skippedDeals++;
-        continue;
+      // Relink a single calendar deal to a single new booking, preserving the row.
+      if (plan.relink) {
+        db.prepare('UPDATE deals SET deal_key = ?, data_source = ?, tony_order_id = ? WHERE id = ?')
+          .run(plan.relink.newDealKey, 'tony', plan.relink.bookingNumber, plan.relink.dealId);
       }
 
-      const parsed = parseDealDescription(descHtml);
-      const titleInfo = parseDealTitle(event.title || '', knownCodes);
+      const calParsed = parseDealDescription(descHtml);
+      const calContact = calParsed.contact;
 
-      const classifiedItems = await classifyItems(parsed.items, keywords, llmPrompt);
+      for (const target of plan.desired) {
+        const existing = db.prepare('SELECT * FROM deals WHERE deal_key = ?').get(target.dealKey);
 
-      if (existing) {
-        const wasCancelled = existing.twenty_stage === CANCELLED_OPPORTUNITY_STAGE;
+        if (target.source === 'tony') {
+          const order = tonyOrders.get(target.bookingNumber);
+          const hash = tonyContentHash(order);
+          if (existing && existing.content_hash === hash) { skippedDeals++; continue; }
 
-        db.prepare(`
-          UPDATE deals SET
-            title = ?, company_code = ?, manager_name = ?,
-            start_date = ?, end_date = ?, department = ?,
-            status = ?, legal_entity = ?, invoice_number = ?,
-            budget = ?, discount = ?, contact_name = ?,
-            contact_email = ?, contact_company = ?, contact_phone = ?,
-            address = ?, venue_type = ?,
-            arrival_time = ?, ready_time = ?, work_time = ?, dismantle_time = ?,
-            content_hash = ?,
-            raw_description = ?, crm_lead_id = ?, tony_order_id = ?,
-            twenty_stage = CASE WHEN ? THEN NULL ELSE twenty_stage END,
-            updated_at = datetime('now')
-          WHERE id = ?
-        `).run(
-          event.title, titleInfo.companyCode, titleInfo.managerName,
-          event.start, event.end, event.department,
-          parsed.meta.status, parsed.meta.legalEntity, parsed.meta.invoiceNumber,
-          parsed.meta.budget, parsed.meta.discount, parsed.contact.name,
-          parsed.contact.email, parsed.contact.company, parsed.contact.phone,
-          parsed.event.address, parsed.event.venueType,
-          parsed.event.arrivalTime || null, parsed.event.readyTime || null,
-          parsed.event.workTime || null, parsed.event.dismantleTime || null,
-          hash,
-          descHtml, event.leadid, titleInfo.tonyOrderId || null,
-          wasCancelled ? 1 : 0,
-          existing.id
-        );
+          const fields = buildTonyDealFields(order);
+          const classifiedItems = await classifyItems(buildTonyItems(order), keywords, llmPrompt);
 
-        const existingItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(existing.id);
-        const overrideMap = buildOverrideMap(existingItems);
-        replaceDealItemsPreservingOverrides(db, existing.id, classifiedItems, overrideMap);
+          if (existing) {
+            const wasCancelled = existing.twenty_stage === CANCELLED_OPPORTUNITY_STAGE;
+            db.prepare(`
+              UPDATE deals SET
+                title = ?, company_code = ?, manager_name = ?,
+                start_date = ?, end_date = ?, department = ?,
+                contact_name = ?, contact_email = ?, contact_company = ?, contact_phone = ?,
+                address = ?, work_time = ?, arrival_time = ?, dismantle_time = ?,
+                load_date = ?, load_time = ?, budget = ?,
+                content_hash = ?, data_source = 'tony', tony_order_id = ?, crm_lead_id = ?,
+                twenty_stage = CASE WHEN ? THEN NULL ELSE twenty_stage END,
+                updated_at = datetime('now')
+              WHERE id = ?
+            `).run(
+              event.title, titleInfo.companyCode, titleInfo.managerName,
+              fields.start_date, fields.end_date, event.department,
+              calContact.name, calContact.email, calContact.company, calContact.phone,
+              fields.address, fields.work_time, fields.arrival_time, fields.dismantle_time,
+              fields.load_date, fields.load_time, fields.budget,
+              hash, target.bookingNumber, event.leadid,
+              wasCancelled ? 1 : 0, existing.id
+            );
+            const existingItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(existing.id);
+            replaceDealItemsPreservingOverrides(db, existing.id, classifiedItems, buildOverrideMap(existingItems));
+            if (existing.twenty_id) dealsToResync.push(existing.id);
+            updatedDeals++;
+          } else {
+            const insert = db.prepare(`
+              INSERT INTO deals (
+                crm_event_id, deal_key, data_source, crm_lead_id, title, company_code, manager_name,
+                start_date, end_date, department, contact_name, contact_email, contact_company, contact_phone,
+                address, work_time, arrival_time, dismantle_time, load_date, load_time, budget,
+                tony_order_id, content_hash, raw_description
+              ) VALUES (?, ?, 'tony', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              eventId, target.dealKey, event.leadid, event.title, titleInfo.companyCode, titleInfo.managerName,
+              fields.start_date, fields.end_date, event.department, calContact.name, calContact.email, calContact.company, calContact.phone,
+              fields.address, fields.work_time, fields.arrival_time, fields.dismantle_time, fields.load_date, fields.load_time, fields.budget,
+              target.bookingNumber, hash, descHtml
+            );
+            const dealId = insert.lastInsertRowid;
+            for (const item of classifiedItems) {
+              db.prepare(`INSERT INTO deal_items (deal_id, name, price, quantity, discount, classification, classification_confidence) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+                .run(dealId, item.name, item.price, item.quantity, item.discount, item.classification, item.classification_confidence);
+            }
+            newDeals++;
+          }
+        } else {
+          // calendar fallback — existing behavior, keyed by deal_key
+          const hash = contentHash(descHtml);
+          if (existing && existing.content_hash === hash) { skippedDeals++; continue; }
 
-        if (existing.twenty_id) {
-          dealsToResync.push(existing.id);
+          const parsed = calParsed;
+          const classifiedItems = await classifyItems(parsed.items, keywords, llmPrompt);
+
+          if (existing) {
+            const wasCancelled = existing.twenty_stage === CANCELLED_OPPORTUNITY_STAGE;
+            db.prepare(`
+              UPDATE deals SET
+                title = ?, company_code = ?, manager_name = ?, start_date = ?, end_date = ?, department = ?,
+                status = ?, legal_entity = ?, invoice_number = ?, budget = ?, discount = ?,
+                contact_name = ?, contact_email = ?, contact_company = ?, contact_phone = ?,
+                address = ?, venue_type = ?, arrival_time = ?, ready_time = ?, work_time = ?, dismantle_time = ?,
+                content_hash = ?, raw_description = ?, crm_lead_id = ?, data_source = 'calendar',
+                twenty_stage = CASE WHEN ? THEN NULL ELSE twenty_stage END, updated_at = datetime('now')
+              WHERE id = ?
+            `).run(
+              event.title, titleInfo.companyCode, titleInfo.managerName, event.start, event.end, event.department,
+              parsed.meta.status, parsed.meta.legalEntity, parsed.meta.invoiceNumber, parsed.meta.budget, parsed.meta.discount,
+              parsed.contact.name, parsed.contact.email, parsed.contact.company, parsed.contact.phone,
+              parsed.event.address, parsed.event.venueType, parsed.event.arrivalTime || null, parsed.event.readyTime || null,
+              parsed.event.workTime || null, parsed.event.dismantleTime || null,
+              hash, descHtml, event.leadid, wasCancelled ? 1 : 0, existing.id
+            );
+            const existingItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(existing.id);
+            replaceDealItemsPreservingOverrides(db, existing.id, classifiedItems, buildOverrideMap(existingItems));
+            if (existing.twenty_id) dealsToResync.push(existing.id);
+            updatedDeals++;
+          } else {
+            const insert = db.prepare(`
+              INSERT INTO deals (
+                crm_event_id, deal_key, data_source, crm_lead_id, title, company_code, manager_name,
+                start_date, end_date, department, status, legal_entity, invoice_number, budget, discount,
+                contact_name, contact_email, contact_company, contact_phone, address, venue_type,
+                arrival_time, ready_time, work_time, dismantle_time, content_hash, raw_description
+              ) VALUES (?, ?, 'calendar', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              eventId, target.dealKey, event.leadid, event.title, titleInfo.companyCode, titleInfo.managerName,
+              event.start, event.end, event.department, parsed.meta.status, parsed.meta.legalEntity, parsed.meta.invoiceNumber,
+              parsed.meta.budget, parsed.meta.discount, parsed.contact.name, parsed.contact.email, parsed.contact.company, parsed.contact.phone,
+              parsed.event.address, parsed.event.venueType, parsed.event.arrivalTime || null, parsed.event.readyTime || null,
+              parsed.event.workTime || null, parsed.event.dismantleTime || null, hash, descHtml
+            );
+            const dealId = insert.lastInsertRowid;
+            for (const item of classifiedItems) {
+              db.prepare(`INSERT INTO deal_items (deal_id, name, price, quantity, discount, classification, classification_confidence) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+                .run(dealId, item.name, item.price, item.quantity, item.discount, item.classification, item.classification_confidence);
+            }
+            newDeals++;
+          }
         }
+      }
 
-        updatedDeals++;
-      } else {
-        const insert = db.prepare(`
-          INSERT INTO deals (
-            crm_event_id, crm_lead_id, title, company_code, manager_name,
-            start_date, end_date, department, status, legal_entity,
-            invoice_number, budget, discount, contact_name, contact_email,
-            contact_company, contact_phone, address, venue_type,
-            arrival_time, ready_time, work_time, dismantle_time,
-            tony_order_id, content_hash, raw_description
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          eventId, event.leadid, event.title, titleInfo.companyCode, titleInfo.managerName,
-          event.start, event.end, event.department, parsed.meta.status, parsed.meta.legalEntity,
-          parsed.meta.invoiceNumber, parsed.meta.budget, parsed.meta.discount, parsed.contact.name,
-          parsed.contact.email, parsed.contact.company, parsed.contact.phone,
-          parsed.event.address, parsed.event.venueType,
-          parsed.event.arrivalTime || null, parsed.event.readyTime || null,
-          parsed.event.workTime || null, parsed.event.dismantleTime || null,
-          titleInfo.tonyOrderId || null, hash, descHtml
-        );
-
-        const dealId = insert.lastInsertRowid;
-        for (const item of classifiedItems) {
-          db.prepare(`
-            INSERT INTO deal_items (deal_id, name, price, quantity, discount, classification, classification_confidence)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          `).run(dealId, item.name, item.price, item.quantity, item.discount, item.classification, item.classification_confidence);
+      // Cancel deals whose booking disappeared (only when Tony was reachable, to avoid mass-cancel on outage).
+      if (tonyReady) {
+        for (const removeId of plan.removeDealIds) {
+          const row = db.prepare('SELECT twenty_id FROM deals WHERE id = ?').get(removeId);
+          if (row && row.twenty_id) {
+            try { await cancelDealInTwenty(removeId); cancelledDeals++; } catch (err) {
+              console.error(`[tony] cancel failed for deal ${removeId}: ${err.message}`);
+            }
+          }
         }
-
-        newDeals++;
       }
     }
 
@@ -271,7 +357,6 @@ export async function runParsing(startDate, endDate) {
 
     const calendarEventIds = collectCalendarEventIds(events, startDate, endDate);
     const missingDeals = findDealsMissingFromCalendar(db, calendarEventIds, startDate, endDate);
-    let cancelledDeals = 0;
 
     if (missingDeals.length > 0) {
       console.log(
