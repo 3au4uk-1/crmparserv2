@@ -1,7 +1,7 @@
 import crypto from 'crypto';
+import { crmOffsetSuffix } from '../utils/crm-dates.js';
 
 const DMY_RE = /^(\d{2})\.(\d{2})\.(\d{4})$/;
-const CRM_OFFSET = '+03:00';
 
 /** "16.06.2026" -> "2026-06-16" (or '' when not parseable). */
 export function dmyToIsoDate(value) {
@@ -14,7 +14,7 @@ export function dmyToIsoDate(value) {
 /** "16.06.2026" -> "2026-06-16T00:00:00+03:00" (or '' when not parseable). */
 function dmyToIsoDateTime(value) {
   const iso = dmyToIsoDate(value);
-  return iso ? `${iso}T00:00:00${CRM_OFFSET}` : '';
+  return iso ? `${iso}T00:00:00${crmOffsetSuffix()}` : '';
 }
 
 export function buildTonyDealFields(parsed) {

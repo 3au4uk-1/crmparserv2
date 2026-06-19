@@ -9,11 +9,14 @@ export async function fetchTonyOrderHtml(bookingNumber) {
   const resp = await axios.get(url, {
     headers: tonyRequestHeaders(),
     timeout: 30000,
-    maxRedirects: 5,
+    maxRedirects: 0,
     validateStatus: () => true,
   });
 
   if (resp.status === 404) return null;
+  if (resp.status >= 300 && resp.status < 400) {
+    throw new Error(`Tony order ${bookingNumber}: session expired (redirected to login)`);
+  }
   if (resp.status >= 400) {
     throw new Error(`Tony order ${bookingNumber} returned HTTP ${resp.status}`);
   }

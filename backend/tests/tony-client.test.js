@@ -26,4 +26,9 @@ describe('fetchTonyOrderHtml', () => {
     const html = await fetchTonyOrderHtml('999999');
     expect(html).toBeNull();
   });
+
+  it('throws on a redirect (expired session → login page)', async () => {
+    axios.get.mockResolvedValue({ status: 302, headers: { location: '/auth/' }, data: '' });
+    await expect(fetchTonyOrderHtml('169120')).rejects.toThrow(/session/i);
+  });
 });
