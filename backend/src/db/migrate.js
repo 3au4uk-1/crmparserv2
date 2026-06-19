@@ -51,14 +51,14 @@ export function migrateDealIdentity(db) {
       db.exec(createSql);
       db.exec(`INSERT INTO deals (${colList}) SELECT ${colList} FROM deals_old;`);
       db.exec(`DROP TABLE deals_old;`);
+      const fkViolations = db.prepare('PRAGMA foreign_key_check').all();
+      if (fkViolations.length > 0) {
+        throw new Error('migrateDealIdentity: foreign key violations after rebuild: ' + JSON.stringify(fkViolations));
+      }
     });
     tx();
     db.exec('PRAGMA legacy_alter_table=OFF;');
-    const fkViolations = db.prepare('PRAGMA foreign_key_check').all();
     db.exec('PRAGMA foreign_keys=ON;');
-    if (fkViolations.length > 0) {
-      throw new Error('migrateDealIdentity: foreign key violations after rebuild: ' + JSON.stringify(fkViolations));
-    }
   }
 
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_deals_deal_key ON deals(deal_key);`);
