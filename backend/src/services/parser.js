@@ -182,14 +182,14 @@ export async function runParsing(startDate, endDate) {
       const titleInfo = parseDealTitle(event.title || '', knownCodes);
       const bookingNumbers = extractBookingNumbers(event.title || '');
       const tonyOrders = await resolveTonyOrders(tonyReady, bookingNumbers);
-      const validBookings = bookingNumbers.filter((n) => tonyOrders.has(n));
 
-      const plan = planEventReconciliation(db, eventId, validBookings);
+      const plan = planEventReconciliation(db, eventId, bookingNumbers);
 
-      // Relink a single calendar deal to a single new booking, preserving the row.
+      // Relink a lone calendar deal to a single new booking: change only its key/booking,
+      // keeping its data_source so the per-target logic below decides the source.
       if (plan.relink) {
-        db.prepare('UPDATE deals SET deal_key = ?, data_source = ?, tony_order_id = ? WHERE id = ?')
-          .run(plan.relink.newDealKey, 'tony', plan.relink.bookingNumber, plan.relink.dealId);
+        db.prepare('UPDATE deals SET deal_key = ?, tony_order_id = ? WHERE id = ?')
+          .run(plan.relink.newDealKey, plan.relink.bookingNumber, plan.relink.dealId);
       }
 
       const calParsed = parseDealDescription(descHtml);
@@ -197,9 +197,10 @@ export async function runParsing(startDate, endDate) {
 
       for (const target of plan.desired) {
         const existing = db.prepare('SELECT * FROM deals WHERE deal_key = ?').get(target.dealKey);
+        const order = target.bookingNumber ? tonyOrders.get(target.bookingNumber) : undefined;
 
-        if (target.source === 'tony') {
-          const order = tonyOrders.get(target.bookingNumber);
+        if (order) {
+          // Tony is the source of truth for this booking.
           const hash = tonyContentHash(order);
           if (existing && existing.content_hash === hash) { skippedDeals++; continue; }
 
@@ -254,7 +255,11 @@ export async function runParsing(startDate, endDate) {
             newDeals++;
           }
         } else {
-          // calendar fallback — existing behavior, keyed by deal_key
+          // No Tony order for this target: title has no booking, or Tony unreachable/404.
+          // Keep existing Tony-sourced data untouched during an outage (do not clobber with calendar).
+          if (existing && existing.data_source === 'tony') { skippedDeals++; continue; }
+
+          const calTonyOrderId = target.bookingNumber || titleInfo.tonyOrderId || null;
           const hash = contentHash(descHtml);
           if (existing && existing.content_hash === hash) { skippedDeals++; continue; }
 
@@ -269,7 +274,7 @@ export async function runParsing(startDate, endDate) {
                 status = ?, legal_entity = ?, invoice_number = ?, budget = ?, discount = ?,
                 contact_name = ?, contact_email = ?, contact_company = ?, contact_phone = ?,
                 address = ?, venue_type = ?, arrival_time = ?, ready_time = ?, work_time = ?, dismantle_time = ?,
-                content_hash = ?, raw_description = ?, crm_lead_id = ?, data_source = 'calendar',
+                content_hash = ?, raw_description = ?, crm_lead_id = ?, tony_order_id = ?, data_source = 'calendar',
                 twenty_stage = CASE WHEN ? THEN NULL ELSE twenty_stage END, updated_at = datetime('now')
               WHERE id = ?
             `).run(
@@ -278,7 +283,7 @@ export async function runParsing(startDate, endDate) {
               parsed.contact.name, parsed.contact.email, parsed.contact.company, parsed.contact.phone,
               parsed.event.address, parsed.event.venueType, parsed.event.arrivalTime || null, parsed.event.readyTime || null,
               parsed.event.workTime || null, parsed.event.dismantleTime || null,
-              hash, descHtml, event.leadid, wasCancelled ? 1 : 0, existing.id
+              hash, descHtml, event.leadid, calTonyOrderId, wasCancelled ? 1 : 0, existing.id
             );
             const existingItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(existing.id);
             replaceDealItemsPreservingOverrides(db, existing.id, classifiedItems, buildOverrideMap(existingItems));
@@ -290,14 +295,14 @@ export async function runParsing(startDate, endDate) {
                 crm_event_id, deal_key, data_source, crm_lead_id, title, company_code, manager_name,
                 start_date, end_date, department, status, legal_entity, invoice_number, budget, discount,
                 contact_name, contact_email, contact_company, contact_phone, address, venue_type,
-                arrival_time, ready_time, work_time, dismantle_time, content_hash, raw_description
-              ) VALUES (?, ?, 'calendar', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                arrival_time, ready_time, work_time, dismantle_time, tony_order_id, content_hash, raw_description
+              ) VALUES (?, ?, 'calendar', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `).run(
               eventId, target.dealKey, event.leadid, event.title, titleInfo.companyCode, titleInfo.managerName,
               event.start, event.end, event.department, parsed.meta.status, parsed.meta.legalEntity, parsed.meta.invoiceNumber,
               parsed.meta.budget, parsed.meta.discount, parsed.contact.name, parsed.contact.email, parsed.contact.company, parsed.contact.phone,
               parsed.event.address, parsed.event.venueType, parsed.event.arrivalTime || null, parsed.event.readyTime || null,
-              parsed.event.workTime || null, parsed.event.dismantleTime || null, hash, descHtml
+              parsed.event.workTime || null, parsed.event.dismantleTime || null, calTonyOrderId, hash, descHtml
             );
             const dealId = insert.lastInsertRowid;
             for (const item of classifiedItems) {
@@ -309,14 +314,17 @@ export async function runParsing(startDate, endDate) {
         }
       }
 
-      // Cancel deals whose booking disappeared (only when Tony was reachable, to avoid mass-cancel on outage).
-      if (tonyReady) {
-        for (const removeId of plan.removeDealIds) {
-          const row = db.prepare('SELECT twenty_id FROM deals WHERE id = ?').get(removeId);
-          if (row && row.twenty_id) {
-            try { await cancelDealInTwenty(removeId); cancelledDeals++; } catch (err) {
-              console.error(`[tony] cancel failed for deal ${removeId}: ${err.message}`);
-            }
+      // Cancel deals whose booking was removed from the title. This is title-driven and reliable
+      // even during a Tony outage (an outage does not change the title), so it is NOT gated on tonyReady.
+      // Whole-event disappearance from the calendar is handled separately after the loop.
+      for (const removeId of plan.removeDealIds) {
+        const row = db.prepare('SELECT twenty_id FROM deals WHERE id = ?').get(removeId);
+        if (row && row.twenty_id) {
+          try {
+            const result = await cancelDealInTwenty(removeId);
+            if (result && !result.skipped) cancelledDeals++;
+          } catch (err) {
+            console.error(`[tony] cancel failed for deal ${removeId}: ${err.message}`);
           }
         }
       }
