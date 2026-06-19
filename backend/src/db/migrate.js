@@ -40,6 +40,7 @@ export function migrateDealIdentity(db) {
     const cols = db.prepare(`PRAGMA table_info(deals)`).all().map((c) => c.name);
     const colList = cols.join(', ');
     db.exec('PRAGMA foreign_keys=OFF;');
+    db.exec('PRAGMA legacy_alter_table=ON;');
     const tx = db.transaction(() => {
       db.exec(`ALTER TABLE deals RENAME TO deals_old;`);
       const createSql = db
@@ -52,7 +53,12 @@ export function migrateDealIdentity(db) {
       db.exec(`DROP TABLE deals_old;`);
     });
     tx();
+    db.exec('PRAGMA legacy_alter_table=OFF;');
+    const fkViolations = db.prepare('PRAGMA foreign_key_check').all();
     db.exec('PRAGMA foreign_keys=ON;');
+    if (fkViolations.length > 0) {
+      throw new Error('migrateDealIdentity: foreign key violations after rebuild: ' + JSON.stringify(fkViolations));
+    }
   }
 
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_deals_deal_key ON deals(deal_key);`);
