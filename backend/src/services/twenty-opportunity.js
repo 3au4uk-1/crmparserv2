@@ -14,6 +14,11 @@ export const OPPORTUNITY_STAGE_OPTIONS = [
 export const DEFAULT_OPPORTUNITY_STAGE = 'NOVYY';
 export const CANCELLED_OPPORTUNITY_STAGE = 'OTMENA';
 
+export function parseQuantity(value) {
+  const n = Number.parseInt(String(value ?? '').replace(/\s/g, ''), 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
 export function buildOpportunityInput(deal, items, options = {}) {
   const {
     includeStage = false,
@@ -22,7 +27,7 @@ export function buildOpportunityInput(deal, items, options = {}) {
     personTwentyId = null,
   } = options;
 
-  const brandingBudget = items.reduce((sum, i) => sum + (i.price || 0), 0);
+  const brandingBudget = items.reduce((sum, i) => sum + (i.price || 0) * parseQuantity(i.quantity), 0);
 
   const input = {
     name: deal.title || `Deal ${deal.crm_event_id}`,
@@ -56,6 +61,11 @@ export function buildOpportunityInput(deal, items, options = {}) {
   if (deal.ready_time) input.readyTime = deal.ready_time;
   if (deal.work_time) input.workTime = deal.work_time;
   if (deal.dismantle_time) input.dismantleTime = deal.dismantle_time;
+
+  if (deal.load_date) {
+    const time = /^\d{1,2}:\d{2}$/.test(deal.load_time || '') ? deal.load_time : '00:00';
+    input.loadDate = `${deal.load_date}T${time.padStart(5, '0')}:00+03:00`;
+  }
 
   return input;
 }
