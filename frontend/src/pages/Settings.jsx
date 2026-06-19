@@ -358,6 +358,37 @@ export default function Settings() {
         </div>
       </Section>
 
+      <Section title="Tony (crm.apihide.com)">
+        <div className="space-y-3 max-w-md">
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Base URL</label>
+            <input
+              defaultValue={settings?.tony_base_url || ''}
+              onBlur={e => updateSetting.mutate({ key: 'tony_base_url', value: e.target.value })}
+              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-full font-mono"
+              placeholder="https://crm.apihide.com"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Логин</label>
+            <input
+              defaultValue={settings?.tony_login || ''}
+              onBlur={e => updateSetting.mutate({ key: 'tony_login', value: e.target.value })}
+              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-full font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Пароль</label>
+            <input
+              type="password"
+              defaultValue={settings?.tony_password || ''}
+              onBlur={e => updateSetting.mutate({ key: 'tony_password', value: e.target.value })}
+              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-full font-mono"
+            />
+          </div>
+        </div>
+      </Section>
+
       <Section title="Данные парсинга">
         <p className="text-sm text-gray-600 mb-3">
           Удаляет все сделки, позиции и логи парсинга/синхронизации. Настройки и справочники сохраняются.
