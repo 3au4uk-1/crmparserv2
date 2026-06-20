@@ -7,10 +7,20 @@ import {
   useParseDefaults,
 } from '../api';
 import StatCard from '../components/StatCard';
+import PageHeader from '../components/ui/PageHeader';
+import { StatSkeleton } from '../components/ui/Skeleton';
+import { IconPlay } from '../components/ui/Icons';
 import { formatDateTime } from '../utils/dates';
+import { Link } from 'react-router-dom';
+
+const statusLabels = {
+  completed: { label: 'Завершён', className: 'text-pastel-green-text' },
+  running: { label: 'Выполняется', className: 'text-pastel-blue-text' },
+  failed: { label: 'Ошибка', className: 'text-pastel-red-text' },
+};
 
 export default function Dashboard() {
-  const { data: stats } = useDealStats();
+  const { data: stats, isLoading: statsLoading } = useDealStats();
   const { data: parsingStatus } = useParsingStatus();
   const { data: runs } = useParseRuns();
   const { data: defaults } = useParseDefaults();
@@ -25,6 +35,8 @@ export default function Dashboard() {
   }, [defaults?.startDate, defaults?.endDate]);
 
   const lastRun = runs?.[0];
+  const isParsing = parsing.isPending || parsingStatus?.inProgress;
+  const pendingCount = stats?.pending ?? 0;
 
   function runParsing() {
     parsing.mutate({
@@ -35,82 +47,127 @@ export default function Dashboard() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-        <h2 className="text-xl font-semibold text-gray-800">Дашборд</h2>
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-1.5 text-sm text-gray-600">
-            С:
+      <PageHeader
+        title="Дашборд"
+        description="Обзор сделок и управление парсингом из CRM"
+      />
+
+      <section className="surface p-5 md:p-6 mb-8" aria-labelledby="parsing-heading">
+        <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
+          <div>
+            <h2 id="parsing-heading" className="text-base font-semibold text-ink">
+              Запуск парсинга
+            </h2>
+            <p className="text-sm text-ink-muted mt-1 max-w-lg">
+              По умолчанию охватывает 2 недели вперёд. Даты раньше сегодняшней недоступны.
+            </p>
+          </div>
+          <button
+            onClick={runParsing}
+            disabled={isParsing}
+            className="btn-primary shrink-0"
+          >
+            <IconPlay />
+            {isParsing ? 'Парсинг...' : 'Запустить парсинг'}
+          </button>
+        </div>
+
+        <div className="flex flex-wrap gap-4">
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="text-ink-muted font-medium">С</span>
             <input
               type="date"
               value={dateRange.from}
               min={defaults?.startDate || undefined}
               onChange={(e) => setDateRange((prev) => ({ ...prev, from: e.target.value }))}
-              className="border border-gray-300 rounded-md px-2 py-1.5 text-sm"
+              className="input-field w-auto min-w-[10rem]"
             />
           </label>
-          <label className="flex items-center gap-1.5 text-sm text-gray-600">
-            По:
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="text-ink-muted font-medium">По</span>
             <input
               type="date"
               value={dateRange.to}
               min={dateRange.from || defaults?.startDate || undefined}
               onChange={(e) => setDateRange((prev) => ({ ...prev, to: e.target.value }))}
-              className="border border-gray-300 rounded-md px-2 py-1.5 text-sm"
+              className="input-field w-auto min-w-[10rem]"
             />
           </label>
-          <button
-            onClick={runParsing}
-            disabled={parsing.isPending || parsingStatus?.inProgress}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {parsing.isPending || parsingStatus?.inProgress ? 'Парсинг...' : 'Запустить парсинг'}
-          </button>
         </div>
-      </div>
 
-      <p className="text-xs text-gray-500 mb-4">
-        По умолчанию парсинг охватывает 2 недели вперёд. Даты раньше сегодняшней недоступны.
-      </p>
+        {parsing.isError && (
+          <p className="mt-4 text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md">
+            {parsing.error.message}
+          </p>
+        )}
+      </section>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <StatCard label="Всего сделок" value={stats?.total ?? '—'} color="gray" />
-        <StatCard label="Ожидают апрува" value={stats?.pending ?? '—'} color="yellow" />
-        <StatCard label="Одобрено" value={stats?.approved ?? '—'} color="blue" />
-        <StatCard label="Синхронизировано" value={stats?.synced ?? '—'} color="green" />
-        <StatCard label="Отклонено" value={stats?.rejected ?? '—'} color="red" />
-      </div>
+      {statsLoading ? (
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <StatSkeleton key={i} />
+          ))}
+        </div>
+      ) : (
+        <section className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8" aria-label="Статистика сделок">
+          <StatCard label="Всего сделок" value={stats?.total ?? '—'} color="gray" highlight />
+          <StatCard label="Ожидают апрува" value={stats?.pending ?? '—'} color="yellow" />
+          <StatCard label="Одобрено" value={stats?.approved ?? '—'} color="blue" />
+          <StatCard label="Синхронизировано" value={stats?.synced ?? '—'} color="green" />
+          <StatCard label="Отклонено" value={stats?.rejected ?? '—'} color="red" />
+        </section>
+      )}
 
-      {lastRun && (
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <h3 className="text-sm font-medium text-gray-600 mb-2">Последний парсинг</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <div>
-              <span className="text-gray-500">Время: </span>
-              <span>{formatDateTime(lastRun.started_at)}</span>
-            </div>
-            <div>
-              <span className="text-gray-500">Статус: </span>
-              <span className={lastRun.status === 'completed' ? 'text-green-600' : 'text-red-600'}>
-                {lastRun.status}
-              </span>
-            </div>
-            <div>
-              <span className="text-gray-500">Событий: </span>
-              <span>{lastRun.total_events}</span>
-            </div>
-            <div>
-              <span className="text-gray-500">Новых: </span>
-              <span>{lastRun.new_deals}</span>
-            </div>
-          </div>
-          {lastRun.error && (
-            <p className="mt-2 text-sm text-red-600">{lastRun.error}</p>
-          )}
+      {pendingCount > 0 && (
+        <div className="surface-muted px-4 py-3 mb-8 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-ink">
+            <span className="font-semibold tabular-nums">{pendingCount}</span>{' '}
+            {pendingCount === 1 ? 'сделка ожидает' : 'сделок ожидают'} вашего решения
+          </p>
+          <Link to="/deals?status=pending" className="btn-secondary btn-sm">
+            Перейти к очереди
+          </Link>
         </div>
       )}
 
-      {parsing.isError && (
-        <p className="mt-4 text-sm text-red-600">Ошибка: {parsing.error.message}</p>
+      {lastRun && (
+        <section className="surface p-5 md:p-6" aria-labelledby="last-run-heading">
+          <div className="flex items-center justify-between mb-4">
+            <h2 id="last-run-heading" className="text-base font-semibold text-ink">
+              Последний парсинг
+            </h2>
+            <Link to="/logs" className="text-xs text-ink-muted hover:text-ink transition-colors">
+              Все логи →
+            </Link>
+          </div>
+
+          <dl className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4 text-sm">
+            <div>
+              <dt className="text-ink-muted text-xs mb-0.5">Время</dt>
+              <dd className="font-medium tabular-nums">{formatDateTime(lastRun.started_at)}</dd>
+            </div>
+            <div>
+              <dt className="text-ink-muted text-xs mb-0.5">Статус</dt>
+              <dd className={`font-medium ${statusLabels[lastRun.status]?.className || 'text-ink'}`}>
+                {statusLabels[lastRun.status]?.label || lastRun.status}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-ink-muted text-xs mb-0.5">Событий</dt>
+              <dd className="font-medium tabular-nums">{lastRun.total_events ?? '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-ink-muted text-xs mb-0.5">Новых сделок</dt>
+              <dd className="font-medium tabular-nums">{lastRun.new_deals ?? '—'}</dd>
+            </div>
+          </dl>
+
+          {lastRun.error && (
+            <p className="mt-4 text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md">
+              {lastRun.error}
+            </p>
+          )}
+        </section>
       )}
     </div>
   );

@@ -1,10 +1,10 @@
 import { useUpdateItemSyncOverride, useResetSyncOverrides, useAddItemToBlacklist } from '../api';
 
 const classColors = {
-  keyword_match: 'bg-green-50 border-l-4 border-green-400',
-  llm_confirmed: 'bg-blue-50 border-l-4 border-blue-400',
-  llm_rejected: 'bg-gray-50',
-  unclassified: 'bg-gray-50',
+  keyword_match: 'bg-pastel-green-bg/50 border-l-2 border-pastel-green-text',
+  llm_confirmed: 'bg-pastel-blue-bg/50 border-l-2 border-pastel-blue-text',
+  llm_rejected: 'bg-surface-muted',
+  unclassified: 'bg-surface-muted',
 };
 
 const classLabels = {
@@ -19,7 +19,9 @@ export default function DealItems({ dealId, items, readOnly = false }) {
   const resetOverrides = useResetSyncOverrides();
   const addToBlacklist = useAddItemToBlacklist();
 
-  if (!items?.length) return <p className="text-sm text-gray-500 p-3">Нет позиций</p>;
+  if (!items?.length) {
+    return <p className="text-sm text-ink-muted py-2">Позиций в заказе нет</p>;
+  }
 
   const eligibleCount = items.filter((i) => i.eligibleForTwenty).length;
 
@@ -39,73 +41,78 @@ export default function DealItems({ dealId, items, readOnly = false }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-2 px-2">
-        <span className="text-sm text-gray-600">
-          → Twenty: <strong>{eligibleCount}</strong> из <strong>{items.length}</strong>
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm text-ink-muted">
+          В Twenty:{' '}
+          <strong className="text-ink tabular-nums">{eligibleCount}</strong>
+          {' '}из{' '}
+          <strong className="text-ink tabular-nums">{items.length}</strong>
         </span>
         {!readOnly && (
           <button
             onClick={() => resetOverrides.mutate(dealId)}
             disabled={resetOverrides.isPending}
-            className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
+            className="text-xs text-pastel-blue-text hover:opacity-80 disabled:opacity-50 transition-opacity"
           >
             Сбросить к авто
           </button>
         )}
       </div>
 
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-gray-500 text-xs uppercase">
-            <th className="p-2 w-24">В Twenty</th>
-            <th className="p-2">Название</th>
-            <th className="p-2">Цена</th>
-            <th className="p-2">Кол-во</th>
-            <th className="p-2">Классификация</th>
-            {!readOnly && <th className="p-2 w-28">Действия</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((item) => (
-            <tr key={item.id} className={classColors[item.classification] || ''}>
-              <td className="p-2" onClick={(e) => e.stopPropagation()}>
-                <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(item.eligibleForTwenty)}
-                    disabled={readOnly || updateOverride.isPending}
-                    onChange={(e) => handleCheckboxChange(item, e.target.checked)}
-                    className="rounded"
-                  />
-                  <span className="text-xs text-gray-500">{syncLabel(item)}</span>
-                </label>
-              </td>
-              <td className="p-2 font-medium">{item.name}</td>
-              <td className="p-2">{item.price?.toLocaleString('ru-RU')} ₽</td>
-              <td className="p-2">{item.quantity}</td>
-              <td className="p-2">
-                <span className="text-xs">{classLabels[item.classification] || item.classification}</span>
-              </td>
-              {!readOnly && (
-                <td className="p-2" onClick={(e) => e.stopPropagation()}>
-                  {item.blacklisted ? (
-                    <span className="text-xs text-red-600">блеклист</span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => addToBlacklist.mutate({ dealId, itemId: item.id })}
-                      disabled={addToBlacklist.isPending}
-                      className="text-xs text-red-600 hover:text-red-800 disabled:opacity-50"
-                    >
-                      В блеклист
-                    </button>
-                  )}
-                </td>
-              )}
+      <div className="overflow-x-auto rounded-md border border-border">
+        <table className="data-table">
+          <thead>
+            <tr className="bg-surface-muted">
+              <th className="w-24">В Twenty</th>
+              <th>Название</th>
+              <th>Цена</th>
+              <th>Кол-во</th>
+              <th>Классификация</th>
+              {!readOnly && <th className="w-28">Действия</th>}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.id} className={classColors[item.classification] || ''}>
+                <td onClick={(e) => e.stopPropagation()}>
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(item.eligibleForTwenty)}
+                      disabled={readOnly || updateOverride.isPending}
+                      onChange={(e) => handleCheckboxChange(item, e.target.checked)}
+                      className="rounded border-border"
+                    />
+                    <span className="text-xs text-ink-faint">{syncLabel(item)}</span>
+                  </label>
+                </td>
+                <td className="font-medium">{item.name}</td>
+                <td className="tabular-nums">{item.price?.toLocaleString('ru-RU')} ₽</td>
+                <td className="tabular-nums">{item.quantity}</td>
+                <td>
+                  <span className="text-xs">{classLabels[item.classification] || item.classification}</span>
+                </td>
+                {!readOnly && (
+                  <td onClick={(e) => e.stopPropagation()}>
+                    {item.blacklisted ? (
+                      <span className="text-xs text-pastel-red-text">блеклист</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => addToBlacklist.mutate({ dealId, itemId: item.id })}
+                        disabled={addToBlacklist.isPending}
+                        className="text-xs text-pastel-red-text hover:opacity-80 disabled:opacity-50"
+                      >
+                        В блеклист
+                      </button>
+                    )}
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { useDeal, useApproveDeal, useRejectDeal, useDeleteDeal, useResyncDeal } 
 import { formatEventDate, formatDateTime } from '../utils/dates';
 import StatusBadge from './StatusBadge';
 import DealItems from './DealItems';
+import { IconCheck, IconX, IconRefresh } from './ui/Icons';
 
 export default function DealRow({ deal, selected, onSelect }) {
   const [expanded, setExpanded] = useState(false);
@@ -15,64 +16,73 @@ export default function DealRow({ deal, selected, onSelect }) {
   return (
     <>
       <tr
-        className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
+        className="cursor-pointer"
         onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
       >
-        <td className="p-3" onClick={e => e.stopPropagation()}>
+        <td onClick={(e) => e.stopPropagation()}>
           <input
             type="checkbox"
             checked={selected}
             onChange={() => onSelect(deal.id)}
-            className="rounded"
+            className="rounded border-border"
+            aria-label={`Выбрать ${deal.title}`}
           />
         </td>
-        <td className="p-3 text-sm">{formatEventDate(deal.start_date, deal.arrival_time)}</td>
-        <td className="p-3 text-sm font-medium max-w-xs truncate">{deal.title}</td>
-        <td className="p-3 text-sm">{deal.company_code}</td>
-        <td className="p-3 text-sm">{deal.manager_name}</td>
-        <td className="p-3 text-sm" title="Позиций в Twenty / всего">
+        <td className="text-sm tabular-nums whitespace-nowrap">
+          {formatEventDate(deal.start_date, deal.arrival_time)}
+        </td>
+        <td className="text-sm font-medium max-w-xs truncate">{deal.title}</td>
+        <td className="text-sm font-mono text-xs">{deal.company_code}</td>
+        <td className="text-sm">{deal.manager_name}</td>
+        <td className="text-sm tabular-nums" title="Позиций в Twenty / всего">
           {deal.branding_count}/{deal.total_items}
         </td>
-        <td className="p-3 text-sm">{deal.budget}</td>
-        <td className="p-3">
+        <td className="text-sm tabular-nums">{deal.budget}</td>
+        <td>
           <StatusBadge status={deal.approval_status} />
           {deal.twenty_error && (
-            <p className="text-xs text-red-600 mt-1 max-w-[10rem] truncate" title={deal.twenty_error}>
+            <p className="text-xs text-pastel-red-text mt-1 max-w-[10rem] truncate" title={deal.twenty_error}>
               {deal.twenty_error}
             </p>
           )}
         </td>
-        <td className="p-3" onClick={e => e.stopPropagation()}>
+        <td onClick={(e) => e.stopPropagation()}>
           {deal.approval_status === 'pending' && (
             <div className="flex gap-1">
               <button
                 onClick={() => approve.mutate(deal.id)}
                 disabled={approve.isPending}
-                className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 disabled:opacity-50"
+                className="btn-success btn-sm"
+                title="Одобрить"
+                aria-label="Одобрить"
               >
-                ✓
+                <IconCheck />
               </button>
               <button
                 onClick={() => reject.mutate(deal.id)}
                 disabled={reject.isPending}
-                className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 disabled:opacity-50"
+                className="btn-danger btn-sm"
+                title="Отклонить"
+                aria-label="Отклонить"
               >
-                ✗
+                <IconX />
               </button>
             </div>
           )}
           {deal.approval_status === 'synced' && (
             <div className="flex flex-col gap-1">
               {deal.synced_at && (
-                <span className="text-xs text-gray-500" title={deal.synced_at}>
-                  Синхр. {formatDateTime(deal.synced_at)}
+                <span className="text-xs text-ink-faint tabular-nums" title={deal.synced_at}>
+                  {formatDateTime(deal.synced_at)}
                 </span>
               )}
               <button
                 onClick={() => resync.mutate(deal.id)}
                 disabled={resync.isPending}
-                className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 disabled:opacity-50"
+                className="btn-secondary btn-sm"
               >
+                <IconRefresh />
                 Пересинхр.
               </button>
             </div>
@@ -84,7 +94,7 @@ export default function DealRow({ deal, selected, onSelect }) {
                 deleteDeal.mutate(deal.id);
               }}
               disabled={deleteDeal.isPending}
-              className="px-2 py-1 bg-gray-700 text-white text-xs rounded hover:bg-gray-800 disabled:opacity-50"
+              className="btn-secondary btn-sm"
             >
               Удалить
             </button>
@@ -93,14 +103,14 @@ export default function DealRow({ deal, selected, onSelect }) {
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={9} className="bg-gray-50 p-0">
-            <div className="p-4">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mb-3">
-                <div><span className="text-gray-500">Контакт:</span> {details?.contact_name}</div>
-                <div><span className="text-gray-500">Email:</span> {details?.contact_email}</div>
-                <div><span className="text-gray-500">Компания:</span> {details?.contact_company}</div>
-                <div><span className="text-gray-500">Адрес:</span> {details?.address}</div>
-              </div>
+          <td colSpan={9} className="bg-surface-muted p-0">
+            <div className="p-5 border-t border-border">
+              <dl className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
+                <div><dt className="text-ink-muted text-xs mb-0.5">Контакт</dt><dd>{details?.contact_name || '—'}</dd></div>
+                <div><dt className="text-ink-muted text-xs mb-0.5">Email</dt><dd>{details?.contact_email || '—'}</dd></div>
+                <div><dt className="text-ink-muted text-xs mb-0.5">Компания</dt><dd>{details?.contact_company || '—'}</dd></div>
+                <div><dt className="text-ink-muted text-xs mb-0.5">Адрес</dt><dd>{details?.address || '—'}</dd></div>
+              </dl>
               <DealItems
                 dealId={deal.id}
                 items={details?.items}

@@ -12,40 +12,56 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-sm bg-white rounded-lg border border-gray-200 p-6 shadow-sm"
-      >
-        <h1 className="text-lg font-semibold text-gray-800 mb-1">CRM Parser</h1>
-        <p className="text-sm text-gray-500 mb-4">Введите пароль для доступа</p>
+    <div className="min-h-dvh bg-canvas flex items-center justify-center p-6">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-faint mb-2">
+            Отдел брендинга
+          </p>
+          <h1 className="font-serif text-3xl font-semibold tracking-tight text-ink">
+            CRM Parser
+          </h1>
+          <p className="text-sm text-ink-muted mt-2">
+            Введите пароль для доступа к панели
+          </p>
+        </div>
 
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="border border-gray-300 rounded-md px-3 py-2 text-sm w-full mb-3"
-          placeholder="Пароль"
-          autoFocus
-          disabled={login.isPending}
-        />
-
-        {login.isError && (
-          <p className="text-sm text-red-600 mb-3">{login.error.message}</p>
-        )}
-
-        <button
-          type="submit"
-          disabled={login.isPending || !password}
-          className="w-full px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+        <form
+          onSubmit={handleSubmit}
+          className="surface p-6"
         >
-          {login.isPending ? 'Вход...' : 'Войти'}
-        </button>
+          <label className="block text-sm font-medium text-ink-muted mb-1.5">
+            Пароль
+          </label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="input-field mb-4"
+            placeholder="••••••••"
+            autoFocus
+            disabled={login.isPending}
+          />
 
-        {authStatus?.required === false && (
-          <p className="text-xs text-gray-400 mt-3 text-center">Авторизация отключена</p>
-        )}
-      </form>
+          {login.isError && (
+            <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-4">
+              {login.error.message}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={login.isPending || !password}
+            className="btn-primary w-full"
+          >
+            {login.isPending ? 'Вход...' : 'Войти'}
+          </button>
+
+          {authStatus?.required === false && (
+            <p className="text-xs text-ink-faint mt-4 text-center">Авторизация отключена</p>
+          )}
+        </form>
+      </div>
     </div>
   );
 }

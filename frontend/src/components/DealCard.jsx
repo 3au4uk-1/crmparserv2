@@ -3,6 +3,7 @@ import { useDeal, useApproveDeal, useRejectDeal, useDeleteDeal, useResyncDeal } 
 import { formatEventDate, formatDateTime } from '../utils/dates';
 import StatusBadge from './StatusBadge';
 import DealItems from './DealItems';
+import { IconCheck, IconX, IconRefresh } from './ui/Icons';
 
 export default function DealCard({ deal, selected, onSelect }) {
   const [expanded, setExpanded] = useState(false);
@@ -13,72 +14,74 @@ export default function DealCard({ deal, selected, onSelect }) {
   const resync = useResyncDeal();
 
   return (
-    <div className="border-b border-gray-100 p-3">
+    <div className="p-4">
       <div
-        className="flex gap-2 items-start cursor-pointer"
+        className="flex gap-3 items-start cursor-pointer"
         onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
       >
         <input
           type="checkbox"
           checked={selected}
           onChange={() => onSelect(deal.id)}
           onClick={(e) => e.stopPropagation()}
-          className="rounded mt-0.5"
+          className="rounded border-border mt-1"
+          aria-label={`Выбрать ${deal.title}`}
         />
         <div className="flex-1 min-w-0">
-          <div className="flex justify-between gap-2">
-            <span className="text-sm text-gray-600">
+          <div className="flex justify-between gap-2 mb-1">
+            <span className="text-xs text-ink-muted tabular-nums">
               {formatEventDate(deal.start_date, deal.arrival_time)}
             </span>
             <StatusBadge status={deal.approval_status} />
           </div>
-          <p className="text-sm font-medium truncate">{deal.title}</p>
-          <p className="text-xs text-gray-500">
+          <p className="text-sm font-medium leading-snug">{deal.title}</p>
+          <p className="text-xs text-ink-faint mt-0.5 font-mono">
             {deal.company_code} · {deal.manager_name}
           </p>
         </div>
       </div>
 
       {deal.twenty_error && (
-        <p className="text-xs text-red-600 mt-1 truncate" title={deal.twenty_error}>
+        <p className="text-xs text-pastel-red-text mt-2 truncate" title={deal.twenty_error}>
           {deal.twenty_error}
         </p>
       )}
 
-      <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+      <div className="mt-3 flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
         {deal.approval_status === 'pending' && (
-          <div className="flex gap-1">
+          <>
             <button
               onClick={() => approve.mutate(deal.id)}
               disabled={approve.isPending}
-              className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 disabled:opacity-50"
+              className="btn-success btn-sm"
             >
-              ✓
+              <IconCheck /> Одобрить
             </button>
             <button
               onClick={() => reject.mutate(deal.id)}
               disabled={reject.isPending}
-              className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 disabled:opacity-50"
+              className="btn-danger btn-sm"
             >
-              ✗
+              <IconX /> Отклонить
             </button>
-          </div>
+          </>
         )}
         {deal.approval_status === 'synced' && (
-          <div className="flex flex-col gap-1">
+          <>
             {deal.synced_at && (
-              <span className="text-xs text-gray-500" title={deal.synced_at}>
-                Синхр. {formatDateTime(deal.synced_at)}
+              <span className="text-xs text-ink-faint self-center tabular-nums">
+                {formatDateTime(deal.synced_at)}
               </span>
             )}
             <button
               onClick={() => resync.mutate(deal.id)}
               disabled={resync.isPending}
-              className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 disabled:opacity-50 w-fit"
+              className="btn-secondary btn-sm"
             >
-              Пересинхр.
+              <IconRefresh /> Пересинхр.
             </button>
-          </div>
+          </>
         )}
         {deal.approval_status === 'rejected' && (
           <button
@@ -87,7 +90,7 @@ export default function DealCard({ deal, selected, onSelect }) {
               deleteDeal.mutate(deal.id);
             }}
             disabled={deleteDeal.isPending}
-            className="px-2 py-1 bg-gray-700 text-white text-xs rounded hover:bg-gray-800 disabled:opacity-50"
+            className="btn-secondary btn-sm"
           >
             Удалить
           </button>
@@ -95,13 +98,13 @@ export default function DealCard({ deal, selected, onSelect }) {
       </div>
 
       {expanded && (
-        <div className="mt-3 pt-3 border-t border-gray-100">
-          <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-            <div><span className="text-gray-500">Контакт:</span> {details?.contact_name}</div>
-            <div><span className="text-gray-500">Email:</span> {details?.contact_email}</div>
-            <div><span className="text-gray-500">Компания:</span> {details?.contact_company}</div>
-            <div><span className="text-gray-500">Адрес:</span> {details?.address}</div>
-          </div>
+        <div className="mt-4 pt-4 border-t border-border">
+          <dl className="grid grid-cols-2 gap-3 text-sm mb-4">
+            <div><dt className="text-ink-muted text-xs mb-0.5">Контакт</dt><dd>{details?.contact_name || '—'}</dd></div>
+            <div><dt className="text-ink-muted text-xs mb-0.5">Email</dt><dd>{details?.contact_email || '—'}</dd></div>
+            <div><dt className="text-ink-muted text-xs mb-0.5">Компания</dt><dd>{details?.contact_company || '—'}</dd></div>
+            <div><dt className="text-ink-muted text-xs mb-0.5">Адрес</dt><dd>{details?.address || '—'}</dd></div>
+          </dl>
           <DealItems
             dealId={deal.id}
             items={details?.items}

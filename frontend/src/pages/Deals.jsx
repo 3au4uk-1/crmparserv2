@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   useDeals,
   useCompanies,
@@ -9,8 +10,19 @@ import {
 } from '../api';
 import DealRow from '../components/DealRow';
 import DealCard from '../components/DealCard';
+import PageHeader from '../components/ui/PageHeader';
+import EmptyState from '../components/ui/EmptyState';
+import { TableSkeleton } from '../components/ui/Skeleton';
 
 const PAGE_SIZE = 50;
+
+const STATUS_CHIPS = [
+  { value: '', label: 'Все' },
+  { value: 'pending', label: 'Ожидают' },
+  { value: 'approved', label: 'Одобрено' },
+  { value: 'synced', label: 'Синхронизировано' },
+  { value: 'rejected', label: 'Отклонено' },
+];
 
 function startOfCurrentMonth() {
   const now = new Date();
@@ -19,8 +31,11 @@ function startOfCurrentMonth() {
 }
 
 export default function Deals() {
+  const [searchParams] = useSearchParams();
+  const initialStatus = searchParams.get('status') || '';
+
   const [filters, setFilters] = useState({
-    status: '',
+    status: initialStatus,
     company: '',
     from: startOfCurrentMonth(),
     to: '',
@@ -28,6 +43,13 @@ export default function Deals() {
   const [page, setPage] = useState(0);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [sort, setSort] = useState({ sortBy: 'start_date', sortDir: 'desc' });
+
+  useEffect(() => {
+    const status = searchParams.get('status') || '';
+    setFilters((prev) => ({ ...prev, status }));
+    setPage(0);
+    setSelectedIds(new Set());
+  }, [searchParams]);
 
   const { data: companies } = useCompanies();
   const { data, isLoading } = useDeals({
@@ -87,11 +109,11 @@ export default function Deals() {
     const active = sort.sortBy === column;
     const arrow = active ? (sort.sortDir === 'asc' ? ' ↑' : ' ↓') : '';
     return (
-      <th className="p-3">
+      <th>
         <button
           type="button"
           onClick={() => toggleSort(column)}
-          className="uppercase text-xs text-gray-500 hover:text-gray-800 font-normal"
+          className="text-left text-xs font-medium text-ink-muted hover:text-ink transition-colors"
         >
           {label}{arrow}
         </button>
@@ -101,68 +123,98 @@ export default function Deals() {
 
   return (
     <div>
-      <h2 className="text-xl font-semibold text-gray-800 mb-4">Сделки</h2>
+      <PageHeader
+        title="Сделки"
+        description="Просмотр, фильтрация и массовое одобрение сделок брендинга"
+      />
 
-      <div className="flex flex-wrap gap-3 mb-4 items-center">
-        <select
-          value={filters.status}
-          onChange={(e) => updateFilters({ ...filters, status: e.target.value })}
-          className="border border-gray-300 rounded-md px-3 py-1.5 text-sm"
-        >
-          <option value="">Все статусы</option>
-          <option value="pending">Ожидают</option>
-          <option value="approved">Одобрено</option>
-          <option value="synced">Синхронизировано</option>
-          <option value="rejected">Отклонено</option>
-        </select>
-        <select
-          value={filters.company}
-          onChange={(e) => updateFilters({ ...filters, company: e.target.value })}
-          className="border border-gray-300 rounded-md px-3 py-1.5 text-sm"
-        >
-          <option value="">Все компании</option>
-          {(companies || []).map((c) => (
-            <option key={c.id} value={c.code}>{c.code}</option>
+      <div className="surface p-4 mb-4 sticky top-0 z-20 bg-surface/95 backdrop-blur-sm">
+        <div className="flex flex-wrap gap-2 mb-4">
+          {STATUS_CHIPS.map((chip) => (
+            <button
+              key={chip.value}
+              type="button"
+              onClick={() => updateFilters({ ...filters, status: chip.value })}
+              className={`filter-chip ${
+                filters.status === chip.value ? 'filter-chip-active' : 'filter-chip-inactive'
+              }`}
+            >
+              {chip.label}
+            </button>
           ))}
-        </select>
-        <label className="flex items-center gap-1.5 text-sm text-gray-600">
-          С:
-          <input
-            type="date"
-            value={filters.from}
-            onChange={(e) => updateFilters({ ...filters, from: e.target.value })}
-            className="border border-gray-300 rounded-md px-2 py-1.5 text-sm"
-          />
-        </label>
-        <label className="flex items-center gap-1.5 text-sm text-gray-600">
-          По:
-          <input
-            type="date"
-            value={filters.to}
-            onChange={(e) => updateFilters({ ...filters, to: e.target.value })}
-            className="border border-gray-300 rounded-md px-2 py-1.5 text-sm"
-          />
-        </label>
+        </div>
 
-        {selectedIds.size > 0 && (
-          <div className="flex gap-2 ml-auto">
+        <div className="flex flex-wrap gap-3 items-end">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-xs font-medium text-ink-muted">Компания</span>
+            <select
+              value={filters.company}
+              onChange={(e) => updateFilters({ ...filters, company: e.target.value })}
+              className="select-field min-w-[8rem]"
+            >
+              <option value="">Все</option>
+              {(companies || []).map((c) => (
+                <option key={c.id} value={c.code}>{c.code}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-xs font-medium text-ink-muted">С</span>
+            <input
+              type="date"
+              value={filters.from}
+              onChange={(e) => updateFilters({ ...filters, from: e.target.value })}
+              className="input-field w-auto"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-xs font-medium text-ink-muted">По</span>
+            <input
+              type="date"
+              value={filters.to}
+              onChange={(e) => updateFilters({ ...filters, to: e.target.value })}
+              className="input-field w-auto"
+            />
+          </label>
+
+          {filters.status === 'rejected' && total > 0 && selectedIds.size === 0 && (
+            <button
+              onClick={() => {
+                if (!confirm(`Удалить все ${total} отклонённых сделок?`)) return;
+                deleteAllRejected.mutate();
+                setPage(0);
+              }}
+              className="btn-danger btn-sm ml-auto"
+            >
+              Удалить все отклонённые
+            </button>
+          )}
+        </div>
+      </div>
+
+      {selectedIds.size > 0 && (
+        <div className="surface-muted px-4 py-3 mb-4 flex flex-wrap items-center gap-3 sticky top-[7.5rem] z-10">
+          <span className="text-sm font-medium text-ink">
+            Выбрано: <span className="tabular-nums">{selectedIds.size}</span>
+          </span>
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => {
                 bulkApprove.mutate([...selectedIds]);
                 setSelectedIds(new Set());
               }}
-              className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-md hover:bg-green-700"
+              className="btn-success btn-sm"
             >
-              Одобрить ({selectedIds.size})
+              Одобрить
             </button>
             <button
               onClick={() => {
                 bulkReject.mutate([...selectedIds]);
                 setSelectedIds(new Set());
               }}
-              className="px-3 py-1.5 bg-red-600 text-white text-sm rounded-md hover:bg-red-700"
+              className="btn-danger btn-sm"
             >
-              Отклонить ({selectedIds.size})
+              Отклонить
             </button>
             {selectedRejected.length > 0 && (
               <button
@@ -171,105 +223,104 @@ export default function Deals() {
                   bulkDelete.mutate(selectedRejected);
                   setSelectedIds(new Set());
                 }}
-                className="px-3 py-1.5 bg-gray-700 text-white text-sm rounded-md hover:bg-gray-800"
+                className="btn-secondary btn-sm"
               >
-                Удалить ({selectedRejected.length})
+                Удалить отклонённые
               </button>
             )}
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="btn-ghost btn-sm"
+            >
+              Снять выбор
+            </button>
           </div>
-        )}
+        </div>
+      )}
 
-        {filters.status === 'rejected' && total > 0 && selectedIds.size === 0 && (
-          <button
-            onClick={() => {
-              if (!confirm(`Удалить все ${total} отклонённых сделок?`)) return;
-              deleteAllRejected.mutate();
-              setPage(0);
-            }}
-            className="px-3 py-1.5 bg-gray-700 text-white text-sm rounded-md hover:bg-gray-800 ml-auto"
-          >
-            Удалить все отклонённые
-          </button>
+      <div className="surface overflow-hidden">
+        {isLoading ? (
+          <TableSkeleton rows={8} cols={7} />
+        ) : deals.length === 0 ? (
+          <EmptyState
+            title="Сделок не найдено"
+            description={
+              filters.status
+                ? 'Попробуйте изменить фильтры или расширить диапазон дат'
+                : 'Запустите парсинг на дашборде, чтобы загрузить сделки из CRM'
+            }
+          />
+        ) : (
+          <>
+            <div className="hidden md:block overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className="w-10">
+                      <input
+                        type="checkbox"
+                        onChange={toggleAll}
+                        checked={selectedIds.size === deals.length && deals.length > 0}
+                        className="rounded border-border"
+                        aria-label="Выбрать все"
+                      />
+                    </th>
+                    <SortableTh column="start_date" label="Дата" />
+                    <SortableTh column="title" label="Название" />
+                    <SortableTh column="company_code" label="Компания" />
+                    <SortableTh column="manager_name" label="Менеджер" />
+                    <th title="Позиций в Twenty / всего">Twenty</th>
+                    <SortableTh column="budget" label="Бюджет" />
+                    <SortableTh column="approval_status" label="Статус" />
+                    <th>Действия</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deals.map((deal) => (
+                    <DealRow
+                      key={deal.id}
+                      deal={deal}
+                      selected={selectedIds.has(deal.id)}
+                      onSelect={toggleSelect}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="md:hidden divide-y divide-border">
+              {deals.map((deal) => (
+                <DealCard
+                  key={deal.id}
+                  deal={deal}
+                  selected={selectedIds.has(deal.id)}
+                  onSelect={toggleSelect}
+                />
+              ))}
+            </div>
+          </>
         )}
       </div>
 
-      {isLoading ? (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <p className="p-4 text-sm text-gray-500">Загрузка...</p>
-        </div>
-      ) : deals.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <p className="p-4 text-sm text-gray-500">Нет сделок</p>
-        </div>
-      ) : (
-        <>
-          <div className="hidden md:block bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-gray-50 text-left text-xs text-gray-500 uppercase">
-                  <th className="p-3">
-                    <input
-                      type="checkbox"
-                      onChange={toggleAll}
-                      checked={selectedIds.size === deals.length && deals.length > 0}
-                      className="rounded"
-                    />
-                  </th>
-                  <SortableTh column="start_date" label="Дата мероприятия" />
-                  <SortableTh column="title" label="Название" />
-                  <SortableTh column="company_code" label="Компания" />
-                  <SortableTh column="manager_name" label="Менеджер" />
-                  <th className="p-3" title="Позиций в Twenty / всего">Twenty</th>
-                  <SortableTh column="budget" label="Бюджет" />
-                  <SortableTh column="approval_status" label="Статус" />
-                  <th className="p-3">Действия</th>
-                </tr>
-              </thead>
-              <tbody>
-                {deals.map((deal) => (
-                  <DealRow
-                    key={deal.id}
-                    deal={deal}
-                    selected={selectedIds.has(deal.id)}
-                    onSelect={toggleSelect}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="md:hidden bg-white rounded-lg border border-gray-200 overflow-hidden">
-            {deals.map((deal) => (
-              <DealCard
-                key={deal.id}
-                deal={deal}
-                selected={selectedIds.has(deal.id)}
-                onSelect={toggleSelect}
-              />
-            ))}
-          </div>
-        </>
-      )}
-
       {total > 0 && (
-        <div className="flex items-center justify-between mt-4 text-sm text-gray-600">
-          <span>
-            Показано {pageStart}–{pageEnd} из {total}
+        <div className="flex items-center justify-between mt-4 text-sm text-ink-muted">
+          <span className="tabular-nums">
+            {pageStart}–{pageEnd} из {total}
           </span>
           <div className="flex gap-2">
             <button
               onClick={() => setPage((p) => Math.max(0, p - 1))}
               disabled={page === 0}
-              className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-40 hover:bg-gray-50"
+              className="btn-secondary btn-sm"
             >
               Назад
             </button>
-            <span className="px-2 py-1.5">
+            <span className="px-2 py-1.5 tabular-nums">
               {page + 1} / {totalPages}
             </span>
             <button
               onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
               disabled={page >= totalPages - 1}
-              className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-40 hover:bg-gray-50"
+              className="btn-secondary btn-sm"
             >
               Вперёд
             </button>

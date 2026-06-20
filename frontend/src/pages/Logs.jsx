@@ -1,91 +1,104 @@
 import { useState } from 'react';
 import { useLogs, useSyncLogs } from '../api';
 import { formatDateTime } from '../utils/dates';
+import PageHeader from '../components/ui/PageHeader';
+import EmptyState from '../components/ui/EmptyState';
+import { TableSkeleton } from '../components/ui/Skeleton';
+
+const parseStatusConfig = {
+  completed: { label: 'Завершён', className: 'bg-pastel-green-bg text-pastel-green-text' },
+  running: { label: 'Выполняется', className: 'bg-pastel-blue-bg text-pastel-blue-text' },
+  failed: { label: 'Ошибка', className: 'bg-pastel-red-bg text-pastel-red-text' },
+};
+
+const syncStatusConfig = {
+  success: { label: 'Успех', className: 'bg-pastel-green-bg text-pastel-green-text' },
+  error: { label: 'Ошибка', className: 'bg-pastel-red-bg text-pastel-red-text' },
+};
+
+function StatusPill({ config, status }) {
+  const cfg = config[status] || { label: status, className: 'bg-pastel-gray-bg text-pastel-gray-text' };
+  return (
+    <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-medium uppercase tracking-wide ${cfg.className}`}>
+      {cfg.label}
+    </span>
+  );
+}
 
 function ParseLogsTable({ logs }) {
   return (
-    <table className="w-full text-sm">
-      <thead>
-        <tr className="bg-gray-50 text-left text-xs text-gray-500 uppercase">
-          <th className="p-3">Время</th>
-          <th className="p-3">Статус</th>
-          <th className="p-3">Событий</th>
-          <th className="p-3">Новых</th>
-          <th className="p-3">Обновлено</th>
-          <th className="p-3">Пропущено</th>
-          <th className="p-3">Длительность</th>
-          <th className="p-3">Ошибка</th>
-        </tr>
-      </thead>
-      <tbody>
-        {logs.map((log) => {
-          const duration = log.finished_at && log.started_at
-            ? Math.round((new Date(log.finished_at) - new Date(log.started_at)) / 1000)
-            : null;
+    <div className="overflow-x-auto">
+      <table className="data-table">
+        <thead>
+          <tr className="bg-surface-muted">
+            <th>Время</th>
+            <th>Статус</th>
+            <th>Событий</th>
+            <th>Новых</th>
+            <th>Обновлено</th>
+            <th>Пропущено</th>
+            <th>Длительность</th>
+            <th>Ошибка</th>
+          </tr>
+        </thead>
+        <tbody>
+          {logs.map((log) => {
+            const duration = log.finished_at && log.started_at
+              ? Math.round((new Date(log.finished_at) - new Date(log.started_at)) / 1000)
+              : null;
 
-          return (
-            <tr key={log.id} className="border-t border-gray-100">
-              <td className="p-3">{formatDateTime(log.started_at)}</td>
-              <td className="p-3">
-                <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                  log.status === 'completed' ? 'bg-green-100 text-green-800'
-                  : log.status === 'running' ? 'bg-blue-100 text-blue-800'
-                  : 'bg-red-100 text-red-800'
-                }`}>
-                  {log.status}
-                </span>
-              </td>
-              <td className="p-3">{log.total_events ?? '—'}</td>
-              <td className="p-3">{log.new_deals ?? '—'}</td>
-              <td className="p-3">{log.updated_deals ?? '—'}</td>
-              <td className="p-3">{log.skipped_deals ?? '—'}</td>
-              <td className="p-3">{duration != null ? `${duration}с` : '—'}</td>
-              <td className="p-3 text-red-600 max-w-xs truncate">{log.error || ''}</td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+            return (
+              <tr key={log.id}>
+                <td className="tabular-nums whitespace-nowrap">{formatDateTime(log.started_at)}</td>
+                <td><StatusPill config={parseStatusConfig} status={log.status} /></td>
+                <td className="tabular-nums">{log.total_events ?? '—'}</td>
+                <td className="tabular-nums">{log.new_deals ?? '—'}</td>
+                <td className="tabular-nums">{log.updated_deals ?? '—'}</td>
+                <td className="tabular-nums">{log.skipped_deals ?? '—'}</td>
+                <td className="tabular-nums">{duration != null ? `${duration}с` : '—'}</td>
+                <td className="text-pastel-red-text max-w-xs truncate text-xs">{log.error || ''}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
 function SyncLogsTable({ logs }) {
   return (
-    <table className="w-full text-sm">
-      <thead>
-        <tr className="bg-gray-50 text-left text-xs text-gray-500 uppercase">
-          <th className="p-3">Время</th>
-          <th className="p-3">Сделка</th>
-          <th className="p-3">Статус</th>
-          <th className="p-3">Действие</th>
-          <th className="p-3">Twenty ID</th>
-          <th className="p-3">Ошибка</th>
-        </tr>
-      </thead>
-      <tbody>
-        {logs.map((log) => (
-          <tr key={log.id} className="border-t border-gray-100">
-            <td className="p-3">{formatDateTime(log.created_at)}</td>
-            <td className="p-3 max-w-xs truncate">{log.deal_title || `Deal #${log.deal_id}`}</td>
-            <td className="p-3">
-              <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                log.status === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-              }`}>
-                {log.status}
-              </span>
-            </td>
-            <td className="p-3 text-xs text-gray-600">
-              {log.action === 'created' ? 'создание'
-                : log.action === 'updated' ? 'обновление'
-                : log.action === 'updated_empty' ? 'обнуление'
-                : '—'}
-            </td>
-            <td className="p-3 font-mono text-xs">{log.twenty_id || '—'}</td>
-            <td className="p-3 text-red-600 max-w-xs truncate">{log.error || ''}</td>
+    <div className="overflow-x-auto">
+      <table className="data-table">
+        <thead>
+          <tr className="bg-surface-muted">
+            <th>Время</th>
+            <th>Сделка</th>
+            <th>Статус</th>
+            <th>Действие</th>
+            <th>Twenty ID</th>
+            <th>Ошибка</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {logs.map((log) => (
+            <tr key={log.id}>
+              <td className="tabular-nums whitespace-nowrap">{formatDateTime(log.created_at)}</td>
+              <td className="max-w-xs truncate font-medium">{log.deal_title || `Deal #${log.deal_id}`}</td>
+              <td><StatusPill config={syncStatusConfig} status={log.status} /></td>
+              <td className="text-xs text-ink-muted">
+                {log.action === 'created' ? 'создание'
+                  : log.action === 'updated' ? 'обновление'
+                  : log.action === 'updated_empty' ? 'обнуление'
+                  : '—'}
+              </td>
+              <td className="font-mono text-xs">{log.twenty_id || '—'}</td>
+              <td className="text-pastel-red-text max-w-xs truncate text-xs">{log.error || ''}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -99,29 +112,47 @@ export default function Logs() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold text-gray-800">Логи</h2>
-        <div className="flex gap-1 bg-gray-100 rounded-md p-1">
-          <button
-            onClick={() => setTab('parse')}
-            className={`px-3 py-1.5 text-sm rounded ${tab === 'parse' ? 'bg-white shadow-sm' : 'text-gray-600'}`}
-          >
-            Парсинг
-          </button>
-          <button
-            onClick={() => setTab('sync')}
-            className={`px-3 py-1.5 text-sm rounded ${tab === 'sync' ? 'bg-white shadow-sm' : 'text-gray-600'}`}
-          >
-            Синхронизация
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Логи"
+        description="История парсинга и синхронизации с Twenty CRM"
+        actions={
+          <div className="flex gap-1 bg-surface-muted border border-border rounded-lg p-1">
+            <button
+              onClick={() => setTab('parse')}
+              className={`px-3 py-1.5 text-sm rounded-md transition-all duration-200 ${
+                tab === 'parse'
+                  ? 'bg-surface text-ink shadow-subtle font-medium'
+                  : 'text-ink-muted hover:text-ink'
+              }`}
+            >
+              Парсинг
+            </button>
+            <button
+              onClick={() => setTab('sync')}
+              className={`px-3 py-1.5 text-sm rounded-md transition-all duration-200 ${
+                tab === 'sync'
+                  ? 'bg-surface text-ink shadow-subtle font-medium'
+                  : 'text-ink-muted hover:text-ink'
+              }`}
+            >
+              Синхронизация
+            </button>
+          </div>
+        }
+      />
 
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div className="surface overflow-hidden">
         {isLoading ? (
-          <p className="p-4 text-sm text-gray-500">Загрузка...</p>
+          <TableSkeleton rows={6} cols={6} />
         ) : logs.length === 0 ? (
-          <p className="p-4 text-sm text-gray-500">Нет логов</p>
+          <EmptyState
+            title="Записей пока нет"
+            description={
+              tab === 'parse'
+                ? 'Логи появятся после первого запуска парсинга'
+                : 'Логи появятся после синхронизации сделок с Twenty'
+            }
+          />
         ) : tab === 'parse' ? (
           <ParseLogsTable logs={logs} />
         ) : (
