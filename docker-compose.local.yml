@@ -1,0 +1,8 @@
+# Локальная сборка с текущего кода (ветка test/local-dev и т.д.)
+# Запуск: docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+services:
+  crmparser:
+    build: .
+    image: crmparserv2:local
+    env_file:
+      - .env
