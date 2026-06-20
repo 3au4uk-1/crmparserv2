@@ -268,8 +268,8 @@ async function applyEvent(db, event, eventId, data, ctx) {
         );
         const dealId = insert.lastInsertRowid;
         for (const item of classifiedItems) {
-          db.prepare(`INSERT INTO deal_items (deal_id, name, price, quantity, discount, classification, classification_confidence) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-            .run(dealId, item.name, item.price, item.quantity, item.discount, item.classification, item.classification_confidence);
+          db.prepare(`INSERT INTO deal_items (deal_id, name, price, quantity, discount, classification, classification_confidence, comment, sum, quantity_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+            .run(dealId, item.name, item.price, item.quantity, item.discount, item.classification, item.classification_confidence, item.comment ?? null, item.sum ?? null, item.quantity_num ?? null);
         }
         counters.newDeals++;
       }

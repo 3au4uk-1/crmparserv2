@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildOpportunityInput,
+  computeDealItemsTotal,
   parseQuantity,
   parseQuantityNum,
   DEFAULT_OPPORTUNITY_STAGE,
@@ -88,6 +89,36 @@ describe('parseQuantity', () => {
     expect(parseQuantity('9')).toBe(9);
     expect(parseQuantity('∞')).toBe(1);
     expect(parseQuantity(null)).toBe(1);
+  });
+});
+
+describe('computeDealItemsTotal', () => {
+  it('sums item.sum for Tony deals', () => {
+    const deal = { data_source: 'tony' };
+    const items = [
+      { price: 2640, quantity: '9', sum: 23760 },
+      { price: 5000, quantity: '1', sum: 5000 },
+    ];
+    expect(computeDealItemsTotal(deal, items)).toBe(28760);
+  });
+
+  it('uses price * quantity for calendar deals', () => {
+    const deal = { data_source: 'calendar' };
+    const items = [
+      { price: 2640, quantity: '9' },
+      { price: 5000, quantity: '1' },
+    ];
+    expect(computeDealItemsTotal(deal, items)).toBe(2640 * 9 + 5000);
+  });
+
+  it('buildOpportunityInput uses Tony sum for amount', () => {
+    const deal = { data_source: 'tony', title: 'T', crm_event_id: 'e1', start_date: '2026-06-16' };
+    const items = [
+      { price: 2640, quantity: '9', sum: 23760 },
+      { price: 5000, quantity: '1', sum: 5000 },
+    ];
+    const input = buildOpportunityInput(deal, items);
+    expect(input.amount.amountMicros).toBe(28760 * 1_000_000);
   });
 });
 

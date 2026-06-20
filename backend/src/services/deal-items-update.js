@@ -15,8 +15,8 @@ export function replaceDealItemsPreservingOverrides(db, dealId, classifiedItems,
   db.prepare('DELETE FROM deal_items WHERE deal_id = ?').run(dealId);
 
   const insert = db.prepare(`
-    INSERT INTO deal_items (deal_id, name, price, quantity, discount, classification, classification_confidence)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO deal_items (deal_id, name, price, quantity, discount, classification, classification_confidence, comment, sum, quantity_num)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const restore = db.prepare(`
@@ -31,7 +31,10 @@ export function replaceDealItemsPreservingOverrides(db, dealId, classifiedItems,
       item.quantity,
       item.discount,
       item.classification,
-      item.classification_confidence
+      item.classification_confidence,
+      item.comment ?? null,
+      item.sum ?? null,
+      item.quantity_num ?? null
     );
 
     const preserved = overrideMap[item.name];
