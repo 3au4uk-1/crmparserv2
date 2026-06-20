@@ -22,6 +22,7 @@ import { fetchTonyOrderHtml } from './tony-client.js';
 import { parseTonyOrder } from './tony-parser.js';
 import { buildTonyDealFields, buildTonyItems, tonyContentHash } from './tony-mapping.js';
 import { planEventReconciliation } from './tony-reconcile.js';
+import { createPool } from './fetch-pool.js';
 
 function buildUrl(path) {
   const base = config.crmBaseUrl.replace(/\/$/, '');
@@ -137,6 +138,55 @@ async function fetchEventData(event, eventId, tonyReady) {
   const calParsed = parseDealDescription(descHtml);
 
   return { bookingNumbers, descHtml, calParsed, tonyOrders };
+}
+
+/** Pooled, delay-free variant of resolveTonyOrders for the parallel pipeline. */
+async function resolveTonyOrdersPooled(tonyReady, bookingNumbers, run) {
+  const orders = new Map();
+  if (!tonyReady) return orders;
+  await Promise.all(
+    bookingNumbers.map(async (n) => {
+      try {
+        const html = await fetchTonyOrderHtml(n, { run });
+        if (html) orders.set(n, parseTonyOrder(html));
+      } catch (err) {
+        console.error(`[tony] failed to fetch order ${n}: ${err.message}`);
+      }
+    })
+  );
+  return orders;
+}
+
+/** Parallel prefetch of all in-range events' network data. Returns Map<eventId, data>. */
+async function prefetchAll(events, tonyReady, startDate, endDate, run) {
+  const map = new Map();
+  await Promise.all(
+    events.map(async (event) => {
+      if (!isEventInRange(event, startDate, endDate)) return;
+      const eventId = String(event.original_id || event.id);
+      if (!eventId) return;
+
+      const bookingNumbers = extractBookingNumbers(event.title || '');
+
+      let descJson;
+      try {
+        descJson = await run(() => fetchDescription(eventId));
+      } catch (err) {
+        console.error(`Failed to fetch description for event ${eventId}:`, err.message);
+        return;
+      }
+      const descHtml = typeof descJson === 'string'
+        ? JSON.parse(descJson).description
+        : descJson.description;
+      if (!descHtml) return;
+
+      const tonyOrders = await resolveTonyOrdersPooled(tonyReady, bookingNumbers, run);
+      const calParsed = parseDealDescription(descHtml);
+
+      map.set(eventId, { bookingNumbers, descHtml, calParsed, tonyOrders });
+    })
+  );
+  return map;
 }
 
 async function applyEvent(db, event, eventId, data, ctx) {
@@ -331,6 +381,15 @@ export async function runParsing(startDate, endDate) {
     const dealsToResync = [];
     const ctx = { knownCodes, keywords, llmPrompt, counters, dealsToResync };
 
+    let prefetched = null;
+    if (config.parsePipeline === 'parallel') {
+      const run = createPool({ concurrency: config.fetchConcurrency });
+      console.log(`[parse] prefetch start {"pipeline":"parallel","concurrency":${config.fetchConcurrency}}`);
+      const t0 = Date.now();
+      prefetched = await prefetchAll(events, tonyReady, startDate, endDate, run);
+      console.log(`[parse] prefetch done {"events":${prefetched.size},"ms":${Date.now() - t0}}`);
+    }
+
     for (const event of events) {
       if (!isEventInRange(event, startDate, endDate)) {
         outOfRange++;
@@ -340,7 +399,9 @@ export async function runParsing(startDate, endDate) {
       const eventId = String(event.original_id || event.id);
       if (!eventId) continue;
 
-      const data = await fetchEventData(event, eventId, tonyReady);
+      const data = prefetched
+        ? prefetched.get(eventId)
+        : await fetchEventData(event, eventId, tonyReady);
       if (!data) continue;
 
       await applyEvent(db, event, eventId, data, ctx);
