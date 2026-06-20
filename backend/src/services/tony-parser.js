@@ -44,8 +44,9 @@ export function parseTonyOrder(html) {
       const quantity = ($tr.find('.orders_custom_edit').attr('value') || '').trim();
       const discount = parseNum($tr.find('.discount_value').attr('value')) ?? 0;
       const sum = parseNum($tr.attr('data-sum')) ?? 0;
+      const comment = ($tr.find('.custom_text_value').first().attr('value') || '').trim();
 
-      items.push({ name, price, quantity, discount, sum, category });
+      items.push({ name, price, quantity, discount, sum, category, comment });
     });
   });
 

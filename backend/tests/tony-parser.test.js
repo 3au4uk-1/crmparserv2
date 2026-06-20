@@ -18,6 +18,13 @@ describe('parseTonyOrder', () => {
     expect(names).toContain('Монтажник');
   });
 
+  it('parses comment from custom_text_value', () => {
+    const banner = parsed.items.find((i) => i.name === 'Навигационные наклейки');
+    expect(banner.comment).toBe('+ монтаж');
+    const rollup = parsed.items.find((i) => i.name === 'Ролл апп 85х200');
+    expect(rollup.comment).toBe('');
+  });
+
   it('captures separate price, quantity, discount, sum and category', () => {
     const banner = parsed.items.find((i) => i.name === 'Навигационные наклейки');
     expect(banner.price).toBe(2640);
