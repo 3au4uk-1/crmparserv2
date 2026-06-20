@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { crmOffsetSuffix } from '../utils/crm-dates.js';
+import { parseQuantityNum } from './twenty-opportunity.js';
 
 const DMY_RE = /^(\d{2})\.(\d{2})\.(\d{4})$/;
 
@@ -40,12 +41,23 @@ export function buildTonyItems(parsed) {
     price: i.price,
     quantity: i.quantity,
     discount: i.discount ?? 0,
+    sum: i.sum,
+    comment: i.comment ?? '',
+    quantity_num: parseQuantityNum(i.quantity),
   }));
 }
 
 export function tonyContentHash(parsed) {
   const snapshot = JSON.stringify({
-    items: parsed.items.map((i) => [i.name, i.price, i.quantity, i.discount, i.category]),
+    items: parsed.items.map((i) => [
+      i.name,
+      i.price,
+      i.quantity,
+      i.discount,
+      i.category,
+      i.sum,
+      i.comment ?? '',
+    ]),
     dates: parsed.dates,
     address: parsed.address,
     budget: parsed.budget,

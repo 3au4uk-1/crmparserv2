@@ -19,6 +19,12 @@ export function parseQuantity(value) {
   return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
+export function parseQuantityNum(value) {
+  const normalized = String(value ?? '').replace(',', '.').replace(/\s/g, '');
+  const n = Number.parseFloat(normalized);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
 export function buildOpportunityInput(deal, items, options = {}) {
   const {
     includeStage = false,

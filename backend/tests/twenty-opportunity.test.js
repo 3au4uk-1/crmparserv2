@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { buildOpportunityInput, parseQuantity, DEFAULT_OPPORTUNITY_STAGE } from '../src/services/twenty-opportunity.js';
+import {
+  buildOpportunityInput,
+  parseQuantity,
+  parseQuantityNum,
+  DEFAULT_OPPORTUNITY_STAGE,
+} from '../src/services/twenty-opportunity.js';
 
 describe('buildOpportunityInput', () => {
   const deal = {
@@ -83,5 +88,16 @@ describe('parseQuantity', () => {
     expect(parseQuantity('9')).toBe(9);
     expect(parseQuantity('∞')).toBe(1);
     expect(parseQuantity(null)).toBe(1);
+  });
+});
+
+describe('parseQuantityNum', () => {
+  it('parses integers and decimals, defaults to 1 for invalid', () => {
+    expect(parseQuantityNum('9')).toBe(9);
+    expect(parseQuantityNum('9,5')).toBe(9.5);
+    expect(parseQuantityNum('9.5')).toBe(9.5);
+    expect(parseQuantityNum(' 2 ')).toBe(2);
+    expect(parseQuantityNum('∞')).toBe(1);
+    expect(parseQuantityNum(null)).toBe(1);
   });
 });

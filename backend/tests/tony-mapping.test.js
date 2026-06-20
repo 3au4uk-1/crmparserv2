@@ -29,9 +29,32 @@ describe('tony-mapping', () => {
     expect(f.budget).toBe(28760);
   });
 
-  it('builds item rows with separate price and quantity', () => {
-    const items = buildTonyItems(parsed);
-    expect(items[0]).toMatchObject({ name: 'Навигационные наклейки', price: 2640, quantity: '9', discount: 0 });
+  it('builds item rows with sum, comment, and quantity_num', () => {
+    const withComment = {
+      ...parsed,
+      items: parsed.items.map((i, idx) =>
+        idx === 0 ? { ...i, comment: '+ монтаж' } : { ...i, comment: '' }
+      ),
+    };
+    const items = buildTonyItems(withComment);
+    expect(items[0]).toMatchObject({
+      name: 'Навигационные наклейки',
+      price: 2640,
+      quantity: '9',
+      discount: 0,
+      sum: 23760,
+      comment: '+ монтаж',
+      quantity_num: 9,
+    });
+    expect(items[1]).toMatchObject({
+      name: 'Монтажник',
+      price: 5000,
+      quantity: '1',
+      discount: 0,
+      sum: 5000,
+      comment: '',
+      quantity_num: 1,
+    });
   });
 
   it('produces a stable hash that changes with content', () => {
@@ -40,5 +63,22 @@ describe('tony-mapping', () => {
     expect(h1).toBe(h2);
     const changed = { ...parsed, budget: 1 };
     expect(tonyContentHash(changed)).not.toBe(h1);
+  });
+
+  it('hash changes when comment or sum changes', () => {
+    const withComment = {
+      ...parsed,
+      items: parsed.items.map((i, idx) =>
+        idx === 0 ? { ...i, comment: '+ монтаж' } : { ...i, comment: '' }
+      ),
+    };
+    const base = tonyContentHash(parsed);
+    expect(tonyContentHash(withComment)).not.toBe(base);
+
+    const sumChanged = {
+      ...parsed,
+      items: parsed.items.map((i, idx) => (idx === 0 ? { ...i, sum: 1 } : i)),
+    };
+    expect(tonyContentHash(sumChanged)).not.toBe(base);
   });
 });
