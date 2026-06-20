@@ -116,7 +116,7 @@ async function resolveTonyOrders(tonyReady, bookingNumbers) {
   return orders;
 }
 
-async function fetchEventData(event, eventId, tonyReady) {
+export async function fetchEventData(event, eventId, tonyReady) {
   await delay(350);
 
   let descJson;
@@ -158,7 +158,7 @@ async function resolveTonyOrdersPooled(tonyReady, bookingNumbers, run) {
 }
 
 /** Parallel prefetch of all in-range events' network data. Returns Map<eventId, data>. */
-async function prefetchAll(events, tonyReady, startDate, endDate, run) {
+export async function prefetchAll(events, tonyReady, startDate, endDate, run) {
   const map = new Map();
   await Promise.all(
     events.map(async (event) => {
