@@ -4,3 +4,8 @@ backend/public/
 data/
 *.db
 .env
+.review_diff.txt
+.agents/
+skills-lock.json
+backend/scripts/debug-*.mjs
+backend/scripts/count-events.mjs

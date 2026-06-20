@@ -1,6 +1,10 @@
 CREATE TABLE IF NOT EXISTS deals (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  crm_event_id TEXT NOT NULL UNIQUE,
+  crm_event_id TEXT NOT NULL,
+  deal_key TEXT,
+  data_source TEXT NOT NULL DEFAULT 'calendar',
+  load_date TEXT,
+  load_time TEXT,
   crm_lead_id TEXT,
   title TEXT NOT NULL,
   company_code TEXT,
@@ -42,6 +46,9 @@ CREATE TABLE IF NOT EXISTS deal_items (
   price REAL,
   quantity TEXT,
   discount REAL,
+  comment TEXT,
+  sum REAL,
+  quantity_num REAL,
   classification TEXT NOT NULL DEFAULT 'unclassified',
   classification_confidence REAL,
   sync_override TEXT,
@@ -111,3 +118,10 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('auth_mode', 'auto');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('keywords', '["брендинг","баннер","печать","плёнка","пленка","наклейка","логотип","вывеска","табличка","ролл-ап","rollup","стенд","press-wall","пресс-волл"]');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('crm_cookies', '');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('llm_prompt', 'Ты помощник отдела брендинга. Определи, относится ли позиция к брендингу (печать, баннеры, наклейки, вывески, оформление и т.д.). Ответь JSON: {"items": [{"name": "...", "is_branding": true/false, "confidence": 0.0-1.0}]}');
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_deals_deal_key ON deals(deal_key);
+CREATE INDEX IF NOT EXISTS idx_deals_crm_event_id ON deals(crm_event_id);
+
+INSERT OR IGNORE INTO settings (key, value) VALUES ('tony_base_url', 'https://crm.apihide.com');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('tony_login', '');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('tony_password', '');

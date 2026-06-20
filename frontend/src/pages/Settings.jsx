@@ -11,6 +11,7 @@ import {
   useAddBlacklistItem,
   useRemoveBlacklistItem,
 } from '../api';
+import PageHeader from '../components/ui/PageHeader';
 
 const OPPORTUNITY_STAGES = [
   { value: 'NOVYY', label: 'Новый' },
@@ -22,13 +23,30 @@ const OPPORTUNITY_STAGES = [
   { value: 'OTMENA', label: 'Отмена' },
 ];
 
-function Section({ title, children }) {
+const TABS = [
+  { id: 'auth', label: 'Авторизация' },
+  { id: 'parsing', label: 'Парсинг' },
+  { id: 'integrations', label: 'Интеграции' },
+  { id: 'directories', label: 'Справочники' },
+  { id: 'data', label: 'Данные' },
+];
+
+function Section({ title, description, children }) {
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
-      <h3 className="text-sm font-semibold text-gray-700 mb-3">{title}</h3>
+    <section className="surface p-5 md:p-6 mb-4">
+      <div className="mb-4">
+        <h3 className="text-base font-semibold text-ink">{title}</h3>
+        {description && (
+          <p className="text-sm text-ink-muted mt-1 max-w-2xl leading-relaxed">{description}</p>
+        )}
+      </div>
       {children}
-    </div>
+    </section>
   );
+}
+
+function FieldLabel({ children }) {
+  return <label className="block text-sm font-medium text-ink-muted mb-1.5">{children}</label>;
 }
 
 function parseKeywordInput(text) {
@@ -52,6 +70,8 @@ function mergeKeywords(existing, incoming) {
 }
 
 export default function Settings() {
+  const [activeTab, setActiveTab] = useState('auth');
+
   const { data: settings } = useSettings();
   const { data: keywords } = useKeywords();
   const { data: blacklist } = useBlacklist();
@@ -109,323 +129,401 @@ export default function Settings() {
 
   return (
     <div>
-      <h2 className="text-xl font-semibold text-gray-800 mb-4">Настройки</h2>
+      <PageHeader
+        title="Настройки"
+        description="Конфигурация парсинга, интеграций и справочников"
+      />
 
-      <Section title="Авторизация CRM">
-        <div className="space-y-3">
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">Режим авторизации</label>
-            <select
-              value={settings?.auth_mode || 'auto'}
-              onChange={e => updateSetting.mutate({ key: 'auth_mode', value: e.target.value })}
-              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-full max-w-xs"
-            >
-              <option value="auto">Автоматический (login/password)</option>
-              <option value="cookies">Cookie fallback</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">Cookies (для fallback-режима)</label>
-            <textarea
-              value={cookieValue}
-              onChange={e => setCookieValue(e.target.value)}
-              onBlur={() => updateSetting.mutate({ key: 'crm_cookies', value: cookieValue })}
-              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-full h-20 font-mono"
-              placeholder="filter-closed=true; PHPSESSID=... (из Network → Cookie, одной строкой)"
-            />
-          </div>
-        </div>
-      </Section>
-
-      <Section title="Ключевые слова брендинга">
-        <div className="flex flex-wrap gap-2 mb-3">
-          {(keywords || []).map(kw => (
-            <span key={kw} className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 px-2 py-1 rounded-md text-sm">
-              {kw}
-              <button onClick={() => removeKeyword(kw)} className="text-blue-400 hover:text-red-500">&times;</button>
-            </span>
-          ))}
-        </div>
-        <p className="text-xs text-gray-500 mb-2">
-          Можно добавить одно слово или несколько через запятую.
-        </p>
-        <div className="flex gap-2 items-start">
-          <textarea
-            value={newKeyword}
-            onChange={(e) => setNewKeyword(e.target.value)}
-            rows={2}
-            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm flex-1 max-w-lg"
-            placeholder="баннер, печать, наклейка, логотип"
-          />
+      <nav className="flex gap-1 overflow-x-auto pb-1 mb-6 border-b border-border" aria-label="Разделы настроек">
+        {TABS.map((tab) => (
           <button
-            onClick={addKeyword}
-            disabled={!newKeyword.trim()}
-            className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors duration-200 ${
+              activeTab === tab.id
+                ? 'border-ink text-ink'
+                : 'border-transparent text-ink-muted hover:text-ink'
+            }`}
           >
-            Добавить
+            {tab.label}
           </button>
-        </div>
-      </Section>
+        ))}
+      </nav>
 
-      <Section title="Блеклист позиций">
-        <p className="text-xs text-gray-500 mb-3">
-          Позиции в блеклисте не попадают в Twenty автоматически. Ручная галочка в сделке перебивает блеклист.
-        </p>
-        <div className="flex flex-wrap gap-2 mb-3">
-          {(blacklist || []).map((entry) => (
-            <span
-              key={entry.id}
-              className="inline-flex items-center gap-1 bg-red-50 text-red-700 px-2 py-1 rounded-md text-sm"
-            >
-              {entry.sourceName || entry.pattern}
-              <span className="text-xs text-red-400">
-                ({entry.matchType === 'exact' ? 'точное' : 'фрагмент'})
-              </span>
-              <button
-                onClick={() => removeBlacklistItem.mutate(entry.id)}
-                className="text-red-400 hover:text-red-600"
+      {activeTab === 'auth' && (
+        <Section title="Авторизация CRM">
+          <div className="space-y-4 max-w-lg">
+            <div>
+              <FieldLabel>Режим авторизации</FieldLabel>
+              <select
+                value={settings?.auth_mode || 'auto'}
+                onChange={e => updateSetting.mutate({ key: 'auth_mode', value: e.target.value })}
+                className="select-field w-full max-w-xs"
               >
-                &times;
-              </button>
-            </span>
-          ))}
-        </div>
-        {blacklistError && (
-          <p className="text-xs text-red-600 mb-2">{blacklistError}</p>
-        )}
-        <div className="flex flex-wrap gap-2 items-end">
-          <input
-            type="text"
-            value={newBlacklistPattern}
-            onChange={(e) => setNewBlacklistPattern(e.target.value)}
-            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm flex-1 min-w-[12rem] max-w-lg"
-            placeholder="Стойка указатель напольная А4"
-          />
-          <select
-            value={newBlacklistMatchType}
-            onChange={(e) => setNewBlacklistMatchType(e.target.value)}
-            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm"
+                <option value="auto">Автоматический (login/password)</option>
+                <option value="cookies">Cookie fallback</option>
+              </select>
+            </div>
+            <div>
+              <FieldLabel>Cookies (для fallback-режима)</FieldLabel>
+              <textarea
+                value={cookieValue}
+                onChange={e => setCookieValue(e.target.value)}
+                onBlur={() => updateSetting.mutate({ key: 'crm_cookies', value: cookieValue })}
+                className="input-field h-24 font-mono text-xs"
+                placeholder="filter-closed=true; PHPSESSID=... (из Network → Cookie, одной строкой)"
+              />
+            </div>
+          </div>
+        </Section>
+      )}
+
+      {activeTab === 'parsing' && (
+        <>
+          <Section
+            title="Ключевые слова брендинга"
+            description="Можно добавить одно слово или несколько через запятую"
           >
-            <option value="exact">Точное</option>
-            <option value="substring">Фрагмент</option>
-          </select>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {(keywords || []).map(kw => (
+                <span key={kw} className="inline-flex items-center gap-1.5 bg-pastel-blue-bg text-pastel-blue-text px-2.5 py-1 rounded-md text-sm">
+                  {kw}
+                  <button
+                    onClick={() => removeKeyword(kw)}
+                    className="opacity-60 hover:opacity-100 hover:text-pastel-red-text transition-opacity"
+                    aria-label={`Удалить ${kw}`}
+                  >
+                    &times;
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-2 items-start max-w-xl">
+              <textarea
+                value={newKeyword}
+                onChange={(e) => setNewKeyword(e.target.value)}
+                rows={2}
+                className="input-field flex-1"
+                placeholder="баннер, печать, наклейка, логотип"
+              />
+              <button
+                onClick={addKeyword}
+                disabled={!newKeyword.trim()}
+                className="btn-primary btn-sm shrink-0"
+              >
+                Добавить
+              </button>
+            </div>
+          </Section>
+
+          <Section
+            title="Блеклист позиций"
+            description="Позиции в блеклисте не попадают в Twenty автоматически. Ручная галочка в сделке перебивает блеклист."
+          >
+            <div className="flex flex-wrap gap-2 mb-4">
+              {(blacklist || []).map((entry) => (
+                <span
+                  key={entry.id}
+                  className="inline-flex items-center gap-1.5 bg-pastel-red-bg text-pastel-red-text px-2.5 py-1 rounded-md text-sm"
+                >
+                  {entry.sourceName || entry.pattern}
+                  <span className="text-xs opacity-70">
+                    ({entry.matchType === 'exact' ? 'точное' : 'фрагмент'})
+                  </span>
+                  <button
+                    onClick={() => removeBlacklistItem.mutate(entry.id)}
+                    className="opacity-60 hover:opacity-100 transition-opacity"
+                    aria-label="Удалить из блеклиста"
+                  >
+                    &times;
+                  </button>
+                </span>
+              ))}
+            </div>
+            {blacklistError && (
+              <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-3">{blacklistError}</p>
+            )}
+            <div className="flex flex-wrap gap-2 items-end max-w-2xl">
+              <input
+                type="text"
+                value={newBlacklistPattern}
+                onChange={(e) => setNewBlacklistPattern(e.target.value)}
+                className="input-field flex-1 min-w-[12rem]"
+                placeholder="Стойка указатель напольная А4"
+              />
+              <select
+                value={newBlacklistMatchType}
+                onChange={(e) => setNewBlacklistMatchType(e.target.value)}
+                className="select-field"
+              >
+                <option value="exact">Точное</option>
+                <option value="substring">Фрагмент</option>
+              </select>
+              <button
+                onClick={() => {
+                  setBlacklistError('');
+                  addBlacklistItem.mutate(
+                    { pattern: newBlacklistPattern, matchType: newBlacklistMatchType },
+                    {
+                      onSuccess: () => setNewBlacklistPattern(''),
+                      onError: (err) => {
+                        const msg = err.response?.status === 409
+                          ? 'Уже в блеклисте'
+                          : err.response?.data?.error || 'Ошибка добавления';
+                        setBlacklistError(msg);
+                      },
+                    }
+                  );
+                }}
+                disabled={!newBlacklistPattern.trim() || addBlacklistItem.isPending}
+                className="btn-danger btn-sm"
+              >
+                Добавить
+              </button>
+            </div>
+          </Section>
+
+          <Section title="Расписание парсинга">
+            <div className="max-w-md space-y-2">
+              <FieldLabel>Cron-выражение</FieldLabel>
+              <input
+                value={parseSchedule}
+                onChange={(e) => {
+                  setParseSchedule(e.target.value);
+                  setParseScheduleError('');
+                }}
+                onFocus={() => setParseScheduleFocused(true)}
+                onBlur={() => {
+                  setParseScheduleFocused(false);
+                  const value = parseSchedule.trim();
+                  if (!value) return;
+                  updateSetting.mutate(
+                    { key: 'parse_schedule', value },
+                    {
+                      onError: (err) => {
+                        const msg = err.response?.data?.error || 'Не удалось сохранить расписание';
+                        setParseScheduleError(msg);
+                      },
+                    },
+                  );
+                }}
+                className="input-field font-mono max-w-xs"
+              />
+              {parseScheduleError && (
+                <p className="text-sm text-pastel-red-text">{parseScheduleError}</p>
+              )}
+              <p className="text-xs text-ink-faint">
+                Примеры: <kbd className="font-mono text-[11px] bg-surface-muted px-1.5 py-0.5 rounded border border-border">0 18 * * *</kbd> (каждый день в 18:00),{' '}
+                <kbd className="font-mono text-[11px] bg-surface-muted px-1.5 py-0.5 rounded border border-border">0 */3 * * *</kbd> (каждые 3 часа) — по Москве
+              </p>
+            </div>
+          </Section>
+
+          <Section title="Режим апрува">
+            <select
+              value={settings?.approval_mode || 'manual'}
+              onChange={e => updateSetting.mutate({ key: 'approval_mode', value: e.target.value })}
+              className="select-field w-full max-w-md"
+            >
+              <option value="manual">Ручной — все сделки в очередь</option>
+              <option value="semi">Полуавтоматический — keyword_match автоматически</option>
+              <option value="auto">Автоапрув — всё автоматически</option>
+            </select>
+          </Section>
+        </>
+      )}
+
+      {activeTab === 'integrations' && (
+        <>
+          <Section title="LLM">
+            <div className="space-y-4 max-w-md">
+              <div>
+                <FieldLabel>API URL</FieldLabel>
+                <input
+                  defaultValue={settings?.llm_api_url || ''}
+                  onBlur={e => updateSetting.mutate({ key: 'llm_api_url', value: e.target.value })}
+                  className="input-field font-mono"
+                  placeholder="https://api.openai.com/v1/chat/completions"
+                />
+              </div>
+              <div>
+                <FieldLabel>API Key</FieldLabel>
+                <input
+                  type="password"
+                  defaultValue={settings?.llm_api_key || ''}
+                  onBlur={e => updateSetting.mutate({ key: 'llm_api_key', value: e.target.value })}
+                  className="input-field font-mono"
+                />
+              </div>
+              <div>
+                <FieldLabel>Модель</FieldLabel>
+                <input
+                  defaultValue={settings?.llm_model || ''}
+                  onBlur={e => updateSetting.mutate({ key: 'llm_model', value: e.target.value })}
+                  className="input-field font-mono"
+                  placeholder="gpt-4o-mini"
+                />
+              </div>
+            </div>
+          </Section>
+
+          <Section
+            title="Twenty CRM"
+            description="Если TWENTY_API_URL и TWENTY_API_TOKEN заданы в .env или docker-compose, они имеют приоритет над полями ниже. Укажите GraphQL endpoint: https://your-domain/graphql"
+          >
+            <div className="space-y-4 max-w-md">
+              <div>
+                <FieldLabel>API URL</FieldLabel>
+                <input
+                  defaultValue={settings?.twenty_api_url || ''}
+                  onBlur={e => updateSetting.mutate({ key: 'twenty_api_url', value: e.target.value })}
+                  className="input-field font-mono"
+                  placeholder="https://twenty.example.com/graphql"
+                />
+              </div>
+              <div>
+                <FieldLabel>API Token</FieldLabel>
+                <input
+                  type="password"
+                  defaultValue={settings?.twenty_api_token || ''}
+                  onBlur={e => updateSetting.mutate({ key: 'twenty_api_token', value: e.target.value })}
+                  className="input-field font-mono"
+                />
+              </div>
+              <div>
+                <FieldLabel>Стадия новой сделки</FieldLabel>
+                <select
+                  value={settings?.opportunity_stage || 'NOVYY'}
+                  onChange={e => updateSetting.mutate({ key: 'opportunity_stage', value: e.target.value })}
+                  className="select-field w-full max-w-xs"
+                >
+                  {OPPORTUNITY_STAGES.map((stage) => (
+                    <option key={stage.value} value={stage.value}>
+                      {stage.label} ({stage.value})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-ink-faint mt-1.5">
+                  В API Twenty передаётся код стадии, не подпись из интерфейса.
+                </p>
+              </div>
+            </div>
+          </Section>
+
+          <Section title="Tony (crm.apihide.com)">
+            <div className="space-y-4 max-w-md">
+              <div>
+                <FieldLabel>Base URL</FieldLabel>
+                <input
+                  defaultValue={settings?.tony_base_url || ''}
+                  onBlur={e => updateSetting.mutate({ key: 'tony_base_url', value: e.target.value })}
+                  className="input-field font-mono"
+                  placeholder="https://crm.apihide.com"
+                />
+              </div>
+              <div>
+                <FieldLabel>Логин</FieldLabel>
+                <input
+                  defaultValue={settings?.tony_login || ''}
+                  onBlur={e => updateSetting.mutate({ key: 'tony_login', value: e.target.value })}
+                  className="input-field font-mono"
+                />
+              </div>
+              <div>
+                <FieldLabel>Пароль</FieldLabel>
+                <input
+                  type="password"
+                  defaultValue={settings?.tony_password || ''}
+                  onBlur={e => updateSetting.mutate({ key: 'tony_password', value: e.target.value })}
+                  className="input-field font-mono"
+                />
+              </div>
+            </div>
+          </Section>
+        </>
+      )}
+
+      {activeTab === 'directories' && (
+        <Section title="Справочник компаний">
+          <div className="flex flex-wrap gap-2 items-end mb-5 max-w-2xl">
+            <div className="flex-1 min-w-[8rem]">
+              <FieldLabel>Код</FieldLabel>
+              <input
+                type="text"
+                value={newCompanyCode}
+                onChange={(e) => setNewCompanyCode(e.target.value)}
+                className="input-field font-mono"
+                placeholder="ABC"
+              />
+            </div>
+            <div className="flex-[2] min-w-[12rem]">
+              <FieldLabel>Полное название</FieldLabel>
+              <input
+                type="text"
+                value={newCompanyName}
+                onChange={(e) => setNewCompanyName(e.target.value)}
+                className="input-field"
+                placeholder="ООО Пример"
+              />
+            </div>
+            <button
+              onClick={addCompany}
+              disabled={!newCompanyCode.trim() || !newCompanyName.trim() || createCompany.isPending}
+              className="btn-primary btn-sm"
+            >
+              Добавить
+            </button>
+          </div>
+          <div className="overflow-x-auto rounded-md border border-border">
+            <table className="data-table">
+              <thead>
+                <tr className="bg-surface-muted">
+                  <th>Код</th>
+                  <th>Полное название</th>
+                  <th>Twenty ID</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(companies || []).map(c => (
+                  <tr key={c.id}>
+                    <td className="font-mono text-sm">{c.code}</td>
+                    <td>{c.full_name}</td>
+                    <td className="text-ink-faint text-xs font-mono">{c.twenty_id || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+      )}
+
+      {activeTab === 'data' && (
+        <Section
+          title="Данные парсинга"
+          description="Удаляет все сделки, позиции и логи парсинга/синхронизации. Настройки и справочники сохраняются."
+        >
           <button
             onClick={() => {
-              setBlacklistError('');
-              addBlacklistItem.mutate(
-                { pattern: newBlacklistPattern, matchType: newBlacklistMatchType },
-                {
-                  onSuccess: () => setNewBlacklistPattern(''),
-                  onError: (err) => {
-                    const msg = err.response?.status === 409
-                      ? 'Уже в блеклисте'
-                      : err.response?.data?.error || 'Ошибка добавления';
-                    setBlacklistError(msg);
-                  },
-                }
-              );
+              if (!confirm('Удалить все данные парсинга? Это действие нельзя отменить.')) return;
+              clearParsingData.mutate();
             }}
-            disabled={!newBlacklistPattern.trim() || addBlacklistItem.isPending}
-            className="px-3 py-1.5 bg-red-600 text-white text-sm rounded-md hover:bg-red-700 disabled:opacity-50"
+            disabled={clearParsingData.isPending}
+            className="btn-danger"
           >
-            Добавить
+            {clearParsingData.isPending ? 'Очистка...' : 'Очистить данные парсинга'}
           </button>
-        </div>
-      </Section>
-
-      <Section title="Расписание парсинга">
-        <div className="space-y-3">
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">Cron-выражение</label>
-            <input
-              value={parseSchedule}
-              onChange={(e) => {
-                setParseSchedule(e.target.value);
-                setParseScheduleError('');
-              }}
-              onFocus={() => setParseScheduleFocused(true)}
-              onBlur={() => {
-                setParseScheduleFocused(false);
-                const value = parseSchedule.trim();
-                if (!value) return;
-                updateSetting.mutate(
-                  { key: 'parse_schedule', value },
-                  {
-                    onError: (err) => {
-                      const msg = err.response?.data?.error || 'Не удалось сохранить расписание';
-                      setParseScheduleError(msg);
-                    },
-                  },
-                );
-              }}
-              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-full max-w-xs font-mono"
-            />
-            {parseScheduleError && (
-              <p className="text-xs text-red-600 mt-1">{parseScheduleError}</p>
-            )}
-            <p className="text-xs text-gray-400 mt-1">
-              Примеры: 0 18 * * * (каждый день в 18:00), 0 */3 * * * (каждые 3 часа) — по Москве
+          {clearParsingData.isSuccess && (
+            <p className="text-sm text-pastel-green-text mt-3">
+              Удалено: {clearParsingData.data.deleted.deals} сделок,{' '}
+              {clearParsingData.data.deleted.parseRuns} записей парсинга
             </p>
-          </div>
-        </div>
-      </Section>
-
-      <Section title="Режим апрува">
-        <select
-          value={settings?.approval_mode || 'manual'}
-          onChange={e => updateSetting.mutate({ key: 'approval_mode', value: e.target.value })}
-          className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-full max-w-xs"
-        >
-          <option value="manual">Ручной — все сделки в очередь</option>
-          <option value="semi">Полуавтоматический — keyword_match автоматически</option>
-          <option value="auto">Автоапрув — всё автоматически</option>
-        </select>
-      </Section>
-
-      <Section title="LLM">
-        <div className="space-y-3 max-w-md">
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">API URL</label>
-            <input
-              defaultValue={settings?.llm_api_url || ''}
-              onBlur={e => updateSetting.mutate({ key: 'llm_api_url', value: e.target.value })}
-              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-full font-mono"
-              placeholder="https://api.openai.com/v1/chat/completions"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">API Key</label>
-            <input
-              type="password"
-              defaultValue={settings?.llm_api_key || ''}
-              onBlur={e => updateSetting.mutate({ key: 'llm_api_key', value: e.target.value })}
-              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-full font-mono"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">Модель</label>
-            <input
-              defaultValue={settings?.llm_model || ''}
-              onBlur={e => updateSetting.mutate({ key: 'llm_model', value: e.target.value })}
-              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-full font-mono"
-              placeholder="gpt-4o-mini"
-            />
-          </div>
-        </div>
-      </Section>
-
-      <Section title="Twenty CRM">
-        <p className="text-xs text-gray-500 mb-3">
-          Если TWENTY_API_URL и TWENTY_API_TOKEN заданы в .env или docker-compose, они имеют приоритет над полями ниже.
-          Укажите GraphQL endpoint: <span className="font-mono">https://your-domain/graphql</span> (если введёте /rest — будет преобразовано автоматически).
-        </p>
-        <div className="space-y-3 max-w-md">
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">API URL</label>
-            <input
-              defaultValue={settings?.twenty_api_url || ''}
-              onBlur={e => updateSetting.mutate({ key: 'twenty_api_url', value: e.target.value })}
-              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-full font-mono"
-              placeholder="https://twenty.example.com/graphql"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">API Token</label>
-            <input
-              type="password"
-              defaultValue={settings?.twenty_api_token || ''}
-              onBlur={e => updateSetting.mutate({ key: 'twenty_api_token', value: e.target.value })}
-              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-full font-mono"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">Стадия новой сделки</label>
-            <select
-              value={settings?.opportunity_stage || 'NOVYY'}
-              onChange={e => updateSetting.mutate({ key: 'opportunity_stage', value: e.target.value })}
-              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-full max-w-xs"
-            >
-              {OPPORTUNITY_STAGES.map((stage) => (
-                <option key={stage.value} value={stage.value}>
-                  {stage.label} ({stage.value})
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-gray-400 mt-1">
-              В API Twenty передаётся код стадии, не подпись из интерфейса.
-            </p>
-          </div>
-        </div>
-      </Section>
-
-      <Section title="Данные парсинга">
-        <p className="text-sm text-gray-600 mb-3">
-          Удаляет все сделки, позиции и логи парсинга/синхронизации. Настройки и справочники сохраняются.
-        </p>
-        <button
-          onClick={() => {
-            if (!confirm('Удалить все данные парсинга? Это действие нельзя отменить.')) return;
-            clearParsingData.mutate();
-          }}
-          disabled={clearParsingData.isPending}
-          className="px-4 py-2 bg-red-600 text-white text-sm rounded-md hover:bg-red-700 disabled:opacity-50"
-        >
-          {clearParsingData.isPending ? 'Очистка...' : 'Очистить данные парсинга'}
-        </button>
-        {clearParsingData.isSuccess && (
-          <p className="text-sm text-green-600 mt-2">
-            Удалено: {clearParsingData.data.deleted.deals} сделок,{' '}
-            {clearParsingData.data.deleted.parseRuns} записей парсинга
-          </p>
-        )}
-        {clearParsingData.isError && (
-          <p className="text-sm text-red-600 mt-2">{clearParsingData.error.message}</p>
-        )}
-      </Section>
-
-      <Section title="Справочник компаний">
-        <div className="flex flex-wrap gap-2 items-end mb-3">
-          <input
-            type="text"
-            value={newCompanyCode}
-            onChange={(e) => setNewCompanyCode(e.target.value)}
-            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm flex-1 min-w-[8rem] max-w-xs font-mono"
-            placeholder="Код"
-          />
-          <input
-            type="text"
-            value={newCompanyName}
-            onChange={(e) => setNewCompanyName(e.target.value)}
-            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm flex-1 min-w-[12rem] max-w-lg"
-            placeholder="Полное название"
-          />
-          <button
-            onClick={addCompany}
-            disabled={!newCompanyCode.trim() || !newCompanyName.trim() || createCompany.isPending}
-            className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
-          >
-            Добавить
-          </button>
-        </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-gray-500 uppercase">
-              <th className="p-2">Код</th>
-              <th className="p-2">Полное название</th>
-              <th className="p-2">Twenty ID</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(companies || []).map(c => (
-              <tr key={c.id} className="border-t border-gray-100">
-                <td className="p-2 font-mono">{c.code}</td>
-                <td className="p-2">{c.full_name}</td>
-                <td className="p-2 text-gray-400 text-xs font-mono">{c.twenty_id || '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Section>
+          )}
+          {clearParsingData.isError && (
+            <p className="text-sm text-pastel-red-text mt-3">{clearParsingData.error.message}</p>
+          )}
+        </Section>
+      )}
     </div>
   );
 }

@@ -18,6 +18,9 @@ function createTestDb() {
       discount REAL,
       classification TEXT NOT NULL DEFAULT 'unclassified',
       classification_confidence REAL,
+      comment TEXT,
+      sum REAL,
+      quantity_num REAL,
       sync_override TEXT,
       twenty_id TEXT
     );
@@ -71,5 +74,26 @@ describe('deal-items-update', () => {
     const stickers = items.find((i) => i.name === 'Наклейки');
     expect(stickers.sync_override).toBeNull();
     expect(stickers.twenty_id).toBeNull();
+  });
+
+  it('persists Tony item comment, sum, and quantity_num', () => {
+    replaceDealItemsPreservingOverrides(db, 1, [
+      {
+        name: 'Навигационные наклейки',
+        price: 2640,
+        quantity: '9',
+        discount: 0,
+        classification: 'keyword_match',
+        classification_confidence: 1,
+        comment: '+ монтаж',
+        sum: 23760,
+        quantity_num: 9,
+      },
+    ], {});
+
+    const item = db.prepare('SELECT * FROM deal_items WHERE deal_id = 1').get();
+    expect(item.comment).toBe('+ монтаж');
+    expect(item.sum).toBe(23760);
+    expect(item.quantity_num).toBe(9);
   });
 });

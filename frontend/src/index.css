@@ -1,1 +1,212 @@
 @import "tailwindcss";
+
+@theme {
+  --font-sans: "DM Sans", system-ui, sans-serif;
+  --font-serif: "Newsreader", Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --color-canvas: #f7f6f3;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f9f9f8;
+  --color-border: #eaeaea;
+  --color-border-strong: #d4d4d4;
+  --color-ink: #2f3437;
+  --color-ink-muted: #787774;
+  --color-ink-faint: #a8a29e;
+  --color-accent: #111111;
+  --color-accent-hover: #333333;
+
+  --color-pastel-red-bg: #fdebec;
+  --color-pastel-red-text: #9f2f2d;
+  --color-pastel-blue-bg: #e1f3fe;
+  --color-pastel-blue-text: #1f6c9f;
+  --color-pastel-green-bg: #edf3ec;
+  --color-pastel-green-text: #346538;
+  --color-pastel-yellow-bg: #fbf3db;
+  --color-pastel-yellow-text: #956400;
+  --color-pastel-gray-bg: #f3f2ef;
+  --color-pastel-gray-text: #5c5c5c;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --shadow-subtle: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    color: var(--color-ink);
+    background-color: var(--color-canvas);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background-color: var(--color-pastel-yellow-bg);
+    color: var(--color-ink);
+  }
+}
+
+@layer components {
+  .page-container {
+    @apply mx-auto w-full max-w-6xl;
+  }
+
+  .page-title {
+    font-family: var(--font-serif);
+    @apply text-2xl md:text-3xl font-semibold tracking-tight text-ink;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+  }
+
+  .page-subtitle {
+    @apply text-sm text-ink-muted mt-1 max-w-2xl leading-relaxed;
+  }
+
+  .surface {
+    @apply bg-surface border border-border rounded-lg;
+  }
+
+  .surface-muted {
+    @apply bg-surface-muted border border-border rounded-lg;
+  }
+
+  .input-field {
+    @apply w-full border border-border rounded-md px-3 py-2 text-sm text-ink bg-surface
+      transition-colors duration-200
+      focus:outline-none focus:ring-2 focus:ring-ink/10 focus:border-border-strong;
+  }
+
+  .select-field {
+    @apply border border-border rounded-md px-3 py-2 text-sm text-ink bg-surface
+      transition-colors duration-200
+      focus:outline-none focus:ring-2 focus:ring-ink/10 focus:border-border-strong;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium
+      transition-all duration-200
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20 focus-visible:ring-offset-2
+      disabled:opacity-50 disabled:cursor-not-allowed
+      active:scale-[0.98];
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium
+      transition-all duration-200
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20 focus-visible:ring-offset-2
+      disabled:opacity-50 disabled:cursor-not-allowed
+      active:scale-[0.98]
+      bg-accent text-white hover:bg-accent-hover;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium
+      transition-all duration-200
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20 focus-visible:ring-offset-2
+      disabled:opacity-50 disabled:cursor-not-allowed
+      active:scale-[0.98]
+      bg-surface border border-border text-ink hover:bg-surface-muted;
+  }
+
+  .btn-success {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium
+      transition-all duration-200
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20 focus-visible:ring-offset-2
+      disabled:opacity-50 disabled:cursor-not-allowed
+      active:scale-[0.98]
+      bg-pastel-green-text text-white hover:opacity-90;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium
+      transition-all duration-200
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20 focus-visible:ring-offset-2
+      disabled:opacity-50 disabled:cursor-not-allowed
+      active:scale-[0.98]
+      bg-pastel-red-text text-white hover:opacity-90;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium
+      transition-all duration-200
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20 focus-visible:ring-offset-2
+      disabled:opacity-50 disabled:cursor-not-allowed
+      active:scale-[0.98]
+      bg-transparent text-ink-muted hover:text-ink hover:bg-black/[0.04];
+  }
+
+  .btn-sm {
+    @apply px-2.5 py-1.5 text-xs;
+  }
+
+  .nav-link {
+    @apply flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium
+      transition-colors duration-200
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/15;
+  }
+
+  .nav-link-active {
+    @apply bg-surface-muted text-ink;
+  }
+
+  .nav-link-inactive {
+    @apply text-ink-muted hover:text-ink hover:bg-black/[0.03];
+  }
+
+  .data-table {
+    @apply w-full text-sm;
+  }
+
+  .data-table thead tr {
+    @apply border-b border-border text-left;
+  }
+
+  .data-table th {
+    @apply p-3 text-xs font-medium text-ink-muted tracking-wide;
+  }
+
+  .data-table tbody tr {
+    @apply border-b border-border/70 transition-colors duration-150;
+  }
+
+  .data-table tbody tr:hover {
+    @apply bg-surface-muted/60;
+  }
+
+  .data-table td {
+    @apply p-3;
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .skip-link {
+    @apply sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[100]
+      focus:px-4 focus:py-2 focus:bg-accent focus:text-white focus:rounded-md focus:text-sm;
+  }
+
+  .skeleton {
+    @apply animate-pulse rounded-md bg-border/60;
+  }
+
+  .filter-chip {
+    @apply inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium border
+      transition-all duration-200 cursor-pointer
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/15;
+  }
+
+  .filter-chip-active {
+    @apply bg-ink text-white border-ink;
+  }
+
+  .filter-chip-inactive {
+    @apply bg-surface text-ink-muted border-border hover:border-border-strong hover:text-ink;
+  }
+}

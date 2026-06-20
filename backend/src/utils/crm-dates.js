@@ -1,7 +1,7 @@
 export const CRM_TIMEZONE = process.env.CRM_TIMEZONE || 'Europe/Moscow';
 
 /** Offset suffix for CRM calendar API (Moscow has no DST since 2011). */
-function crmOffsetSuffix() {
+export function crmOffsetSuffix() {
   if (CRM_TIMEZONE === 'Europe/Moscow') return '+03:00';
   return '+00:00';
 }

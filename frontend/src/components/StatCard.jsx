@@ -1,16 +1,32 @@
-export default function StatCard({ label, value, color = 'blue' }) {
-  const colors = {
-    blue: 'bg-blue-50 text-blue-700 border-blue-200',
-    green: 'bg-green-50 text-green-700 border-green-200',
-    yellow: 'bg-yellow-50 text-yellow-700 border-yellow-200',
-    red: 'bg-red-50 text-red-700 border-red-200',
-    gray: 'bg-gray-50 text-gray-700 border-gray-200',
-  };
+const colorMap = {
+  gray: 'bg-pastel-gray-bg border-pastel-gray-bg',
+  yellow: 'bg-pastel-yellow-bg border-pastel-yellow-bg',
+  blue: 'bg-pastel-blue-bg border-pastel-blue-bg',
+  green: 'bg-pastel-green-bg border-pastel-green-bg',
+  red: 'bg-pastel-red-bg border-pastel-red-bg',
+};
 
+const textMap = {
+  gray: 'text-pastel-gray-text',
+  yellow: 'text-pastel-yellow-text',
+  blue: 'text-pastel-blue-text',
+  green: 'text-pastel-green-text',
+  red: 'text-pastel-red-text',
+};
+
+export default function StatCard({ label, value, color = 'gray', highlight = false }) {
   return (
-    <div className={`rounded-lg border p-4 ${colors[color]}`}>
-      <p className="text-sm font-medium opacity-75">{label}</p>
-      <p className="text-2xl font-bold mt-1">{value}</p>
+    <div
+      className={`rounded-lg border p-5 transition-shadow duration-200 hover:shadow-subtle ${
+        highlight ? 'surface ring-1 ring-ink/5' : colorMap[color]
+      }`}
+    >
+      <p className={`text-xs font-medium uppercase tracking-wide opacity-80 ${textMap[color]}`}>
+        {label}
+      </p>
+      <p className={`text-3xl font-semibold mt-2 tabular-nums tracking-tight ${textMap[color]}`}>
+        {value}
+      </p>
     </div>
   );
 }

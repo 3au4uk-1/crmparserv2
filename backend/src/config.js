@@ -1,10 +1,23 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Repo-root .env (local dev: npm run dev from backend/) then cwd fallback (Docker: /app)
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config();
 
 export const config = {
   port: parseInt(process.env.PORT || '3000', 10),
   crmBaseUrl: process.env.CRM_BASE_URL || 'https://apihide.com/bitrix/calendar/',
   crmLogin: process.env.CRM_LOGIN || '',
   crmPassword: process.env.CRM_PASSWORD || '',
+  tonyBaseUrl: process.env.TONY_BASE_URL || 'https://crm.apihide.com',
+  tonyLogin: process.env.TONY_LOGIN || '',
+  tonyPassword: process.env.TONY_PASSWORD || '',
+  tonyRequestDelayMs: parseInt(process.env.TONY_REQUEST_DELAY_MS || '350', 10),
+  fetchConcurrency: parseInt(process.env.FETCH_CONCURRENCY || '4', 10),
+  parsePipeline: process.env.PARSE_PIPELINE || 'parallel',
   llmApiUrl: process.env.LLM_API_URL || '',
   llmApiKey: process.env.LLM_API_KEY || '',
   llmModel: process.env.LLM_MODEL || '',
