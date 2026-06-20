@@ -103,4 +103,16 @@ describe('migrate', () => {
     expect(cols).toContain('sum');
     expect(cols).toContain('quantity_num');
   });
+
+  it('migrates legacy DB without deal_key before indexes are created', () => {
+    db.close();
+    db = createLegacyDb();
+    db.exec('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+    migrateDb = db;
+    expect(() => migrate()).not.toThrow();
+    const dealCols = db.prepare('PRAGMA table_info(deals)').all().map((c) => c.name);
+    expect(dealCols).toContain('deal_key');
+    const indexes = db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='deals'").all();
+    expect(indexes.map((i) => i.name)).toContain('idx_deals_deal_key');
+  });
 });

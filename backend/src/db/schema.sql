@@ -119,8 +119,6 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('keywords', '["бренди�
 INSERT OR IGNORE INTO settings (key, value) VALUES ('crm_cookies', '');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('llm_prompt', 'Ты помощник отдела брендинга. Определи, относится ли позиция к брендингу (печать, баннеры, наклейки, вывески, оформление и т.д.). Ответь JSON: {"items": [{"name": "...", "is_branding": true/false, "confidence": 0.0-1.0}]}');
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_deals_deal_key ON deals(deal_key);
-CREATE INDEX IF NOT EXISTS idx_deals_crm_event_id ON deals(crm_event_id);
 
 INSERT OR IGNORE INTO settings (key, value) VALUES ('tony_base_url', 'https://crm.apihide.com');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('tony_login', '');
