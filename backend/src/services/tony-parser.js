@@ -1,6 +1,6 @@
 import * as cheerio from 'cheerio';
 
-const CATEGORY_TABLE_SELECTOR = 'table[data-src="order_products_list"]';
+const CATEGORY_TABLE_SELECTOR = 'table[data-src="order_products_list"], table[data-src="order_sklad_list"]';
 
 const EMPTY = {
   items: [],
@@ -35,13 +35,15 @@ export function parseTonyOrder(html) {
     const category = $tbl.attr('data-var') || '';
     $tbl.find('tr[data-id]').each((__, tr) => {
       const $tr = $(tr);
+      if ($tr.hasClass('order_separator') || $tr.hasClass('spacer-row')) return;
+
       const name =
-        ($tr.find('.custom_name_value').attr('value') || '').trim() ||
-        $tr.find('.custom_name_title').first().text().trim();
+        ($tr.find('.custom_name_value, [class*="custom_name_value"]').first().attr('value') || '').trim() ||
+        $tr.find('.custom_name_title, .item_name_link').first().text().trim();
       if (!name) return;
 
       const price = parseNum($tr.attr('data-price')) ?? parseNum($tr.find('.price_value').attr('value'));
-      const quantity = ($tr.find('.orders_custom_edit').attr('value') || '').trim();
+      const quantity = ($tr.find('.orders_custom_edit, input.orders_edit').first().attr('value') || '').trim();
       const discount = parseNum($tr.find('.discount_value').attr('value')) ?? 0;
       const sum = parseNum($tr.attr('data-sum')) ?? 0;
       const comment = ($tr.find('.custom_text_value').first().attr('value') || '').trim();

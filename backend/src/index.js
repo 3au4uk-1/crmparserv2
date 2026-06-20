@@ -14,6 +14,8 @@ import authRouter from './routes/auth.js';
 import { appAuthMiddleware } from './middleware/app-auth.js';
 import { initScheduler } from './services/scheduler.js';
 import { initPrintSheetCron } from './services/print-sheet-cron.js';
+import { recoverStaleParseRuns } from './services/parser.js';
+import { getDb } from './db/connection.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -39,6 +41,7 @@ app.use(errorHandler);
 async function start() {
   initDb();
   migrate();
+  recoverStaleParseRuns(getDb());
   initScheduler();
   initPrintSheetCron();
   app.listen(config.port, () => {

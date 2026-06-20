@@ -61,4 +61,27 @@ describe('parseTonyOrder', () => {
     expect(empty.items).toEqual([]);
     expect(empty.budget).toBe(0);
   });
+
+  it('parses AJAX-loaded catalog rows with item_name_link and orders_edit', () => {
+    const ajaxHtml = `
+      <table data-src="order_products_list" data-var="products"><tbody>
+        <tr data-id="706928" data-price="50" data-sum="7500">
+          <td><a class="item_name_link">Капсулы для аппарата хватайка</a></td>
+          <td><input class="orders_edit" value="150"></td>
+          <td><input class="price_value" value="50"></td>
+          <td><input class="discount_value" value="20"></td>
+        </tr>
+      </tbody></table>
+    `;
+    const parsed = parseTonyOrder(ajaxHtml);
+    expect(parsed.items).toHaveLength(1);
+    expect(parsed.items[0]).toMatchObject({
+      name: 'Капсулы для аппарата хватайка',
+      price: 50,
+      quantity: '150',
+      discount: 20,
+      sum: 7500,
+      category: 'products',
+    });
+  });
 });

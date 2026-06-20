@@ -51,6 +51,7 @@ export async function tonyLogin(options = {}) {
       headers: { ...BROWSER_HEADERS, 'Content-Type': 'application/x-www-form-urlencoded' },
       maxRedirects: 0,
       validateStatus: () => true,
+      timeout: 30000,
     }
   );
 

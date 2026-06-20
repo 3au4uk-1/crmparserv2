@@ -160,9 +160,12 @@ async function resolveTonyOrdersPooled(tonyReady, bookingNumbers, run) {
   return orders;
 }
 
-/** Parallel prefetch of all in-range events' network data. Returns Map<eventId, data>. */
+/** Parallel prefetch of in-range events' network data. Returns Map<eventId, data>. */
 export async function prefetchAll(events, tonyReady, startDate, endDate, run) {
   const map = new Map();
+  let done = 0;
+  const total = events.length;
+
   await Promise.all(
     events.map(async (event) => {
       if (!isEventInRange(event, startDate, endDate)) return;
@@ -189,9 +192,26 @@ export async function prefetchAll(events, tonyReady, startDate, endDate, run) {
       const calParsed = parseDealDescription(descHtml);
 
       map.set(eventId, { bookingNumbers, descHtml, calParsed, tonyOrders });
+
+      done++;
+      if (done % 25 === 0 || done === total) {
+        console.log(`[parse] prefetch progress {"done":${done},"total":${total},"loaded":${map.size}}`);
+      }
     })
   );
   return map;
+}
+
+/** Mark orphaned parse runs as failed after an unclean server stop. */
+export function recoverStaleParseRuns(db) {
+  const result = db.prepare(`
+    UPDATE parse_runs
+    SET status = 'failed', finished_at = datetime('now'), error = ?
+    WHERE status = 'running'
+  `).run('Interrupted: server restarted while parse was in progress');
+  if (result.changes > 0) {
+    console.warn(`[parse] marked ${result.changes} stale parse run(s) as failed`);
+  }
 }
 
 async function applyEvent(db, event, eventId, data, ctx) {
@@ -388,10 +408,14 @@ export async function runParsing(startDate, endDate) {
 
     let prefetched = null;
     if (config.parsePipeline === 'parallel') {
+      const inRangeEvents = events.filter((event) => isEventInRange(event, startDate, endDate));
       const run = createPool({ concurrency: config.fetchConcurrency });
-      console.log(`[parse] prefetch start {"pipeline":"parallel","concurrency":${config.fetchConcurrency}}`);
+      console.log(
+        `[parse] prefetch start {"pipeline":"parallel","concurrency":${config.fetchConcurrency},` +
+        `"inRange":${inRangeEvents.length},"totalFromApi":${events.length}}`
+      );
       const t0 = Date.now();
-      prefetched = await prefetchAll(events, tonyReady, startDate, endDate, run);
+      prefetched = await prefetchAll(inRangeEvents, tonyReady, startDate, endDate, run);
       console.log(`[parse] prefetch done {"events":${prefetched.size},"ms":${Date.now() - t0}}`);
     }
 
