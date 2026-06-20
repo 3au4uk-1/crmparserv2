@@ -120,6 +120,15 @@ describe('computeDealItemsTotal', () => {
     const input = buildOpportunityInput(deal, items);
     expect(input.amount.amountMicros).toBe(28760 * 1_000_000);
   });
+
+  it('falls back to price * qty for Tony items missing sum', () => {
+    const deal = { data_source: 'tony' };
+    const items = [
+      { price: 33600, quantity: '1', quantity_num: 1 },
+      { price: 40000, quantity: '1', quantity_num: 1 },
+    ];
+    expect(computeDealItemsTotal(deal, items)).toBe(73600);
+  });
 });
 
 describe('parseQuantityNum', () => {

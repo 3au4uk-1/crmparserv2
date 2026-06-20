@@ -63,7 +63,7 @@ export async function syncLineItemsDiff({
   existingLineItems,
   findOrCreateWarehouseItem,
   db,
-  dataSource = 'calendar',
+  deal = null,
 }) {
   const { toUpdate, toCreate, toDelete } = computeLineItemDiff(
     existingLineItems,
@@ -93,7 +93,7 @@ export async function syncLineItemsDiff({
       `mutation UpdateDealLineItem($id: ID!, $input: DealLineItemUpdateInput!) {
         updateDealLineItem(id: $id, data: $input) { id }
       }`,
-      { id: twentyId, input: buildLineItemUpdateInput(item, { dataSource }) }
+      { id: twentyId, input: buildLineItemUpdateInput(item, { deal }) }
     );
     assertHttpSuccess(resp, apiUrl);
     assertGqlSuccess(resp, `Failed to update line item "${item.name}" in Twenty`);
@@ -116,7 +116,7 @@ export async function syncLineItemsDiff({
           warehouseItemId,
           oppId,
           position === 0 ? 'first' : position,
-          { dataSource }
+          { deal }
         ),
       }
     );

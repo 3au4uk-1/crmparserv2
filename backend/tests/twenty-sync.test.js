@@ -147,16 +147,7 @@ describe('syncDealToTwenty', () => {
       .mockResolvedValueOnce(gqlOk({
         dealLineItems: { edges: [{ node: { id: 'li-1', name: 'Баннер' } }] },
       }))
-      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-1' } }))
-      .mockResolvedValueOnce(gqlOk({
-        opportunity: {
-          id: 'opp-existing',
-          stage: 'NOVYY',
-          name: 'Updated deal',
-          closeDate: '2026-06-10T00:00:00.000Z',
-          plenka: { markdown: '' },
-        },
-      }));
+      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-1' } }));
 
     const result = await syncDealToTwenty(dealId);
 
@@ -186,16 +177,7 @@ describe('syncDealToTwenty', () => {
       .mockResolvedValueOnce(gqlOk({ createOpportunity: { id: 'opp-new' } }))
       .mockResolvedValueOnce(gqlOk({ products: { edges: [] } }))
       .mockResolvedValueOnce(gqlOk({ createProduct: { id: 'wh-1' } }))
-      .mockResolvedValueOnce(gqlOk({ createDealLineItem: { id: 'li-new' } }))
-      .mockResolvedValueOnce(gqlOk({
-        opportunity: {
-          id: 'opp-new',
-          stage: 'NOVYY',
-          name: 'New deal',
-          closeDate: '2026-06-10T00:00:00.000Z',
-          plenka: { markdown: '' },
-        },
-      }));
+      .mockResolvedValueOnce(gqlOk({ createDealLineItem: { id: 'li-new' } }));
 
     const result = await syncDealToTwenty(dealId);
     expect(result.action).toBe('created');
@@ -206,6 +188,7 @@ describe('syncDealToTwenty', () => {
     const dealId = dbMock.__seedDeal({
       id: 5,
       twenty_id: 'opp-print',
+      twenty_stage: 'V_PECHATI',
       approval_status: 'synced',
       title: 'Print stage deal',
       start_date: '2026-06-10',
@@ -216,12 +199,16 @@ describe('syncDealToTwenty', () => {
       .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-print' } }))
       .mockResolvedValueOnce(gqlOk({ dealLineItems: { edges: [] } }))
       .mockResolvedValueOnce(gqlOk({
-        opportunity: {
-          id: 'opp-print',
-          stage: 'V_PECHATI',
-          name: 'Print stage deal',
-          closeDate: '2026-06-10T00:00:00.000Z',
-          plenka: { markdown: '' },
+        opportunities: {
+          edges: [{
+            node: {
+              id: 'opp-print',
+              stage: 'V_PECHATI',
+              name: 'Print stage deal',
+              closeDate: '2026-06-10T00:00:00.000Z',
+              plenka: { markdown: '' },
+            },
+          }],
         },
       }));
 

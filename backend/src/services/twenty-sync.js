@@ -7,7 +7,7 @@ import {
   getItemEligibleReason,
 } from './twenty-items.js';
 import { buildWarehouseItemCreateInput } from './twenty-line-item.js';
-import { buildOpportunityInput, computeDealItemsTotal, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
+import { buildOpportunityInput, computeDealItemsTotal, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE, V_PECHATI_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
 import {
   listLineItemsForOpportunity,
   syncLineItemsDiff,
@@ -56,21 +56,25 @@ function logSyncRun(dealId, status, twentyId, error, action = null) {
   ).run(dealId, status, action, twentyId || null, error || null);
 }
 
-async function refreshPlenkaAfterSync(twenty, oppId) {
-  if (!oppId) return;
+async function refreshPlenkaAfterSync(twenty, oppId, deal) {
+  if (!oppId || deal?.twenty_stage !== V_PECHATI_OPPORTUNITY_STAGE) return;
 
   try {
     const oppResp = await gql(
       twenty.apiUrl,
       twenty.apiToken,
-      `query OpportunityForPlenkaRefresh($id: ID!) {
-        opportunity(id: $id) {
-          id
-          name
-          stage
-          closeDate
-          plenka {
-            markdown
+      `query OpportunityForPlenkaRefresh($id: UUID!) {
+        opportunities(filter: { id: { eq: $id } }, first: 1) {
+          edges {
+            node {
+              id
+              name
+              stage
+              closeDate
+              plenka {
+                markdown
+              }
+            }
           }
         }
       }`,
@@ -79,8 +83,8 @@ async function refreshPlenkaAfterSync(twenty, oppId) {
     assertHttpSuccess(oppResp, twenty.apiUrl);
     assertGqlSuccess(oppResp, 'Failed to load opportunity for plenka refresh');
 
-    const opportunity = oppResp.data?.data?.opportunity;
-    if (opportunity?.stage !== 'V_PECHATI') return;
+    const opportunity = oppResp.data?.data?.opportunities?.edges?.[0]?.node;
+    if (opportunity?.stage !== V_PECHATI_OPPORTUNITY_STAGE) return;
 
     const gqlClient = createTwentyGqlClient(twenty.apiUrl, twenty.apiToken);
     await refreshPlenkaForOpportunity(gqlClient, opportunity);
@@ -309,7 +313,7 @@ async function updateDealInTwenty(dealId, deal, items, twenty) {
     eligibleItems: items,
     existingLineItems,
     db,
-    dataSource: deal.data_source || 'calendar',
+    deal,
   });
 
   const action = items.length === 0 ? 'updated_empty' : 'updated';
@@ -358,7 +362,7 @@ async function createDealInTwenty(dealId, deal, items, twenty) {
     eligibleItems: items,
     existingLineItems: [],
     db,
-    dataSource: deal.data_source || 'calendar',
+    deal,
   });
 
   db.prepare(`
@@ -448,7 +452,7 @@ export async function syncDealToTwenty(dealId) {
       result = await createDealInTwenty(dealId, deal, items, twenty);
     }
 
-    await refreshPlenkaAfterSync(twenty, result.twentyId);
+    await refreshPlenkaAfterSync(twenty, result.twentyId, deal);
     return result;
   } catch (err) {
     logTwenty('error', 'sync.failed', { mode, error: err.message });

@@ -13,6 +13,7 @@ export const OPPORTUNITY_STAGE_OPTIONS = [
 
 export const DEFAULT_OPPORTUNITY_STAGE = 'NOVYY';
 export const CANCELLED_OPPORTUNITY_STAGE = 'OTMENA';
+export const V_PECHATI_OPPORTUNITY_STAGE = 'V_PECHATI';
 
 export function parseQuantity(value) {
   const n = Number.parseInt(String(value ?? '').replace(/\s/g, ''), 10);
@@ -25,11 +26,21 @@ export function parseQuantityNum(value) {
   return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
-export function computeDealItemsTotal(deal, items) {
-  if (deal?.data_source === 'tony') {
-    return items.reduce((sum, i) => sum + (i.sum || 0), 0);
+/** Line total in rubles: Tony uses sum (incl. 0); calendar falls back to price × qty. */
+export function computeLineItemTotal(item, deal) {
+  const isTony = deal?.data_source === 'tony';
+  if (isTony && item.sum != null && Number.isFinite(item.sum)) {
+    return item.sum;
   }
-  return items.reduce((sum, i) => sum + (i.price || 0) * parseQuantity(i.quantity), 0);
+  if (item.sum != null && item.sum > 0) {
+    return item.sum;
+  }
+  const qty = item.quantity_num ?? parseQuantityNum(item.quantity);
+  return (item.price || 0) * qty;
+}
+
+export function computeDealItemsTotal(deal, items) {
+  return items.reduce((total, item) => total + computeLineItemTotal(item, deal), 0);
 }
 
 export function buildOpportunityInput(deal, items, options = {}) {

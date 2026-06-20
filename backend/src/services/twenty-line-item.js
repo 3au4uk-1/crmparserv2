@@ -1,74 +1,41 @@
-import { parseQuantityNum } from './twenty-opportunity.js';
+import { computeLineItemTotal, parseQuantityNum } from './twenty-opportunity.js';
 
 export function buildWarehouseItemCreateInput(name, position = 'first') {
   return { name, position };
 }
 
-function effectiveTonyUnitPrice(item) {
-  const qty = Math.max(item.quantity_num ?? parseQuantityNum(item.quantity), 1);
-  const sum = item.sum ?? 0;
-  return sum / qty;
-}
-
-function buildTonyLineItemFields(item) {
-  const fields = {};
+function buildLineItemFields(item, deal) {
   const qty = item.quantity_num ?? parseQuantityNum(item.quantity);
-  fields.kolichestvo = qty;
+  const lineTotal = computeLineItemTotal(item, deal);
+  const unitPrice = qty > 0 ? lineTotal / qty : 0;
+
+  const fields = {
+    kolichestvo: qty,
+    quantity: null,
+    amount: {
+      amountMicros: Math.round(unitPrice * 1_000_000),
+      currencyCode: 'RUB',
+    },
+  };
 
   const comment = (item.comment || '').trim();
   if (comment) fields.kommentariy = comment;
 
-  const unitPrice = effectiveTonyUnitPrice(item);
-  fields.amount = {
-    amountMicros: Math.round(unitPrice * 1_000_000),
-    currencyCode: 'RUB',
-  };
   return fields;
 }
 
 export function buildLineItemCreateInput(item, warehouseItemId, opportunityId, position = 'first', options = {}) {
-  const { dataSource = 'calendar' } = options;
-  const input = {
+  const { deal = null } = options;
+  return {
     name: item.name,
     position,
     warehouseItemId,
     opportunityId,
+    ...buildLineItemFields(item, deal),
   };
-
-  if (dataSource === 'tony') {
-    Object.assign(input, buildTonyLineItemFields(item));
-  } else {
-    if (item.quantity != null && item.quantity !== '') {
-      input.quantity = String(item.quantity);
-    }
-
-    if (item.price != null && !Number.isNaN(item.price)) {
-      input.amount = {
-        amountMicros: Math.round(item.price * 1_000_000),
-        currencyCode: 'RUB',
-      };
-    }
-  }
-
-  return input;
 }
 
 export function buildLineItemUpdateInput(item, options = {}) {
-  const { dataSource = 'calendar' } = options;
-  if (dataSource === 'tony') return buildTonyLineItemFields(item);
-
-  const input = {};
-
-  if (item.quantity != null && item.quantity !== '') {
-    input.quantity = String(item.quantity);
-  }
-
-  if (item.price != null && !Number.isNaN(item.price)) {
-    input.amount = {
-      amountMicros: Math.round(item.price * 1_000_000),
-      currencyCode: 'RUB',
-    };
-  }
-
-  return input;
+  const { deal = null } = options;
+  return buildLineItemFields(item, deal);
 }
