@@ -1,6 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Database from 'better-sqlite3';
-import { migrateDealIdentity } from '../src/db/migrate.js';
+
+let migrateDb;
+
+vi.mock('../src/db/connection.js', () => ({
+  getDb: () => migrateDb,
+  initDb: () => migrateDb,
+}));
+
+import { migrateDealIdentity, migrate } from '../src/db/migrate.js';
 
 function createLegacyDb() {
   const db = new Database(':memory:');
@@ -76,5 +84,23 @@ describe('migrateDealIdentity', () => {
     db.prepare("DELETE FROM deals WHERE id = 1").run();
     expect(db.prepare('SELECT COUNT(*) c FROM deal_items').get().c).toBe(0);
     expect(db.prepare('SELECT COUNT(*) c FROM sync_runs').get().c).toBe(0);
+  });
+});
+
+describe('migrate', () => {
+  let db;
+  beforeEach(() => {
+    db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    migrateDb = db;
+  });
+  afterEach(() => { db.close(); });
+
+  it('adds comment, sum, quantity_num columns to deal_items', () => {
+    migrate();
+    const cols = db.prepare('PRAGMA table_info(deal_items)').all().map((c) => c.name);
+    expect(cols).toContain('comment');
+    expect(cols).toContain('sum');
+    expect(cols).toContain('quantity_num');
   });
 });

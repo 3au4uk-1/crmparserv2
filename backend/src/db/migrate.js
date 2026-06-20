@@ -83,6 +83,9 @@ export function migrate() {
 
   ensureColumn(db, 'deal_items', 'sync_override', 'TEXT');
   ensureColumn(db, 'deal_items', 'twenty_id', 'TEXT');
+  ensureColumn(db, 'deal_items', 'comment', 'TEXT');
+  ensureColumn(db, 'deal_items', 'sum', 'REAL');
+  ensureColumn(db, 'deal_items', 'quantity_num', 'REAL');
   ensureColumn(db, 'deals', 'twenty_error', 'TEXT');
   ensureColumn(db, 'deals', 'tony_order_id', 'TEXT');
   ensureColumn(db, 'deals', 'arrival_time', 'TEXT');
