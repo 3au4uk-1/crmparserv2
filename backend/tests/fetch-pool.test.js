@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createPool } from '../src/services/fetch-pool.js';
+import { createPool, withRetry } from '../src/services/fetch-pool.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -34,5 +34,25 @@ describe('createPool', () => {
       run(async () => { order.push('b'); }),
     ]);
     expect(order).toEqual(['a', 'b']);
+  });
+});
+
+describe('withRetry', () => {
+  it('retries retryable failures then succeeds', async () => {
+    let n = 0;
+    const result = await withRetry(
+      async () => { n++; if (n < 3) { const e = new Error('429'); e.retryable = true; throw e; } return 'ok'; },
+      { retries: 3, baseDelayMs: 1, isRetryable: (e) => e.retryable }
+    );
+    expect(result).toBe('ok');
+    expect(n).toBe(3);
+  });
+
+  it('does not retry non-retryable failures', async () => {
+    let n = 0;
+    await expect(
+      withRetry(async () => { n++; throw new Error('login'); }, { retries: 3, baseDelayMs: 1, isRetryable: () => false })
+    ).rejects.toThrow('login');
+    expect(n).toBe(1);
   });
 });

@@ -37,3 +37,19 @@ export function createPool({ concurrency = 4, minSpacingMs = 0 } = {}) {
     });
   };
 }
+
+/** Retry `fn` on retryable errors with exponential backoff + jitter. */
+export async function withRetry(fn, { retries = 3, baseDelayMs = 500, isRetryable = () => true } = {}) {
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await fn();
+    } catch (err) {
+      attempt++;
+      if (attempt > retries || !isRetryable(err)) throw err;
+      const backoff = baseDelayMs * 2 ** (attempt - 1);
+      const jitter = Math.random() * baseDelayMs;
+      await new Promise((r) => setTimeout(r, backoff + jitter));
+    }
+  }
+}

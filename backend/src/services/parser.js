@@ -22,7 +22,7 @@ import { fetchTonyOrderHtml } from './tony-client.js';
 import { parseTonyOrder } from './tony-parser.js';
 import { buildTonyDealFields, buildTonyItems, tonyContentHash } from './tony-mapping.js';
 import { planEventReconciliation } from './tony-reconcile.js';
-import { createPool } from './fetch-pool.js';
+import { createPool, withRetry } from './fetch-pool.js';
 
 function buildUrl(path) {
   const base = config.crmBaseUrl.replace(/\/$/, '');
@@ -144,10 +144,13 @@ export async function fetchEventData(event, eventId, tonyReady) {
 async function resolveTonyOrdersPooled(tonyReady, bookingNumbers, run) {
   const orders = new Map();
   if (!tonyReady) return orders;
+  const retryRun = (fn) => run(() => withRetry(fn, {
+    isRetryable: (e) => e.retryable || e.code === 'ECONNRESET' || e.code === 'ETIMEDOUT',
+  }));
   await Promise.all(
     bookingNumbers.map(async (n) => {
       try {
-        const html = await fetchTonyOrderHtml(n, { run });
+        const html = await fetchTonyOrderHtml(n, { run: retryRun });
         if (html) orders.set(n, parseTonyOrder(html));
       } catch (err) {
         console.error(`[tony] failed to fetch order ${n}: ${err.message}`);
@@ -170,7 +173,9 @@ export async function prefetchAll(events, tonyReady, startDate, endDate, run) {
 
       let descJson;
       try {
-        descJson = await run(() => fetchDescription(eventId));
+        descJson = await run(() => withRetry(() => fetchDescription(eventId), {
+          isRetryable: (e) => e.retryable || e.code === 'ECONNRESET' || e.code === 'ETIMEDOUT',
+        }));
       } catch (err) {
         console.error(`Failed to fetch description for event ${eventId}:`, err.message);
         return;

@@ -39,7 +39,9 @@ async function fetchTonyOrderPage(bookingNumber) {
   const redirect = handleRedirectStatus(bookingNumber, resp.status, resp.headers?.location);
   if (redirect === null) return null;
   if (resp.status >= 400) {
-    throw new Error(`Tony order ${bookingNumber} returned HTTP ${resp.status}`);
+    const err = new Error(`Tony order ${bookingNumber} returned HTTP ${resp.status}`);
+    err.retryable = resp.status === 429 || resp.status >= 500;
+    throw err;
   }
   return typeof resp.data === 'string' ? resp.data : String(resp.data);
 }
@@ -63,7 +65,9 @@ async function fetchTonyAjaxList(src, bookingNumber, actionVar = '') {
   const redirect = handleRedirectStatus(bookingNumber, resp.status, resp.headers?.location);
   if (redirect === null) return '';
   if (resp.status >= 400) {
-    throw new Error(`Tony ${src} ${bookingNumber} returned HTTP ${resp.status}`);
+    const err = new Error(`Tony ${src} ${bookingNumber} returned HTTP ${resp.status}`);
+    err.retryable = resp.status === 429 || resp.status >= 500;
+    throw err;
   }
 
   const data = resp.data;
