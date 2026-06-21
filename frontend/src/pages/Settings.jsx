@@ -90,19 +90,10 @@ export default function Settings() {
   const [newBlacklistMatchType, setNewBlacklistMatchType] = useState('exact');
   const [blacklistError, setBlacklistError] = useState('');
   const [cookieValue, setCookieValue] = useState('');
-  const [parseSchedule, setParseSchedule] = useState('0 18 * * *');
-  const [parseScheduleFocused, setParseScheduleFocused] = useState(false);
-  const [parseScheduleError, setParseScheduleError] = useState('');
 
   useEffect(() => {
     if (settings?.crm_cookies) setCookieValue(settings.crm_cookies);
   }, [settings?.crm_cookies]);
-
-  useEffect(() => {
-    if (!parseScheduleFocused && settings?.parse_schedule != null) {
-      setParseSchedule(settings.parse_schedule || '0 18 * * *');
-    }
-  }, [settings?.parse_schedule, parseScheduleFocused]);
 
   function addKeyword() {
     const parsed = parseKeywordInput(newKeyword);
@@ -284,40 +275,17 @@ export default function Settings() {
             </div>
           </Section>
 
-          <Section title="Расписание парсинга">
-            <div className="max-w-md space-y-2">
-              <FieldLabel>Cron-выражение</FieldLabel>
-              <input
-                value={parseSchedule}
-                onChange={(e) => {
-                  setParseSchedule(e.target.value);
-                  setParseScheduleError('');
-                }}
-                onFocus={() => setParseScheduleFocused(true)}
-                onBlur={() => {
-                  setParseScheduleFocused(false);
-                  const value = parseSchedule.trim();
-                  if (!value) return;
-                  updateSetting.mutate(
-                    { key: 'parse_schedule', value },
-                    {
-                      onError: (err) => {
-                        const msg = err.response?.data?.error || 'Не удалось сохранить расписание';
-                        setParseScheduleError(msg);
-                      },
-                    },
-                  );
-                }}
-                className="input-field font-mono max-w-xs"
-              />
-              {parseScheduleError && (
-                <p className="text-sm text-pastel-red-text">{parseScheduleError}</p>
-              )}
-              <p className="text-xs text-ink-faint">
-                Примеры: <kbd className="font-mono text-[11px] bg-surface-muted px-1.5 py-0.5 rounded border border-border">0 18 * * *</kbd> (каждый день в 18:00),{' '}
-                <kbd className="font-mono text-[11px] bg-surface-muted px-1.5 py-0.5 rounded border border-border">0 */3 * * *</kbd> (каждые 3 часа) — по Москве
-              </p>
-            </div>
+          <Section
+            title="Расписание парсинга"
+            description="Автообновление зашито в сервер. Ручной парсинг — на странице «Парсинг»."
+          >
+            <ul className="text-sm text-ink-muted space-y-1.5 max-w-lg list-disc pl-5">
+              <li>Будни 9:00–21:00 — каждый час, +4 дня</li>
+              <li>Будни 22:00 — +14 дней</li>
+              <li>Каждый день 2:00 — +2 дня (ночной лёгкий прогон)</li>
+              <li>Выходные — каждые 2 часа, +7 дней</li>
+              <li>22:00–9:00 (кроме 2:00) — без автообновлений</li>
+            </ul>
           </Section>
 
           <Section title="Режим апрува">
