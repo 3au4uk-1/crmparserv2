@@ -46,6 +46,31 @@ export function getDefaultParseRange(now = new Date()) {
   };
 }
 
+const TIER_DAY_OFFSET = {
+  'weekday-fast': 4,
+  'weekday-deep': 14,
+  'night-light': 2,
+  weekend: 7,
+};
+
+/** Parse window for a schedule tier: today → today+N days (CRM timezone). */
+export function getParseRangeForTier(tier, now = new Date()) {
+  const dayOffset = TIER_DAY_OFFSET[tier];
+  if (dayOffset == null) {
+    throw new Error(`Unknown parse tier: ${tier}`);
+  }
+  const { year, month, day } = getCrmCalendarDate(now);
+  const start = getMinParseStart(now);
+  const end = new Date(year, month - 1, day + dayOffset, 23, 59, 59);
+  const endFormatted = formatCrmDateTime(end);
+  return {
+    start,
+    end: endFormatted,
+    startDate: toInputDate(start),
+    endDate: toInputDate(endFormatted),
+  };
+}
+
 /** YYYY-MM-DD for HTML date inputs. */
 export function toInputDate(value) {
   const parsed = parseEventDate(value);

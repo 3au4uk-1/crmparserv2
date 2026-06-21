@@ -3,6 +3,7 @@ import {
   buildCloseDate,
   getDefaultParseRange,
   getMinParseStart,
+  getParseRangeForTier,
   normalizeParseRange,
   parseEventDate,
 } from '../src/utils/crm-dates.js';
@@ -29,6 +30,38 @@ describe('crm-dates', () => {
   it('keeps valid future start date', () => {
     const { start } = normalizeParseRange('2026-06-10', '2026-07-31', now);
     expect(start).toContain('2026-06-10');
+  });
+});
+
+describe('getParseRangeForTier', () => {
+  it('weekday-fast ends 4 days ahead', () => {
+    const now = new Date('2026-06-19T10:00:00+03:00');
+    const range = getParseRangeForTier('weekday-fast', now);
+    expect(range.endDate).toBe('2026-06-23');
+  });
+
+  it('weekday-deep ends 14 days ahead', () => {
+    const now = new Date('2026-06-19T22:00:00+03:00');
+    const range = getParseRangeForTier('weekday-deep', now);
+    expect(range.endDate).toBe('2026-07-03');
+  });
+
+  it('night-light ends 2 days ahead', () => {
+    const now = new Date('2026-06-19T02:00:00+03:00');
+    const range = getParseRangeForTier('night-light', now);
+    expect(range.endDate).toBe('2026-06-21');
+  });
+
+  it('weekend ends 7 days ahead', () => {
+    const now = new Date('2026-06-20T14:00:00+03:00');
+    const range = getParseRangeForTier('weekend', now);
+    expect(range.endDate).toBe('2026-06-27');
+  });
+
+  it('start equals getMinParseStart(now)', () => {
+    const now = new Date('2026-06-19T10:00:00+03:00');
+    const range = getParseRangeForTier('weekday-fast', now);
+    expect(range.start).toBe(getMinParseStart(now));
   });
 });
 
