@@ -11,7 +11,6 @@ function buildLineItemFields(item, deal) {
 
   const fields = {
     kolichestvo: qty,
-    quantity: null,
     amount: {
       amountMicros: Math.round(unitPrice * 1_000_000),
       currencyCode: 'RUB',

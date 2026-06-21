@@ -25,7 +25,7 @@ describe('Tony line items', () => {
     quantity_num: 9,
   };
 
-  it('builds create input with kolichestvo, kommentariy, effective amount, clears text quantity', () => {
+  it('builds create input with kolichestvo, kommentariy, and effective amount', () => {
     const input = buildLineItemCreateInput(
       tonyItem, 'wh-001', 'opp-456', 'first', { deal: tonyDeal }
     );
@@ -35,7 +35,6 @@ describe('Tony line items', () => {
       warehouseItemId: 'wh-001',
       opportunityId: 'opp-456',
       kolichestvo: 9,
-      quantity: null,
       kommentariy: '+ монтаж',
       amount: { amountMicros: 2640000000, currencyCode: 'RUB' },
     });
@@ -68,7 +67,6 @@ describe('Tony line items', () => {
     const input = buildLineItemUpdateInput(tonyItem, { deal: tonyDeal });
     expect(input).toEqual({
       kolichestvo: 9,
-      quantity: null,
       kommentariy: '+ монтаж',
       amount: { amountMicros: 2640000000, currencyCode: 'RUB' },
     });
@@ -78,13 +76,12 @@ describe('Tony line items', () => {
 describe('calendar line items', () => {
   const calendarDeal = { data_source: 'calendar' };
 
-  it('uses kolichestvo and clears text quantity', () => {
+  it('uses kolichestvo from parsed quantity text', () => {
     const input = buildLineItemCreateInput(
       { name: 'Наклейка', price: 15000, quantity: '3 шт.' },
       'wh-001', 'opp-456', 'first', { deal: calendarDeal }
     );
     expect(input.kolichestvo).toBe(3);
-    expect(input.quantity).toBeNull();
     expect(input.amount.amountMicros).toBe(15000000000);
   });
 
@@ -96,7 +93,6 @@ describe('calendar line items', () => {
       warehouseItemId: 'wh-002',
       opportunityId: 'opp-456',
       kolichestvo: 1,
-      quantity: null,
       amount: { amountMicros: 0, currencyCode: 'RUB' },
     });
   });
@@ -105,7 +101,6 @@ describe('calendar line items', () => {
     const input = buildLineItemUpdateInput({ price: 30000, quantity: '5 шт.' }, { deal: calendarDeal });
     expect(input).toEqual({
       kolichestvo: 5,
-      quantity: null,
       amount: { amountMicros: 30000000000, currencyCode: 'RUB' },
     });
   });
