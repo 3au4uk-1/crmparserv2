@@ -1,7 +1,5 @@
 import { Router } from 'express';
-import cron from 'node-cron';
 import { getDb } from '../db/connection.js';
-import { restartScheduler } from '../services/scheduler.js';
 
 const router = Router();
 
@@ -75,20 +73,9 @@ router.put('/:key', (req, res) => {
   }
 
   const value = String(req.body?.value ?? '').trim();
-  if (req.params.key === 'parse_schedule') {
-    if (!value) {
-      return res.status(400).json({ error: 'Cron-выражение не может быть пустым' });
-    }
-    if (!cron.validate(value)) {
-      return res.status(400).json({ error: 'Некорректное cron-выражение' });
-    }
-  }
 
   const db = getDb();
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(req.params.key, value);
-  if (req.params.key === 'parse_schedule') {
-    restartScheduler();
-  }
   res.json({ success: true });
 });
 
