@@ -1,19 +1,21 @@
 import { Router } from 'express';
 import { getDb } from '../db/connection.js';
 import { runParsing } from '../services/parser.js';
+import {
+  isParsingInProgress,
+  tryAcquireParsingLock,
+  releaseParsingLock,
+} from '../services/parsing-lock.js';
 import { getDefaultParseRange, normalizeParseRange } from '../utils/crm-dates.js';
 
 const router = Router();
 
-let parsingInProgress = false;
-
 router.post('/run', async (req, res, next) => {
-  if (parsingInProgress) {
+  if (!tryAcquireParsingLock()) {
     return res.status(409).json({ error: 'Parsing already in progress' });
   }
 
   try {
-    parsingInProgress = true;
     const { startDate, endDate } = req.body;
     const { start, end } = normalizeParseRange(startDate, endDate);
 
@@ -22,12 +24,12 @@ router.post('/run', async (req, res, next) => {
   } catch (err) {
     next(err);
   } finally {
-    parsingInProgress = false;
+    releaseParsingLock();
   }
 });
 
 router.get('/status', (req, res) => {
-  res.json({ inProgress: parsingInProgress });
+  res.json({ inProgress: isParsingInProgress() });
 });
 
 router.get('/defaults', (req, res) => {
