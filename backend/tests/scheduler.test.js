@@ -64,11 +64,11 @@ describe('scheduler', () => {
     tryAcquireParsingLockMock.mockReturnValue(true);
   });
 
-  it('registers */15 cron in CRM timezone', () => {
+  it('registers hourly cron in CRM timezone', () => {
     initScheduler();
     expect(scheduleMock).toHaveBeenCalledTimes(1);
     const [expression, , options] = scheduleMock.mock.calls[0];
-    expect(expression).toBe('*/15 * * * *');
+    expect(expression).toBe('0 * * * *');
     expect(options).toEqual({ timezone: CRM_TIMEZONE });
   });
 

@@ -40,7 +40,7 @@ export function initScheduler() {
   }
 
   scheduledTask = cron.schedule(
-    '*/15 * * * *',
+    '0 * * * *',
     () => {
       tickScheduler().catch((err) => {
         console.error('[scheduler] tick error:', err.message);
@@ -49,7 +49,7 @@ export function initScheduler() {
     { timezone: CRM_TIMEZONE }
   );
 
-  console.log(`Scheduler initialized: */15 * * * * (${CRM_TIMEZONE})`);
+  console.log(`Scheduler initialized: 0 * * * * (${CRM_TIMEZONE})`);
 }
 
 export function restartScheduler() {
