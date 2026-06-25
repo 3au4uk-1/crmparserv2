@@ -28,6 +28,7 @@ export const config = {
   twentyApiRateLimitWindowMs: parseInt(process.env.TWENTY_API_RATE_LIMIT_WINDOW_MS || '60000', 10),
   sessionSecret: process.env.SESSION_SECRET || 'dev-secret',
   appPassword: process.env.APP_PASSWORD || '',
+  importApiSecret: process.env.IMPORT_API_SECRET || '',
   dbPath: process.env.DB_PATH || './data/crmparser.db',
   printSheetId: process.env.PRINT_SHEET_ID || '',
   googleServiceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '',

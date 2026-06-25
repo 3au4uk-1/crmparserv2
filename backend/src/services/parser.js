@@ -55,7 +55,7 @@ function normalizeEventsResponse(data) {
   throw new Error(`CRM returned unexpected events format: ${typeof data}`);
 }
 
-async function fetchEvents(startDate, endDate) {
+export async function fetchEvents(startDate, endDate) {
   const token = getCalToken();
   const start = formatCrmDateTime(startDate);
   const end = formatCrmDateTime(endDate);
@@ -214,7 +214,7 @@ export function recoverStaleParseRuns(db) {
   }
 }
 
-async function applyEvent(db, event, eventId, data, ctx) {
+export async function applyEvent(db, event, eventId, data, ctx) {
   const { bookingNumbers, descHtml, calParsed, tonyOrders } = data;
   const { knownCodes, keywords, llmPrompt, counters, dealsToResync } = ctx;
   const titleInfo = parseDealTitle(event.title || '', knownCodes);

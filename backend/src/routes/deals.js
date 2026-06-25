@@ -3,6 +3,8 @@ import { getDb } from '../db/connection.js';
 import { syncDealToTwenty, buildSyncPreview } from '../services/twenty-sync.js';
 import { enrichDealItems } from '../services/twenty-items.js';
 import { loadBlacklist, createBlacklistEntry } from '../services/blacklist.js';
+import { importAuthMiddleware } from '../middleware/import-auth.js';
+import { importDealByBooking } from '../services/import-by-booking.js';
 
 const router = Router();
 
@@ -89,6 +91,21 @@ router.get('/stats', (req, res) => {
     rejected: db.prepare("SELECT COUNT(*) as c FROM deals WHERE approval_status = 'rejected'").get().c,
   };
   res.json(stats);
+});
+
+router.post('/import-by-booking', importAuthMiddleware, async (req, res) => {
+  try {
+    const bookingNumber = String(req.body?.bookingNumber ?? '').trim();
+    if (!/^\d+$/.test(bookingNumber)) {
+      return res.status(400).json({ ok: false, error: 'bookingNumber required (digits only)' });
+    }
+    const result = await importDealByBooking(bookingNumber);
+    res.json(result);
+  } catch (err) {
+    const message = err.message || 'Import failed';
+    const status = message.includes('не найдена') ? 404 : 500;
+    res.status(status).json({ ok: false, error: message });
+  }
 });
 
 router.get('/:id/sync-preview', (req, res, next) => {
