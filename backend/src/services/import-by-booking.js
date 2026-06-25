@@ -1,12 +1,9 @@
 import { getDb } from '../db/connection.js';
-import { fetchEventData, applyEvent } from './parser.js';
-import { findCalendarEventsByBooking } from './calendar-lookup.js';
 import { findTwentyOpportunityIdByBooking } from './twenty-lookup.js';
 import { fetchTonyOrderHtml } from './tony-client.js';
 import { parseTonyOrder } from './tony-parser.js';
 import { buildTonyDealFields, buildTonyItems, tonyContentHash } from './tony-mapping.js';
 import { classifyItems } from './classifier.js';
-import { loadCompanyCodes } from './companies.js';
 import { syncDealToTwenty } from './twenty-sync.js';
 import { tonyLogin, getTonyConfig } from './tony-auth.js';
 import { getItemsForTwenty } from './twenty-items.js';
@@ -136,53 +133,19 @@ export async function importDealByBooking(bookingNumber) {
 
   await ensureTonyReady();
 
-  let dealId = existing?.id ?? null;
-
-  // On-demand import: fetch single Tony order by booking number (no calendar sweep).
   const tonyHtml = await fetchTonyOrderHtml(bookingNumber);
-  if (tonyHtml) {
-    const order = parseTonyOrder(tonyHtml);
-    if (!order?.items?.length) throw new Error('Нет позиций в заказе Tony');
+  if (!tonyHtml) throw new Error('Бронь не найдена');
 
-    const keywords = JSON.parse(getSetting('keywords') || '[]');
-    const classifiedItems = await classifyItems(
-      buildTonyItems(order),
-      keywords,
-      getSetting('llm_prompt'),
-    );
-    dealId = await persistSyntheticTonyDeal(db, bookingNumber, order, classifiedItems);
-  } else {
-    let calendarEvents = [];
-    try {
-      calendarEvents = await findCalendarEventsByBooking(bookingNumber);
-    } catch (err) {
-      console.warn(
-        `[import-by-booking] calendar lookup failed for ${bookingNumber}:`,
-        err.message,
-      );
-    }
+  const order = parseTonyOrder(tonyHtml);
+  if (!order?.items?.length) throw new Error('Нет позиций в заказе Tony');
 
-    if (calendarEvents.length > 0) {
-      const event = calendarEvents[0];
-      const eventId = String(event.id ?? event.ID);
-      const data = await fetchEventData(event, eventId, true);
-      const knownCodes = loadCompanyCodes(db);
-      const keywords = JSON.parse(getSetting('keywords') || '[]');
-      const ctx = {
-        knownCodes,
-        keywords,
-        llmPrompt: getSetting('llm_prompt'),
-        counters: { newDeals: 0, updatedDeals: 0, skippedDeals: 0 },
-        dealsToResync: [],
-      };
-      await applyEvent(db, event, eventId, data, ctx);
-      const row = db.prepare('SELECT * FROM deals WHERE tony_order_id = ?').get(bookingNumber);
-      if (!row) throw new Error('Бронь не найдена');
-      dealId = row.id;
-    } else {
-      throw new Error('Бронь не найдена');
-    }
-  }
+  const keywords = JSON.parse(getSetting('keywords') || '[]');
+  const classifiedItems = await classifyItems(
+    buildTonyItems(order),
+    keywords,
+    getSetting('llm_prompt'),
+  );
+  const dealId = await persistSyntheticTonyDeal(db, bookingNumber, order, classifiedItems);
 
   await adoptTwentyIdIfExists(db, dealId, bookingNumber);
 

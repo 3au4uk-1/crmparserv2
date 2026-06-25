@@ -15,10 +15,6 @@ vi.mock('../src/services/tony-auth.js', () => ({
   }),
 }));
 
-vi.mock('../src/services/calendar-lookup.js', () => ({
-  findCalendarEventsByBooking: vi.fn().mockResolvedValue([]),
-}));
-
 vi.mock('../src/services/twenty-lookup.js', () => ({
   findTwentyOpportunityIdByBooking: vi.fn().mockResolvedValue(null),
 }));
@@ -89,5 +85,10 @@ describe('importDealByBooking', () => {
       dealId: expect.any(Number),
     });
     expect(fetchTonyOrderHtml).not.toHaveBeenCalled();
+  });
+
+  it('throws when Tony has no order for booking', async () => {
+    vi.mocked(fetchTonyOrderHtml).mockResolvedValue(null);
+    await expect(importDealByBooking('999999')).rejects.toThrow('Бронь не найдена');
   });
 });
