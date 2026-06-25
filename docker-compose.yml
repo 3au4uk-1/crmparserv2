@@ -1,6 +1,7 @@
 services:
   crmparser:
     image: ghcr.io/3au4uk-1/crmparserv2:latest
+    container_name: crmparser
     ports:
       - "3000:3000"
     volumes:
