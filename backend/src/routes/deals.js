@@ -99,7 +99,9 @@ router.post('/import-by-booking', importAuthMiddleware, async (req, res) => {
     if (!/^\d+$/.test(bookingNumber)) {
       return res.status(400).json({ ok: false, error: 'bookingNumber required (digits only)' });
     }
+    console.log(`[import-by-booking] start booking=${bookingNumber}`);
     const result = await importDealByBooking(bookingNumber);
+    console.log(`[import-by-booking] done booking=${bookingNumber} opportunityId=${result.opportunityId}`);
     res.json(result);
   } catch (err) {
     const message = err.message || 'Import failed';

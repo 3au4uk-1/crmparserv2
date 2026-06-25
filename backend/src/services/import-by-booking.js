@@ -136,31 +136,12 @@ export async function importDealByBooking(bookingNumber) {
 
   await ensureTonyReady();
 
-  const calendarEvents = await findCalendarEventsByBooking(bookingNumber);
   let dealId = existing?.id ?? null;
 
-  if (calendarEvents.length > 0) {
-    const event = calendarEvents[0];
-    const eventId = String(event.id ?? event.ID);
-    const data = await fetchEventData(event, eventId, true);
-    const knownCodes = loadCompanyCodes(db);
-    const keywords = JSON.parse(getSetting('keywords') || '[]');
-    const ctx = {
-      knownCodes,
-      keywords,
-      llmPrompt: getSetting('llm_prompt'),
-      counters: { newDeals: 0, updatedDeals: 0, skippedDeals: 0 },
-      dealsToResync: [],
-    };
-    await applyEvent(db, event, eventId, data, ctx);
-    const row = db.prepare('SELECT * FROM deals WHERE tony_order_id = ?').get(bookingNumber);
-    if (!row) throw new Error('Бронь не найдена');
-    dealId = row.id;
-  } else {
-    const html = await fetchTonyOrderHtml(bookingNumber);
-    if (!html) throw new Error('Бронь не найдена');
-
-    const order = parseTonyOrder(html);
+  // On-demand import: fetch single Tony order by booking number (no calendar sweep).
+  const tonyHtml = await fetchTonyOrderHtml(bookingNumber);
+  if (tonyHtml) {
+    const order = parseTonyOrder(tonyHtml);
     if (!order?.items?.length) throw new Error('Нет позиций в заказе Tony');
 
     const keywords = JSON.parse(getSetting('keywords') || '[]');
@@ -170,6 +151,37 @@ export async function importDealByBooking(bookingNumber) {
       getSetting('llm_prompt'),
     );
     dealId = await persistSyntheticTonyDeal(db, bookingNumber, order, classifiedItems);
+  } else {
+    let calendarEvents = [];
+    try {
+      calendarEvents = await findCalendarEventsByBooking(bookingNumber);
+    } catch (err) {
+      console.warn(
+        `[import-by-booking] calendar lookup failed for ${bookingNumber}:`,
+        err.message,
+      );
+    }
+
+    if (calendarEvents.length > 0) {
+      const event = calendarEvents[0];
+      const eventId = String(event.id ?? event.ID);
+      const data = await fetchEventData(event, eventId, true);
+      const knownCodes = loadCompanyCodes(db);
+      const keywords = JSON.parse(getSetting('keywords') || '[]');
+      const ctx = {
+        knownCodes,
+        keywords,
+        llmPrompt: getSetting('llm_prompt'),
+        counters: { newDeals: 0, updatedDeals: 0, skippedDeals: 0 },
+        dealsToResync: [],
+      };
+      await applyEvent(db, event, eventId, data, ctx);
+      const row = db.prepare('SELECT * FROM deals WHERE tony_order_id = ?').get(bookingNumber);
+      if (!row) throw new Error('Бронь не найдена');
+      dealId = row.id;
+    } else {
+      throw new Error('Бронь не найдена');
+    }
   }
 
   await adoptTwentyIdIfExists(db, dealId, bookingNumber);
