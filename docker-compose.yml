@@ -31,6 +31,7 @@ services:
       - PRINT_SHEET_CACHE_TTL_MS=${PRINT_SHEET_CACHE_TTL_MS:-60000}
       - SESSION_SECRET=${SESSION_SECRET:-change-me-in-production}
       - APP_PASSWORD=${APP_PASSWORD}
+      - IMPORT_API_SECRET=${IMPORT_API_SECRET}
     networks:
       - twenty
     restart: unless-stopped
