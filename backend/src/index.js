@@ -10,6 +10,7 @@ import parsingRouter from './routes/parsing.js';
 import settingsRouter from './routes/settings.js';
 import logsRouter from './routes/logs.js';
 import blacklistRouter from './routes/blacklist.js';
+import exportRouter from './routes/export.js';
 import authRouter from './routes/auth.js';
 import { appAuthMiddleware } from './middleware/app-auth.js';
 import { initScheduler } from './services/scheduler.js';
@@ -29,6 +30,7 @@ app.use('/api/parsing', parsingRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/logs', logsRouter);
 app.use('/api/blacklist', blacklistRouter);
+app.use('/api/export', exportRouter);
 
 app.use(express.static(path.join(__dirname, '../public')));
 
