@@ -4,6 +4,7 @@ import {
   getDefaultParseRange,
   getMinParseStart,
   getParseRangeForTier,
+  normalizeExportRange,
   normalizeParseRange,
   parseEventDate,
 } from '../src/utils/crm-dates.js';
@@ -90,5 +91,25 @@ describe('buildCloseDate', () => {
   it('returns ISO string when no dates on deal', () => {
     const result = buildCloseDate({});
     expect(result).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+  });
+});
+
+describe('normalizeExportRange', () => {
+  const now = new Date('2026-06-05T12:00:00+03:00');
+
+  it('does not clamp start before today', () => {
+    const { start, end } = normalizeExportRange('2025-01-01', '2025-03-31', now);
+    expect(start).toContain('2025-01-01');
+    expect(end).toContain('2025-03-31');
+  });
+
+  it('expands YYYY-MM-DD to full-day Moscow bounds', () => {
+    const { start, end } = normalizeExportRange('2025-06-01', '2025-06-30', now);
+    expect(start).toBe('2025-06-01T00:00:00+03:00');
+    expect(end).toBe('2025-06-30T23:59:59+03:00');
+  });
+
+  it('throws when from > to', () => {
+    expect(() => normalizeExportRange('2025-06-30', '2025-06-01', now)).toThrow();
   });
 });

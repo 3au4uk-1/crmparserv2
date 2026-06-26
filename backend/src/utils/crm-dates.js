@@ -115,6 +115,20 @@ export function normalizeParseRange(startDate, endDate, now = new Date()) {
   return { start, end };
 }
 
+export function normalizeExportRange(startDate, endDate, now = new Date()) {
+  if (!DATE_INPUT_RE.test(startDate) || !DATE_INPUT_RE.test(endDate)) {
+    throw new Error('from and to required (YYYY-MM-DD)');
+  }
+  const start = `${startDate}T00:00:00${crmOffsetSuffix()}`;
+  const end = `${endDate}T23:59:59${crmOffsetSuffix()}`;
+  const startTs = parseEventDate(start)?.getTime() ?? 0;
+  const endTs = parseEventDate(end)?.getTime() ?? 0;
+  if (startTs > endTs) {
+    throw new Error('from must be <= to');
+  }
+  return { start, end, startDate, endDate };
+}
+
 export function parseEventDate(value) {
   if (value == null || value === '') return null;
   if (typeof value === 'number') return new Date(value < 1e12 ? value * 1000 : value);
