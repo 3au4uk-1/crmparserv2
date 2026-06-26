@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
+import ExcelJS from 'exceljs';
 import {
   buildExportDealsFromEvent,
+  buildExportWorkbook,
   filterExportItems,
 } from '../src/services/historical-export.js';
 
@@ -78,5 +80,26 @@ describe('buildExportDealsFromEvent', () => {
     expect(
       buildExportDealsFromEvent(event, eventId, data, ['ПРО'], keywords, blacklist, 'АРТ')
     ).toEqual([]);
+  });
+});
+
+describe('buildExportWorkbook', () => {
+  it('creates two sheets with Russian headers', async () => {
+    const deals = [{
+      exportId: 'e1#cal',
+      title: 'Сделка А',
+      company_code: 'ПРО',
+      manager_name: 'Иванов',
+      start_date: '2025-03-15T10:00:00+03:00',
+      budget: '10000',
+      items: [{ name: 'Баннер', price: 1000, quantity: '1', sum: 1000 }],
+    }];
+    const buffer = await buildExportWorkbook(deals, '2025-03-01', '2025-03-31');
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer);
+    expect(wb.getWorksheet('Сделки').getRow(1).getCell(1).value).toBe('Дата начала');
+    expect(wb.getWorksheet('Позиции').getRow(1).getCell(3).value).toBe('Позиция');
+    expect(wb.getWorksheet('Сделки').rowCount).toBe(2);
+    expect(wb.getWorksheet('Позиции').rowCount).toBe(2);
   });
 });

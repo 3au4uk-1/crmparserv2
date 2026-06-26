@@ -1,8 +1,17 @@
+import ExcelJS from 'exceljs';
 import { classifyByKeywords } from './classifier.js';
 import { isBlacklisted } from './blacklist.js';
 import { parseDealTitle } from './title-parser.js';
 import { desiredDealKeys } from './tony-reconcile.js';
 import { buildTonyDealFields, buildTonyItems } from './tony-mapping.js';
+import { toInputDate, parseEventDate } from '../utils/crm-dates.js';
+
+function formatExportDate(iso) {
+  const d = toInputDate(iso);
+  if (!d) return '';
+  const [y, m, day] = d.split('-');
+  return `${day}.${m}.${y}`;
+}
 
 export function filterExportItems(items, blacklist = []) {
   return items.filter(
@@ -64,4 +73,51 @@ export function buildExportDealsFromEvent(
   }
 
   return deals;
+}
+
+export async function buildExportWorkbook(deals, from, to) {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'CRM Parser';
+  const dealsSheet = wb.addWorksheet('Сделки');
+  const itemsSheet = wb.addWorksheet('Позиции');
+
+  const dealHeaders = ['Дата начала', 'Название', 'Компания', 'Менеджер', 'Бюджет'];
+  const itemHeaders = ['ID сделки', 'Название сделки', 'Позиция', 'Цена', 'Количество', 'Сумма'];
+
+  dealsSheet.addRow(dealHeaders).font = { bold: true };
+  itemsSheet.addRow(itemHeaders).font = { bold: true };
+
+  const sorted = [...deals].sort(
+    (a, b) =>
+      (parseEventDate(b.start_date)?.getTime() ?? 0) - (parseEventDate(a.start_date)?.getTime() ?? 0)
+  );
+
+  for (const deal of sorted) {
+    dealsSheet.addRow([
+      formatExportDate(deal.start_date),
+      deal.title,
+      deal.company_code,
+      deal.manager_name,
+      deal.budget,
+    ]);
+    for (const item of deal.items) {
+      itemsSheet.addRow([
+        deal.exportId,
+        deal.title,
+        item.name,
+        item.price,
+        item.quantity,
+        item.sum,
+      ]);
+    }
+  }
+
+  dealsSheet.columns.forEach((col) => {
+    col.width = 18;
+  });
+  itemsSheet.columns.forEach((col) => {
+    col.width = 18;
+  });
+
+  return wb.xlsx.writeBuffer();
 }
