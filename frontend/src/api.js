@@ -358,3 +358,38 @@ export function useUpdateItemClassification() {
     },
   });
 }
+
+export function useStartExport() {
+  return useMutation({
+    mutationFn: (body) => api.post('/export', body).then((r) => r.data),
+  });
+}
+
+export function useExportJob(jobId, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: ['export-job', jobId],
+    queryFn: () => api.get(`/export/${jobId}`).then((r) => r.data),
+    enabled: enabled && !!jobId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === 'queued' || status === 'running' ? 2000 : false;
+    },
+  });
+}
+
+export function useActiveExportJob() {
+  return useQuery({
+    queryKey: ['export-active'],
+    queryFn: () => api.get('/export/active').then((r) => r.data),
+  });
+}
+
+export async function downloadExportFile(jobId, from, to) {
+  const resp = await api.get(`/export/${jobId}/file`, { responseType: 'blob' });
+  const url = URL.createObjectURL(resp.data);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `сделки_${from}_${to}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
