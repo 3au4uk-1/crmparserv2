@@ -17,6 +17,16 @@ export function IconDeals({ className = '', size = 18 }) {
   );
 }
 
+export function IconExport({ className = '', size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <rect x="4" y="3" width="16" height="18" rx="2" stroke="currentColor" strokeWidth="1.75" />
+      <path d="M8 8h8M8 12h6" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+      <path d="M12 10v7m0 0l-2.5-2.5M12 17l2.5-2.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function IconSettings({ className = '', size = 18 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
@@ -88,6 +98,7 @@ export function IconEmpty({ className = '', size = 40 }) {
 export const navIcons = {
   '/': IconDashboard,
   '/deals': IconDeals,
+  '/export': IconExport,
   '/settings': IconSettings,
   '/logs': IconLogs,
 };

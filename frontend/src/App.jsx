@@ -3,6 +3,7 @@ import { Routes, Route, NavLink, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import Dashboard from './pages/Dashboard';
 import Deals from './pages/Deals';
+import Export from './pages/Export';
 import Settings from './pages/Settings';
 import Logs from './pages/Logs';
 import Login from './pages/Login';
@@ -13,6 +14,7 @@ import { IconMenu } from './components/ui/Icons';
 const navItems = [
   { to: '/', label: 'Дашборд', end: true },
   { to: '/deals', label: 'Сделки' },
+  { to: '/export', label: 'Выгрузка' },
   { to: '/settings', label: 'Настройки' },
   { to: '/logs', label: 'Логи' },
 ];
@@ -150,6 +152,7 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/deals" element={<Deals />} />
+              <Route path="/export" element={<Export />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/logs" element={<Logs />} />
             </Routes>
