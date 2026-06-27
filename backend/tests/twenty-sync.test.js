@@ -106,9 +106,9 @@ vi.mock('../src/services/blacklist.js', () => ({
   isBlacklisted: () => false,
 }));
 
-const refreshPlenkaForOpportunityMock = vi.fn();
+const refreshPlenkaForOpportunityLineItemsMock = vi.fn();
 vi.mock('../src/services/print-sheet-twenty.js', () => ({
-  refreshPlenkaForOpportunity: (...args) => refreshPlenkaForOpportunityMock(...args),
+  refreshPlenkaForOpportunityLineItems: (...args) => refreshPlenkaForOpportunityLineItemsMock(...args),
 }));
 
 import * as dbMock from '../src/db/connection.js';
@@ -122,7 +122,7 @@ describe('syncDealToTwenty', () => {
   beforeEach(() => {
     axiosPost.mockReset();
     dbMock.__reset();
-    refreshPlenkaForOpportunityMock.mockReset();
+    refreshPlenkaForOpportunityLineItemsMock.mockReset();
   });
 
   it('updates opportunity when twenty_id exists', async () => {
@@ -149,13 +149,18 @@ describe('syncDealToTwenty', () => {
       }))
       .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-1' } }));
 
+    refreshPlenkaForOpportunityLineItemsMock.mockResolvedValue({ refreshed: 0, updated: 0 });
+
     const result = await syncDealToTwenty(dealId);
 
     expect(result.action).toBe('updated');
     expect(axiosPost.mock.calls.some(([_, body]) =>
       body.query.includes('updateOpportunity')
     )).toBe(true);
-    expect(refreshPlenkaForOpportunityMock).not.toHaveBeenCalled();
+    expect(refreshPlenkaForOpportunityLineItemsMock).toHaveBeenCalledWith(
+      expect.any(Function),
+      'opp-existing'
+    );
   });
 
   it('creates opportunity when no twenty_id', async () => {
@@ -179,16 +184,20 @@ describe('syncDealToTwenty', () => {
       .mockResolvedValueOnce(gqlOk({ createProduct: { id: 'wh-1' } }))
       .mockResolvedValueOnce(gqlOk({ createDealLineItem: { id: 'li-new' } }));
 
+    refreshPlenkaForOpportunityLineItemsMock.mockResolvedValue({ refreshed: 0, updated: 0 });
+
     const result = await syncDealToTwenty(dealId);
     expect(result.action).toBe('created');
-    expect(refreshPlenkaForOpportunityMock).not.toHaveBeenCalled();
+    expect(refreshPlenkaForOpportunityLineItemsMock).toHaveBeenCalledWith(
+      expect.any(Function),
+      'opp-new'
+    );
   });
 
-  it('refreshes plenka when synced opportunity is in print stage', async () => {
+  it('refreshes plenka for print-stage line items after sync', async () => {
     const dealId = dbMock.__seedDeal({
       id: 5,
       twenty_id: 'opp-print',
-      twenty_stage: 'V_PECHATI',
       approval_status: 'synced',
       title: 'Print stage deal',
       start_date: '2026-06-10',
@@ -197,28 +206,15 @@ describe('syncDealToTwenty', () => {
 
     axiosPost
       .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-print' } }))
-      .mockResolvedValueOnce(gqlOk({ dealLineItems: { edges: [] } }))
-      .mockResolvedValueOnce(gqlOk({
-        opportunities: {
-          edges: [{
-            node: {
-              id: 'opp-print',
-              stage: 'V_PECHATI',
-              name: 'Print stage deal',
-              closeDate: '2026-06-10T00:00:00.000Z',
-              plenka: { markdown: '' },
-            },
-          }],
-        },
-      }));
+      .mockResolvedValueOnce(gqlOk({ dealLineItems: { edges: [] } }));
+
+    refreshPlenkaForOpportunityLineItemsMock.mockResolvedValue({ refreshed: 1, updated: 1 });
 
     const result = await syncDealToTwenty(dealId);
 
     expect(result.action).toBe('updated_empty');
-    expect(refreshPlenkaForOpportunityMock).toHaveBeenCalledTimes(1);
-    expect(refreshPlenkaForOpportunityMock.mock.calls[0][1]).toEqual(
-      expect.objectContaining({ id: 'opp-print', stage: 'V_PECHATI' })
-    );
+    expect(refreshPlenkaForOpportunityLineItemsMock).toHaveBeenCalledTimes(1);
+    expect(refreshPlenkaForOpportunityLineItemsMock.mock.calls[0][1]).toBe('opp-print');
   });
 
   it('cancels opportunity when deal disappears from calendar', async () => {

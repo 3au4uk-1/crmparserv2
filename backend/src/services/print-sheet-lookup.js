@@ -9,7 +9,15 @@ const COL_TYPE = 4;
 
 let sheetCache = { key: '', fetchedAt: 0, rowsByTab: {} };
 
-export function matchFilmsFromRows(allRows, normalizedOrderName) {
+export function lineItemNameMatchesSheetType(lineItemName, sheetType) {
+  const itemKey = normalizePrintOrderName(lineItemName);
+  const typeKey = normalizePrintOrderName(sheetType);
+  if (!itemKey || !typeKey) return false;
+  if (itemKey === typeKey) return true;
+  return itemKey.includes(typeKey) || typeKey.includes(itemKey);
+}
+
+export function matchFilmsFromRows(allRows, normalizedOrderName, lineItemName = null) {
   const seen = new Set();
   const matches = [];
 
@@ -19,10 +27,12 @@ export function matchFilmsFromRows(allRows, normalizedOrderName) {
       const printOrder = normalizePrintOrderName(row[COL_ORDER]);
       if (printOrder !== normalizedOrderName) continue;
 
+      const type = String(row[COL_TYPE] ?? '').trim() || 'без названия';
+      if (lineItemName && !lineItemNameMatchesSheetType(lineItemName, type)) continue;
+
       const film = row[COL_FILM];
       if (film === '' || film == null) continue;
 
-      const type = String(row[COL_TYPE] ?? '').trim() || 'без названия';
       const dedupeKey = `${type}|${film}`;
       if (seen.has(dedupeKey)) continue;
       seen.add(dedupeKey);
@@ -88,6 +98,15 @@ export async function lookupFilmsForOrder(orderName, closeDate) {
   const tabNames = buildPrintSheetTabNames(closeDate);
   const allRows = await fetchRowsForTabs(tabNames);
   return matchFilmsFromRows(allRows, normalized);
+}
+
+export async function lookupFilmsForLineItem(orderName, closeDate, lineItemName) {
+  const normalized = normalizePrintOrderName(orderName);
+  if (!normalized || !lineItemName) return [];
+
+  const tabNames = buildPrintSheetTabNames(closeDate);
+  const allRows = await fetchRowsForTabs(tabNames);
+  return matchFilmsFromRows(allRows, normalized, lineItemName);
 }
 
 export function clearPrintSheetCacheForTests() {

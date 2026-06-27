@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   matchFilmsFromRows,
   formatPlenkaText,
+  lineItemNameMatchesSheetType,
 } from '../src/services/print-sheet-lookup.js';
 
 describe('matchFilmsFromRows', () => {
@@ -29,6 +30,22 @@ describe('matchFilmsFromRows', () => {
     ];
     const matches = matchFilmsFromRows([r], 'order1');
     expect(matches[0].type).toBe('без названия');
+  });
+
+  it('filters rows by line item name when provided', () => {
+    const matches = matchFilmsFromRows([rows], 'аренда1306тест155409иванов', 'плашки');
+    expect(matches).toEqual([
+      { type: 'плашки', film: 7 },
+      { type: 'плашки', film: 8 },
+    ]);
+  });
+});
+
+describe('lineItemNameMatchesSheetType', () => {
+  it('matches exact and partial names', () => {
+    expect(lineItemNameMatchesSheetType('плашки', 'плашки')).toBe(true);
+    expect(lineItemNameMatchesSheetType('Печать плашки А4', 'плашки')).toBe(true);
+    expect(lineItemNameMatchesSheetType('ростовая фигура', 'плашки')).toBe(false);
   });
 });
 

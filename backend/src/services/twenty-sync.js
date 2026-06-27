@@ -7,7 +7,7 @@ import {
   getItemEligibleReason,
 } from './twenty-items.js';
 import { buildWarehouseItemCreateInput } from './twenty-line-item.js';
-import { buildOpportunityInput, computeDealItemsTotal, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE, V_PECHATI_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
+import { buildOpportunityInput, computeDealItemsTotal, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
 import {
   listLineItemsForOpportunity,
   syncLineItemsDiff,
@@ -19,7 +19,7 @@ import {
   logTwentyStep,
 } from './twenty-sync-log.js';
 import { createTwentyGqlClient, gql } from './twenty-gql.js';
-import { refreshPlenkaForOpportunity } from './print-sheet-twenty.js';
+import { refreshPlenkaForOpportunityLineItems } from './print-sheet-twenty.js';
 
 function assertHttpSuccess(resp, apiUrl) {
   if (resp.status === 404) {
@@ -56,39 +56,13 @@ function logSyncRun(dealId, status, twentyId, error, action = null) {
   ).run(dealId, status, action, twentyId || null, error || null);
 }
 
-async function refreshPlenkaAfterSync(twenty, oppId, deal) {
-  if (!oppId || deal?.twenty_stage !== V_PECHATI_OPPORTUNITY_STAGE) return;
+async function refreshPlenkaAfterSync(twenty, oppId) {
+  if (!oppId) return;
 
   try {
-    const oppResp = await gql(
-      twenty.apiUrl,
-      twenty.apiToken,
-      `query OpportunityForPlenkaRefresh($id: UUID!) {
-        opportunities(filter: { id: { eq: $id } }, first: 1) {
-          edges {
-            node {
-              id
-              name
-              stage
-              closeDate
-              plenka {
-                markdown
-              }
-            }
-          }
-        }
-      }`,
-      { id: oppId }
-    );
-    assertHttpSuccess(oppResp, twenty.apiUrl);
-    assertGqlSuccess(oppResp, 'Failed to load opportunity for plenka refresh');
-
-    const opportunity = oppResp.data?.data?.opportunities?.edges?.[0]?.node;
-    if (opportunity?.stage !== V_PECHATI_OPPORTUNITY_STAGE) return;
-
     const gqlClient = createTwentyGqlClient(twenty.apiUrl, twenty.apiToken);
-    await refreshPlenkaForOpportunity(gqlClient, opportunity);
-    logTwentyStep('plenka.refresh.done', { oppId });
+    const result = await refreshPlenkaForOpportunityLineItems(gqlClient, oppId);
+    logTwentyStep('plenka.refresh.done', { oppId, ...result });
   } catch (err) {
     logTwenty('warn', 'plenka.refresh.failed', {
       oppId,
@@ -452,7 +426,7 @@ export async function syncDealToTwenty(dealId) {
       result = await createDealInTwenty(dealId, deal, items, twenty);
     }
 
-    await refreshPlenkaAfterSync(twenty, result.twentyId, deal);
+    await refreshPlenkaAfterSync(twenty, result.twentyId);
     return result;
   } catch (err) {
     logTwenty('error', 'sync.failed', { mode, error: err.message });
