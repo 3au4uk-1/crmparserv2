@@ -28,4 +28,16 @@ describe('extractBookingNumbers', () => {
   it('ignores 8+ digit numbers (phones) and 1-4 digit numbers (dates)', () => {
     expect(extractBookingNumbers('ПРО/06.05/тел 89261234567/Иванов')).toEqual([]);
   });
+
+  it('ignores Bar Street internal reference after dot', () => {
+    expect(
+      extractBookingNumbers('БС/35892.РБ РЕФ Один Виндер 27.06-28.06 #175415/Калашникова')
+    ).toEqual(['175415']);
+  });
+
+  it('ignores Bar Street internal reference at title start', () => {
+    expect(
+      extractBookingNumbers('БС/35610 РБ Ева ротанг 6.06. 169283/Радченкова')
+    ).toEqual(['169283']);
+  });
 });
