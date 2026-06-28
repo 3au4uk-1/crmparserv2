@@ -3,10 +3,7 @@ import { config } from '../config.js';
 import { CRM_TIMEZONE } from '../utils/crm-dates.js';
 import { requireTwentyConfig } from './twenty-config.js';
 import { createTwentyGqlClient } from './twenty-gql.js';
-import {
-  listLineItemsInPrintStage,
-  refreshPlenkaForLineItem,
-} from './print-sheet-twenty.js';
+import { runPrintSheetCycle } from './print-sheet-cycle.js';
 
 let cronTask = null;
 
@@ -27,14 +24,7 @@ export async function runPrintSheetRefresh() {
     return;
   }
 
-  const lineItems = await listLineItemsInPrintStage(gql);
-  for (const lineItem of lineItems) {
-    try {
-      await refreshPlenkaForLineItem(gql, lineItem);
-    } catch (err) {
-      console.error(`[print-sheet] refresh failed for ${lineItem.id}:`, err.message);
-    }
-  }
+  await runPrintSheetCycle(gql);
 }
 
 export function initPrintSheetCron() {

@@ -20,7 +20,7 @@ import {
   logTwentyStep,
 } from './twenty-sync-log.js';
 import { createTwentyGqlClient, gql } from './twenty-gql.js';
-import { refreshPlenkaForOpportunityLineItems } from './print-sheet-twenty.js';
+import { runPrintSheetCycle } from './print-sheet-cycle.js';
 
 function assertHttpSuccess(resp, apiUrl) {
   if (resp.status === 404) {
@@ -57,15 +57,15 @@ function logSyncRun(dealId, status, twentyId, error, action = null) {
   ).run(dealId, status, action, twentyId || null, error || null);
 }
 
-async function refreshPlenkaAfterSync(twenty, oppId) {
+async function refreshPrintSheetAfterSync(twenty, oppId) {
   if (!oppId) return;
 
   try {
     const gqlClient = createTwentyGqlClient(twenty.apiUrl, twenty.apiToken);
-    const result = await refreshPlenkaForOpportunityLineItems(gqlClient, oppId);
-    logTwentyStep('plenka.refresh.done', { oppId, ...result });
+    const result = await runPrintSheetCycle(gqlClient);
+    logTwentyStep('print_sheet.refresh.done', { oppId, ...result });
   } catch (err) {
-    logTwenty('warn', 'plenka.refresh.failed', {
+    logTwenty('warn', 'print_sheet.refresh.failed', {
       oppId,
       error: err.message,
     });
@@ -435,7 +435,7 @@ export async function syncDealToTwenty(dealId) {
       result = await createDealInTwenty(dealId, deal, items, twenty, restorationList);
     }
 
-    await refreshPlenkaAfterSync(twenty, result.twentyId);
+    await refreshPrintSheetAfterSync(twenty, result.twentyId);
     return result;
   } catch (err) {
     logTwenty('error', 'sync.failed', { mode, error: err.message });

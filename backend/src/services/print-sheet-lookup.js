@@ -1,13 +1,8 @@
-import { config } from '../config.js';
 import { normalizePrintOrderName } from './print-sheet-normalize.js';
-import { buildPrintSheetTabNames } from './print-sheet-tabs.js';
-import { getPrintSheetClient } from './print-sheet-client.js';
 
 const COL_FILM = 0;
 const COL_ORDER = 2;
 const COL_TYPE = 4;
-
-let sheetCache = { key: '', fetchedAt: 0, rowsByTab: {} };
 
 export function lineItemNameMatchesSheetType(lineItemName, sheetType) {
   const itemKey = normalizePrintOrderName(lineItemName);
@@ -47,56 +42,4 @@ export function matchFilmsFromRows(allRows, normalizedOrderName, lineItemName = 
 export function formatPlenkaText(matches) {
   if (!matches.length) return 'Плёнка не найдена';
   return matches.map(({ type, film }) => `${type} - ${film}`).join('\n');
-}
-
-export async function fetchRowsForTabs(tabNames) {
-  const client = getPrintSheetClient();
-  if (!client || !config.printSheetId || !tabNames.length) return [];
-
-  const cacheKey = tabNames.join('|');
-  const now = Date.now();
-  if (
-    sheetCache.key === cacheKey &&
-    now - sheetCache.fetchedAt < config.printSheetCacheTtlMs
-  ) {
-    return tabNames.map((t) => sheetCache.rowsByTab[t] || []);
-  }
-
-  const ranges = tabNames.map((t) => `'${t}'`);
-  const resp = await client.spreadsheets.values.batchGet({
-    spreadsheetId: config.printSheetId,
-    ranges,
-    majorDimension: 'ROWS',
-  });
-
-  const rowsByTab = {};
-  const valueRanges = resp.data.valueRanges || [];
-  for (let i = 0; i < tabNames.length; i++) {
-    rowsByTab[tabNames[i]] = valueRanges[i]?.values || [];
-  }
-
-  sheetCache = { key: cacheKey, fetchedAt: now, rowsByTab };
-  return tabNames.map((t) => rowsByTab[t] || []);
-}
-
-export async function lookupFilmsForOrder(orderName, closeDate) {
-  const normalized = normalizePrintOrderName(orderName);
-  if (!normalized) return [];
-
-  const tabNames = buildPrintSheetTabNames(closeDate);
-  const allRows = await fetchRowsForTabs(tabNames);
-  return matchFilmsFromRows(allRows, normalized);
-}
-
-export async function lookupFilmsForLineItem(orderName, closeDate, lineItemName) {
-  const normalized = normalizePrintOrderName(orderName);
-  if (!normalized || !lineItemName) return [];
-
-  const tabNames = buildPrintSheetTabNames(closeDate);
-  const allRows = await fetchRowsForTabs(tabNames);
-  return matchFilmsFromRows(allRows, normalized, lineItemName);
-}
-
-export function clearPrintSheetCacheForTests() {
-  sheetCache = { key: '', fetchedAt: 0, rowsByTab: {} };
 }

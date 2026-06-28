@@ -4,8 +4,7 @@ import { CRM_TIMEZONE } from '../src/utils/crm-dates.js';
 
 const scheduleMock = vi.fn();
 const stopMock = vi.fn();
-const listLineItemsInPrintStageMock = vi.fn();
-const refreshPlenkaForLineItemMock = vi.fn();
+const runPrintSheetCycleMock = vi.fn();
 const createTwentyGqlClientMock = vi.fn();
 const requireTwentyConfigMock = vi.fn();
 
@@ -15,9 +14,8 @@ vi.mock('node-cron', () => ({
   },
 }));
 
-vi.mock('../src/services/print-sheet-twenty.js', () => ({
-  listLineItemsInPrintStage: (...args) => listLineItemsInPrintStageMock(...args),
-  refreshPlenkaForLineItem: (...args) => refreshPlenkaForLineItemMock(...args),
+vi.mock('../src/services/print-sheet-cycle.js', () => ({
+  runPrintSheetCycle: (...args) => runPrintSheetCycleMock(...args),
 }));
 
 vi.mock('../src/services/twenty-gql.js', () => ({
@@ -38,8 +36,7 @@ describe('print-sheet-cron', () => {
   beforeEach(() => {
     scheduleMock.mockReset();
     stopMock.mockReset();
-    listLineItemsInPrintStageMock.mockReset();
-    refreshPlenkaForLineItemMock.mockReset();
+    runPrintSheetCycleMock.mockReset();
     createTwentyGqlClientMock.mockReset();
     requireTwentyConfigMock.mockReset();
 
@@ -63,7 +60,7 @@ describe('print-sheet-cron', () => {
     await runPrintSheetRefresh();
 
     expect(requireTwentyConfigMock).not.toHaveBeenCalled();
-    expect(listLineItemsInPrintStageMock).not.toHaveBeenCalled();
+    expect(runPrintSheetCycleMock).not.toHaveBeenCalled();
   });
 
   it('skips refresh when Google credentials are missing', async () => {
@@ -74,20 +71,21 @@ describe('print-sheet-cron', () => {
     await runPrintSheetRefresh();
 
     expect(requireTwentyConfigMock).not.toHaveBeenCalled();
-    expect(listLineItemsInPrintStageMock).not.toHaveBeenCalled();
+    expect(runPrintSheetCycleMock).not.toHaveBeenCalled();
   });
 
-  it('refreshes each print-stage line item when configured', async () => {
+  it('runs print sheet cycle when configured', async () => {
     config.printSheetId = 'sheet-id';
     config.googleServiceAccountEmail = 'service@test.local';
     config.googleServiceAccountPrivateKey = 'private-key';
 
     const gqlClient = vi.fn();
-    const lineItems = [{ id: 'li-1' }, { id: 'li-2' }];
-
     createTwentyGqlClientMock.mockReturnValue(gqlClient);
-    listLineItemsInPrintStageMock.mockResolvedValue(lineItems);
-    refreshPlenkaForLineItemMock.mockResolvedValue(undefined);
+    runPrintSheetCycleMock.mockResolvedValue({
+      exported: 2,
+      readbackUpdated: 1,
+      sessionsCleared: 0,
+    });
 
     await runPrintSheetRefresh();
 
@@ -95,8 +93,7 @@ describe('print-sheet-cron', () => {
       'https://twenty.test/graphql',
       'token'
     );
-    expect(listLineItemsInPrintStageMock).toHaveBeenCalledWith(gqlClient);
-    expect(refreshPlenkaForLineItemMock).toHaveBeenCalledTimes(2);
+    expect(runPrintSheetCycleMock).toHaveBeenCalledWith(gqlClient);
   });
 
   it('schedules cron each minute in CRM timezone', () => {
