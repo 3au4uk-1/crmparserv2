@@ -1,5 +1,5 @@
 import { buildPrintSheetRowValues } from './print-sheet-row-builder.js';
-import { appendPrintSheetRow } from './print-sheet-append.js';
+import { writePrintSheetRow } from './print-sheet-append.js';
 import { fetchPrintSheetRow, extractReadbackFromRow } from './print-sheet-readback.js';
 import { buildCurrentMonthTabName } from './print-sheet-tabs.js';
 import { V_PECHATI_LINE_ITEM_STAGE } from './print-sheet-twenty.js';
@@ -24,7 +24,7 @@ export async function runPrintSheetCycle(gql) {
   for (const lineItem of pending) {
     try {
       const rowValues = buildPrintSheetRowValues(lineItem);
-      const { rowNumber } = await appendPrintSheetRow(tabName, rowValues);
+      const { rowNumber } = await writePrintSheetRow(tabName, rowValues);
       await updateDealLineItemPrintSheet(
         gql,
         lineItem.id,

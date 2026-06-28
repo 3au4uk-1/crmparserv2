@@ -16,9 +16,24 @@ function formatPrintReadyDate(value) {
   return s;
 }
 
+function extractLayoutLinkUrl(layoutLink) {
+  if (!layoutLink) return '';
+  if (typeof layoutLink === 'string') return layoutLink;
+  if (layoutLink.primaryLinkUrl) return layoutLink.primaryLinkUrl;
+  if (Array.isArray(layoutLink)) {
+    const first = layoutLink[0];
+    if (typeof first === 'string') return first;
+    return first?.primaryLinkUrl ?? first?.url ?? '';
+  }
+  if (Array.isArray(layoutLink?.primaryLinks)) {
+    return layoutLink.primaryLinks[0]?.url ?? layoutLink.primaryLinks[0]?.primaryLinkUrl ?? '';
+  }
+  return '';
+}
+
 export function buildPrintSheetRowValues(lineItem) {
   const opp = lineItem.opportunity ?? {};
-  const layoutLink = lineItem[LAYOUT_LINK_FIELD];
+  const layoutUrl = extractLayoutLinkUrl(lineItem[LAYOUT_LINK_FIELD]);
 
   return [
     resolvePrintSheetDepartment(opp.companyId),
@@ -26,7 +41,7 @@ export function buildPrintSheetRowValues(lineItem) {
     opp.bitrixLink?.primaryLinkUrl ?? '',
     lineItem.name ?? '',
     '',
-    layoutLink?.primaryLinkUrl ?? layoutLink ?? '',
+    layoutUrl,
     formatUpdatedByName(lineItem.updatedBy),
     formatPrintReadyDate(lineItem.dataGotovnostiPechati),
     (lineItem.vremyaGotovnostiPechati ?? '').trim(),

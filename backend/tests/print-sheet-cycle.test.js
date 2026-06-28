@@ -28,7 +28,7 @@ vi.mock('../src/services/print-sheet-export-twenty.js', () => ({
 }));
 
 vi.mock('../src/services/print-sheet-append.js', () => ({
-  appendPrintSheetRow: (...args) => appendMock(...args),
+  writePrintSheetRow: (...args) => appendMock(...args),
 }));
 
 vi.mock('../src/services/print-sheet-readback.js', () => ({
