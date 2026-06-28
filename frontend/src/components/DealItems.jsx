@@ -1,4 +1,9 @@
-import { useUpdateItemSyncOverride, useResetSyncOverrides, useAddItemToBlacklist } from '../api';
+import {
+  useUpdateItemSyncOverride,
+  useResetSyncOverrides,
+  useAddItemToBlacklist,
+  useAddItemToRestoration,
+} from '../api';
 
 const classColors = {
   keyword_match: 'bg-pastel-green-bg/50 border-l-2 border-pastel-green-text',
@@ -18,6 +23,7 @@ export default function DealItems({ dealId, items, readOnly = false }) {
   const updateOverride = useUpdateItemSyncOverride();
   const resetOverrides = useResetSyncOverrides();
   const addToBlacklist = useAddItemToBlacklist();
+  const addToRestoration = useAddItemToRestoration();
 
   if (!items?.length) {
     return <p className="text-sm text-ink-muted py-2">Позиций в заказе нет</p>;
@@ -68,7 +74,7 @@ export default function DealItems({ dealId, items, readOnly = false }) {
               <th>Цена</th>
               <th>Кол-во</th>
               <th>Классификация</th>
-              {!readOnly && <th className="w-28">Действия</th>}
+              {!readOnly && <th className="w-36">Действия</th>}
             </tr>
           </thead>
           <tbody>
@@ -86,7 +92,16 @@ export default function DealItems({ dealId, items, readOnly = false }) {
                     <span className="text-xs text-ink-faint">{syncLabel(item)}</span>
                   </label>
                 </td>
-                <td className="font-medium">{item.name}</td>
+                <td className="font-medium">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span>{item.name}</span>
+                    {item.restorationMatch && item.eligibleForTwenty && (
+                      <span className="text-xs bg-pastel-yellow-bg text-pastel-yellow-text px-1.5 py-0.5 rounded">
+                        реставрация · 0 ₽
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td className="tabular-nums">{item.price?.toLocaleString('ru-RU')} ₽</td>
                 <td className="tabular-nums">{item.quantity}</td>
                 <td>
@@ -94,18 +109,32 @@ export default function DealItems({ dealId, items, readOnly = false }) {
                 </td>
                 {!readOnly && (
                   <td onClick={(e) => e.stopPropagation()}>
-                    {item.blacklisted ? (
-                      <span className="text-xs text-pastel-red-text">блеклист</span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => addToBlacklist.mutate({ dealId, itemId: item.id })}
-                        disabled={addToBlacklist.isPending}
-                        className="text-xs text-pastel-red-text hover:opacity-80 disabled:opacity-50"
-                      >
-                        В блеклист
-                      </button>
-                    )}
+                    <div className="flex flex-col gap-1">
+                      {item.blacklisted ? (
+                        <span className="text-xs text-pastel-red-text">блеклист</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => addToBlacklist.mutate({ dealId, itemId: item.id })}
+                          disabled={addToBlacklist.isPending}
+                          className="text-xs text-pastel-red-text hover:opacity-80 disabled:opacity-50 text-left"
+                        >
+                          В блеклист
+                        </button>
+                      )}
+                      {item.restorationMatch ? (
+                        <span className="text-xs text-pastel-yellow-text">реставрация</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => addToRestoration.mutate({ dealId, itemId: item.id })}
+                          disabled={addToRestoration.isPending}
+                          className="text-xs text-pastel-yellow-text hover:opacity-80 disabled:opacity-50 text-left"
+                        >
+                          В реставрацию
+                        </button>
+                      )}
+                    </div>
                   </td>
                 )}
               </tr>

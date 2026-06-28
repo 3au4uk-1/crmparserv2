@@ -3,6 +3,7 @@ import {
   isItemEligibleForTwenty,
   getItemsForTwenty,
   getItemEligibleReason,
+  enrichDealItems,
 } from '../src/services/twenty-items.js';
 
 const blacklist = [
@@ -77,5 +78,47 @@ describe('blacklist eligibility', () => {
       sync_override: 'exclude',
     };
     expect(isItemEligibleForTwenty(item, blacklist)).toBe(false);
+  });
+});
+
+describe('enrichDealItems restoration', () => {
+  const restorationList = [{ id: 1, pattern: 'колесо фортуны', matchType: 'exact' }];
+  const deal = { data_source: 'tony' };
+
+  it('adds restorationMatch and zero twentyLineAmount for eligible match', () => {
+    const items = [
+      {
+        id: 1,
+        name: 'Колесо фортуны',
+        price: 18900,
+        quantity: '1',
+        sum: 18900,
+        classification: 'keyword_match',
+        sync_override: null,
+      },
+    ];
+    const enriched = enrichDealItems(items, [], restorationList, deal);
+    expect(enriched[0].restorationMatch).toBe(true);
+    expect(enriched[0].twentyLineAmount).toBe(0);
+    expect(enriched[0].eligibleForTwenty).toBe(true);
+  });
+
+  it('does not change eligibility for ineligible item even if name matches', () => {
+    const items = [
+      {
+        id: 1,
+        name: 'Колесо фортуны',
+        price: 18900,
+        quantity: '1',
+        sum: 18900,
+        classification: 'unclassified',
+        sync_override: null,
+      },
+    ];
+    expect(getItemsForTwenty(items, [], restorationList)).toEqual([]);
+    const enriched = enrichDealItems(items, [], restorationList, deal);
+    expect(enriched[0].restorationMatch).toBe(true);
+    expect(enriched[0].eligibleForTwenty).toBe(false);
+    expect(enriched[0].twentyLineAmount).toBe(0);
   });
 });

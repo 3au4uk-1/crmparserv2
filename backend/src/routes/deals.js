@@ -3,6 +3,7 @@ import { getDb } from '../db/connection.js';
 import { syncDealToTwenty, buildSyncPreview } from '../services/twenty-sync.js';
 import { enrichDealItems } from '../services/twenty-items.js';
 import { loadBlacklist, createBlacklistEntry } from '../services/blacklist.js';
+import { loadRestorationList, createRestorationEntry } from '../services/restoration.js';
 import { importAuthMiddleware } from '../middleware/import-auth.js';
 import { importDealByBooking } from '../services/import-by-booking.js';
 
@@ -31,6 +32,7 @@ export function buildDealsOrderClause(sortBy, sortDir) {
 function attachDealItemCounts(deals, db) {
   if (!deals.length) return deals;
   const blacklist = loadBlacklist(db);
+  const restorationList = loadRestorationList(db);
   const ids = deals.map((d) => d.id);
   const placeholders = ids.map(() => '?').join(',');
   const rows = db
@@ -44,7 +46,12 @@ function attachDealItemCounts(deals, db) {
   }
 
   return deals.map((deal) => {
-    const enriched = enrichDealItems(byDeal.get(deal.id) || [], blacklist);
+    const enriched = enrichDealItems(
+      byDeal.get(deal.id) || [],
+      blacklist,
+      restorationList,
+      deal
+    );
     return {
       ...deal,
       branding_count: enriched.filter((i) => i.eligibleForTwenty).length,
@@ -123,8 +130,9 @@ router.get('/:id', (req, res) => {
   const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
   if (!deal) return res.status(404).json({ error: 'Deal not found' });
   const blacklist = loadBlacklist(db);
+  const restorationList = loadRestorationList(db);
   const items = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(req.params.id);
-  const enrichedItems = enrichDealItems(items, blacklist);
+  const enrichedItems = enrichDealItems(items, blacklist, restorationList, deal);
   res.json({
     ...deal,
     items: enrichedItems,
@@ -273,6 +281,25 @@ router.post('/:dealId/items/:itemId/blacklist', (req, res) => {
 
   try {
     const entry = createBlacklistEntry(db, {
+      pattern: item.name,
+      matchType: 'exact',
+      sourceName: item.name,
+    });
+    res.status(201).json({ item: entry });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.post('/:dealId/items/:itemId/restoration', (req, res) => {
+  const db = getDb();
+  const item = db
+    .prepare('SELECT id, name FROM deal_items WHERE id = ? AND deal_id = ?')
+    .get(req.params.itemId, req.params.dealId);
+  if (!item) return res.status(404).json({ error: 'Item not found' });
+
+  try {
+    const entry = createRestorationEntry(db, {
       pattern: item.name,
       matchType: 'exact',
       sourceName: item.name,

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildOpportunityInput,
   computeDealItemsTotal,
+  computeLineItemTotal,
   parseQuantity,
   parseQuantityNum,
   DEFAULT_OPPORTUNITY_STAGE,
@@ -139,5 +140,47 @@ describe('parseQuantityNum', () => {
     expect(parseQuantityNum(' 2 ')).toBe(2);
     expect(parseQuantityNum('∞')).toBe(1);
     expect(parseQuantityNum(null)).toBe(1);
+  });
+});
+
+describe('restoration pricing', () => {
+  const restorationList = [
+    { id: 1, pattern: 'колесо фортуны', matchType: 'exact' },
+  ];
+
+  it('computeLineItemTotal returns 0 for restoration match', () => {
+    const deal = { data_source: 'tony' };
+    const item = { name: 'Колесо фортуны', price: 18900, quantity: '1', sum: 18900 };
+    expect(computeLineItemTotal(item, deal, restorationList)).toBe(0);
+  });
+
+  it('computeLineItemTotal unchanged without match', () => {
+    const deal = { data_source: 'tony' };
+    const item = { name: 'Колесо фортуны', price: 18900, quantity: '1', sum: 18900 };
+    expect(
+      computeLineItemTotal({ ...item, name: 'Баннер' }, deal, restorationList)
+    ).toBe(18900);
+  });
+
+  it('computeDealItemsTotal excludes restoration rubles', () => {
+    const deal = { data_source: 'tony' };
+    const items = [
+      { name: 'Колесо фортуны', price: 18900, quantity: '1', sum: 18900 },
+      { name: 'Баннер', price: 10000, quantity: '1', sum: 10000 },
+    ];
+    expect(computeDealItemsTotal(deal, items, restorationList)).toBe(10000);
+  });
+
+  it('buildOpportunityInput amount excludes restoration', () => {
+    const d = { data_source: 'tony', title: 'T', crm_event_id: 'e1', start_date: '2026-06-16' };
+    const input = buildOpportunityInput(
+      d,
+      [
+        { name: 'Колесо фортуны', price: 18900, sum: 18900 },
+        { name: 'Баннер', price: 5000, sum: 5000 },
+      ],
+      { includeStage: false, restorationList }
+    );
+    expect(input.amount.amountMicros).toBe(5000 * 1_000_000);
   });
 });

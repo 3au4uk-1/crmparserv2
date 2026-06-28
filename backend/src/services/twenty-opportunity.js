@@ -1,5 +1,6 @@
 /** Twenty GraphQL enum values for Opportunity.stage (UI labels are localized separately). */
 import { buildCloseDate } from '../utils/crm-dates.js';
+import { isRestorationItem } from './restoration.js';
 
 export const OPPORTUNITY_STAGE_OPTIONS = [
   { value: 'NOVYY', label: 'Новый' },
@@ -27,7 +28,8 @@ export function parseQuantityNum(value) {
 }
 
 /** Line total in rubles: Tony uses sum (incl. 0); calendar falls back to price × qty. */
-export function computeLineItemTotal(item, deal) {
+export function computeLineItemTotal(item, deal, restorationList = []) {
+  if (isRestorationItem(item.name, restorationList)) return 0;
   const isTony = deal?.data_source === 'tony';
   if (isTony && item.sum != null && Number.isFinite(item.sum)) {
     return item.sum;
@@ -39,8 +41,11 @@ export function computeLineItemTotal(item, deal) {
   return (item.price || 0) * qty;
 }
 
-export function computeDealItemsTotal(deal, items) {
-  return items.reduce((total, item) => total + computeLineItemTotal(item, deal), 0);
+export function computeDealItemsTotal(deal, items, restorationList = []) {
+  return items.reduce(
+    (total, item) => total + computeLineItemTotal(item, deal, restorationList),
+    0
+  );
 }
 
 export function buildOpportunityInput(deal, items, options = {}) {
@@ -49,9 +54,10 @@ export function buildOpportunityInput(deal, items, options = {}) {
     stage = DEFAULT_OPPORTUNITY_STAGE,
     companyTwentyId = null,
     personTwentyId = null,
+    restorationList = [],
   } = options;
 
-  const brandingBudget = computeDealItemsTotal(deal, items);
+  const brandingBudget = computeDealItemsTotal(deal, items, restorationList);
 
   const input = {
     name: deal.title || `Deal ${deal.crm_event_id}`,

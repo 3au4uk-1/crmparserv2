@@ -105,3 +105,29 @@ describe('calendar line items', () => {
     });
   });
 });
+
+describe('restoration line items', () => {
+  const restorationList = [{ id: 1, pattern: 'колесо фортуны', matchType: 'exact' }];
+  const tonyDeal = { data_source: 'tony' };
+  const item = {
+    name: 'Колесо фортуны',
+    price: 18900,
+    quantity: '1',
+    sum: 18900,
+    quantity_num: 1,
+  };
+
+  it('builds create input with zero amount when restoration match', () => {
+    const input = buildLineItemCreateInput(
+      item, 'wh-001', 'opp-456', 'first', { deal: tonyDeal, restorationList }
+    );
+    expect(input.amount.amountMicros).toBe(0);
+    expect(input.kolichestvo).toBe(1);
+    expect(input.stage).toBeUndefined();
+  });
+
+  it('builds update input with zero amount when restoration match', () => {
+    const input = buildLineItemUpdateInput(item, { deal: tonyDeal, restorationList });
+    expect(input.amount.amountMicros).toBe(0);
+  });
+});

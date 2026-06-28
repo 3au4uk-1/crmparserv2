@@ -318,6 +318,51 @@ export function useAddItemToBlacklist() {
   });
 }
 
+export function useRestorationList() {
+  return useQuery({
+    queryKey: ['restoration'],
+    queryFn: () => api.get('/restoration').then((r) => r.data.items),
+  });
+}
+
+export function useAddRestorationItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ pattern, matchType, sourceName }) =>
+      api.post('/restoration', { pattern, matchType, sourceName }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['restoration'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal'] });
+    },
+  });
+}
+
+export function useRemoveRestorationItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => api.delete(`/restoration/${id}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['restoration'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal'] });
+    },
+  });
+}
+
+export function useAddItemToRestoration() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ dealId, itemId }) =>
+      api.post(`/deals/${dealId}/items/${itemId}/restoration`).then((r) => r.data),
+    onSuccess: (_, { dealId }) => {
+      qc.invalidateQueries({ queryKey: ['restoration'] });
+      qc.invalidateQueries({ queryKey: ['deal', dealId] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+    },
+  });
+}
+
 export function useCompanies() {
   return useQuery({
     queryKey: ['companies'],

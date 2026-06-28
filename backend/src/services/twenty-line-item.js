@@ -4,9 +4,10 @@ export function buildWarehouseItemCreateInput(name, position = 'first') {
   return { name, position };
 }
 
-function buildLineItemFields(item, deal) {
+function buildLineItemFields(item, options = {}) {
+  const { deal = null, restorationList = [] } = options;
   const qty = item.quantity_num ?? parseQuantityNum(item.quantity);
-  const lineTotal = computeLineItemTotal(item, deal);
+  const lineTotal = computeLineItemTotal(item, deal, restorationList);
   const unitPrice = qty > 0 ? lineTotal / qty : 0;
 
   const fields = {
@@ -24,17 +25,15 @@ function buildLineItemFields(item, deal) {
 }
 
 export function buildLineItemCreateInput(item, warehouseItemId, opportunityId, position = 'first', options = {}) {
-  const { deal = null } = options;
   return {
     name: item.name,
     position,
     warehouseItemId,
     opportunityId,
-    ...buildLineItemFields(item, deal),
+    ...buildLineItemFields(item, options),
   };
 }
 
 export function buildLineItemUpdateInput(item, options = {}) {
-  const { deal = null } = options;
-  return buildLineItemFields(item, deal);
+  return buildLineItemFields(item, options);
 }

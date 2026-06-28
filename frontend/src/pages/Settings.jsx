@@ -10,6 +10,9 @@ import {
   useBlacklist,
   useAddBlacklistItem,
   useRemoveBlacklistItem,
+  useRestorationList,
+  useAddRestorationItem,
+  useRemoveRestorationItem,
 } from '../api';
 import PageHeader from '../components/ui/PageHeader';
 
@@ -75,11 +78,14 @@ export default function Settings() {
   const { data: settings } = useSettings();
   const { data: keywords } = useKeywords();
   const { data: blacklist } = useBlacklist();
+  const { data: restorationList } = useRestorationList();
   const { data: companies } = useCompanies();
   const updateSetting = useUpdateSetting();
   const updateKeywords = useUpdateKeywords();
   const addBlacklistItem = useAddBlacklistItem();
   const removeBlacklistItem = useRemoveBlacklistItem();
+  const addRestorationItem = useAddRestorationItem();
+  const removeRestorationItem = useRemoveRestorationItem();
   const clearParsingData = useClearParsingData();
   const createCompany = useCreateCompany();
 
@@ -89,6 +95,9 @@ export default function Settings() {
   const [newBlacklistPattern, setNewBlacklistPattern] = useState('');
   const [newBlacklistMatchType, setNewBlacklistMatchType] = useState('exact');
   const [blacklistError, setBlacklistError] = useState('');
+  const [newRestorationPattern, setNewRestorationPattern] = useState('');
+  const [newRestorationMatchType, setNewRestorationMatchType] = useState('exact');
+  const [restorationError, setRestorationError] = useState('');
   const [cookieValue, setCookieValue] = useState('');
 
   useEffect(() => {
@@ -269,6 +278,73 @@ export default function Settings() {
                 }}
                 disabled={!newBlacklistPattern.trim() || addBlacklistItem.isPending}
                 className="btn-danger btn-sm"
+              >
+                Добавить
+              </button>
+            </div>
+          </Section>
+
+          <Section
+            title="Реставрация"
+            description="Eligible-позиции из списка попадают в Twenty с суммой 0 ₽. Не eligible — не синкаются. Стадия не меняется."
+          >
+            <div className="flex flex-wrap gap-2 mb-4">
+              {(restorationList || []).map((entry) => (
+                <span
+                  key={entry.id}
+                  className="inline-flex items-center gap-1.5 bg-pastel-yellow-bg text-pastel-yellow-text px-2.5 py-1 rounded-md text-sm"
+                >
+                  {entry.sourceName || entry.pattern}
+                  <span className="text-xs opacity-70">
+                    ({entry.matchType === 'exact' ? 'точное' : 'фрагмент'})
+                  </span>
+                  <button
+                    onClick={() => removeRestorationItem.mutate(entry.id)}
+                    className="opacity-60 hover:opacity-100 transition-opacity"
+                    aria-label="Удалить из списка реставрации"
+                  >
+                    &times;
+                  </button>
+                </span>
+              ))}
+            </div>
+            {restorationError && (
+              <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-3">{restorationError}</p>
+            )}
+            <div className="flex flex-wrap gap-2 items-end max-w-2xl">
+              <input
+                type="text"
+                value={newRestorationPattern}
+                onChange={(e) => setNewRestorationPattern(e.target.value)}
+                className="input-field flex-1 min-w-[12rem]"
+                placeholder="Колесо фортуны"
+              />
+              <select
+                value={newRestorationMatchType}
+                onChange={(e) => setNewRestorationMatchType(e.target.value)}
+                className="select-field"
+              >
+                <option value="exact">Точное</option>
+                <option value="substring">Фрагмент</option>
+              </select>
+              <button
+                onClick={() => {
+                  setRestorationError('');
+                  addRestorationItem.mutate(
+                    { pattern: newRestorationPattern, matchType: newRestorationMatchType },
+                    {
+                      onSuccess: () => setNewRestorationPattern(''),
+                      onError: (err) => {
+                        const msg = err.response?.status === 409
+                          ? 'Уже в списке реставрации'
+                          : err.response?.data?.error || 'Ошибка добавления';
+                        setRestorationError(msg);
+                      },
+                    }
+                  );
+                }}
+                disabled={!newRestorationPattern.trim() || addRestorationItem.isPending}
+                className="btn-primary btn-sm"
               >
                 Добавить
               </button>
