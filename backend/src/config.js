@@ -1,8 +1,26 @@
+import { readFileSync } from 'node:fs';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+function loadPrintSheetDepartmentMap() {
+  const envJson = process.env.PRINT_SHEET_DEPARTMENT_MAP || '';
+  if (envJson.trim()) {
+    try {
+      return JSON.parse(envJson);
+    } catch {
+      console.warn('[config] Invalid PRINT_SHEET_DEPARTMENT_MAP JSON, using file fallback');
+    }
+  }
+  const filePath = path.join(__dirname, '../config/print-sheet-departments.json');
+  try {
+    return JSON.parse(readFileSync(filePath, 'utf8'));
+  } catch {
+    return {};
+  }
+}
 // Repo-root .env (local dev: npm run dev from backend/) then cwd fallback (Docker: /app)
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 dotenv.config();
@@ -34,4 +52,5 @@ export const config = {
   googleServiceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '',
   googleServiceAccountPrivateKey: (process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
   printSheetCacheTtlMs: parseInt(process.env.PRINT_SHEET_CACHE_TTL_MS || '60000', 10),
+  printSheetDepartmentMap: loadPrintSheetDepartmentMap(),
 };
