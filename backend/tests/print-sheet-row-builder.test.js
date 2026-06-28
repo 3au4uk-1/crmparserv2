@@ -34,4 +34,27 @@ describe('buildPrintSheetRowValues', () => {
     });
     expect(row[0]).toBe('');
   });
+
+  it('resolves responsible via workspaceMemberId', () => {
+    const row = buildPrintSheetRowValues(
+      {
+        ...lineItem,
+        updatedBy: { workspaceMemberId: 'wm-1', name: 'ignored' },
+      },
+      {
+        workspaceMemberById: {
+          'wm-1': { name: { firstName: 'Василий', lastName: 'Добжанский' } },
+        },
+      }
+    );
+    expect(row[6]).toBe('Василий Добжанский');
+  });
+
+  it('uses string updatedBy.name when member map missing', () => {
+    const row = buildPrintSheetRowValues({
+      ...lineItem,
+      updatedBy: { name: 'crmscraper' },
+    });
+    expect(row[6]).toBe('crmscraper');
+  });
 });

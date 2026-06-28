@@ -7,6 +7,7 @@ import {
   listPendingPrintSheetExport,
   listActivePrintSheetSessions,
   updateDealLineItemPrintSheet,
+  loadWorkspaceMemberMap,
   buildSessionPatchAfterExport,
   buildSessionClearPatch,
   buildReadbackUpdateInput,
@@ -20,10 +21,11 @@ export async function runPrintSheetCycle(gql) {
 
   const pending = await listPendingPrintSheetExport(gql);
   const tabName = buildCurrentMonthTabName();
+  const workspaceMemberById = await loadWorkspaceMemberMap(gql);
 
   for (const lineItem of pending) {
     try {
-      const rowValues = buildPrintSheetRowValues(lineItem);
+      const rowValues = buildPrintSheetRowValues(lineItem, { workspaceMemberById });
       const { rowNumber } = await writePrintSheetRow(tabName, rowValues);
       await updateDealLineItemPrintSheet(
         gql,

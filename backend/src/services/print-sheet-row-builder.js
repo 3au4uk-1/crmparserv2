@@ -1,12 +1,6 @@
 import { resolvePrintSheetDepartment } from './print-sheet-departments.js';
 import { LAYOUT_LINK_FIELD, PRINT_COMMENT_FIELD } from './print-sheet-field-names.js';
-
-function formatUpdatedByName(updatedBy) {
-  const n = updatedBy?.name;
-  if (!n) return updatedBy?.displayName ?? '';
-  const parts = [n.firstName, n.lastName].filter(Boolean);
-  return parts.join(' ').trim();
-}
+import { formatResponsibleFromUpdatedBy } from './print-sheet-responsible.js';
 
 function formatPrintReadyDate(value) {
   if (!value) return '';
@@ -31,7 +25,8 @@ function extractLayoutLinkUrl(layoutLink) {
   return '';
 }
 
-export function buildPrintSheetRowValues(lineItem) {
+export function buildPrintSheetRowValues(lineItem, options = {}) {
+  const { workspaceMemberById = {} } = options;
   const opp = lineItem.opportunity ?? {};
   const layoutUrl = extractLayoutLinkUrl(lineItem[LAYOUT_LINK_FIELD]);
 
@@ -45,7 +40,7 @@ export function buildPrintSheetRowValues(lineItem) {
     lineItem.name ?? '',
     '',
     layoutUrl,
-    formatUpdatedByName(lineItem.updatedBy),
+    formatResponsibleFromUpdatedBy(lineItem.updatedBy, workspaceMemberById),
     formatPrintReadyDate(lineItem.dataGotovnostiPechati),
     (lineItem.vremyaGotovnostiPechati ?? '').trim(),
     '',

@@ -9,6 +9,7 @@ const updateMock = vi.fn();
 vi.mock('../src/services/print-sheet-export-twenty.js', () => ({
   listPendingPrintSheetExport: (...args) => listPendingMock(...args),
   listActivePrintSheetSessions: (...args) => listActiveMock(...args),
+  loadWorkspaceMemberMap: vi.fn().mockResolvedValue({}),
   updateDealLineItemPrintSheet: (...args) => updateMock(...args),
   buildSessionPatchAfterExport: (sid, tab, row) => ({
     printSheetSessionId: sid,

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { buildWorkspaceMemberMap } from './print-sheet-responsible.js';
 import { LAYOUT_LINK_FIELD, PRINT_COMMENT_FIELD } from './print-sheet-field-names.js';
 import { V_PECHATI_LINE_ITEM_STAGE } from './print-sheet-twenty.js';
 
@@ -17,7 +18,11 @@ const LINE_ITEM_EXPORT_FIELDS = `
   gotovo
   plenka { markdown }
   ${LAYOUT_LINK_FIELD} { primaryLinkUrl }
-  updatedBy { name { firstName lastName } }
+  updatedBy {
+    source
+    name
+    workspaceMemberId
+  }
   opportunity {
     id
     name
@@ -55,6 +60,19 @@ const LIST_ACTIVE_SESSIONS = `
   }
 `;
 
+const LIST_WORKSPACE_MEMBERS = `
+  query ListWorkspaceMembers($limit: Int!) {
+    workspaceMembers(first: $limit) {
+      edges {
+        node {
+          id
+          name { firstName lastName }
+        }
+      }
+    }
+  }
+`;
+
 const UPDATE_LINE_ITEM = `
   mutation UpdateDealLineItemPrintSheet($id: ID!, $input: DealLineItemUpdateInput!) {
     updateDealLineItem(id: $id, data: $input) { id }
@@ -79,6 +97,13 @@ export function buildSessionClearPatch() {
 
 export function newPrintSheetSessionId() {
   return randomUUID();
+}
+
+export async function loadWorkspaceMemberMap(gql, limit = 100) {
+  const resp = await gql(LIST_WORKSPACE_MEMBERS, { limit });
+  const edges = resp.data?.data?.workspaceMembers?.edges ?? [];
+  const members = edges.map((edge) => edge.node).filter(Boolean);
+  return buildWorkspaceMemberMap(members);
 }
 
 export async function listPendingPrintSheetExport(gql, limit = 100) {
