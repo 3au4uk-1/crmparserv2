@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildPrintSheetTabNames } from '../src/services/print-sheet-tabs.js';
+import { buildPrintSheetTabNames, buildCurrentMonthTabName } from '../src/services/print-sheet-tabs.js';
 
 describe('buildPrintSheetTabNames', () => {
   it('returns event, previous, and current month tabs deduplicated', () => {
@@ -15,5 +15,17 @@ describe('buildPrintSheetTabNames', () => {
     const tabs = buildPrintSheetTabNames(closeDate, now);
     expect(tabs).toContain('Январь 2026');
     expect(tabs).toContain('Декабрь 2025');
+  });
+});
+
+describe('buildCurrentMonthTabName', () => {
+  it('returns Russian month and year in Europe/Moscow', () => {
+    // 2026-06-15 10:00 UTC = June 15 Moscow
+    expect(buildCurrentMonthTabName(new Date('2026-06-15T10:00:00.000Z'))).toBe('Июнь 2026');
+  });
+
+  it('handles month boundary in Moscow timezone', () => {
+    // 2026-05-31 22:00 UTC = 2026-06-01 01:00 Moscow → June
+    expect(buildCurrentMonthTabName(new Date('2026-05-31T22:00:00.000Z'))).toBe('Июнь 2026');
   });
 });

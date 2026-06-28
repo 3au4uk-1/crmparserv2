@@ -1,7 +1,7 @@
-import { google } from 'googleapis';
 import { config } from '../config.js';
 import { normalizePrintOrderName } from './print-sheet-normalize.js';
 import { buildPrintSheetTabNames } from './print-sheet-tabs.js';
+import { getPrintSheetClient } from './print-sheet-client.js';
 
 const COL_FILM = 0;
 const COL_ORDER = 2;
@@ -49,20 +49,8 @@ export function formatPlenkaText(matches) {
   return matches.map(({ type, film }) => `${type} - ${film}`).join('\n');
 }
 
-function getSheetsClient() {
-  if (!config.googleServiceAccountEmail || !config.googleServiceAccountPrivateKey) {
-    return null;
-  }
-  const auth = new google.auth.JWT({
-    email: config.googleServiceAccountEmail,
-    key: config.googleServiceAccountPrivateKey,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-  });
-  return google.sheets({ version: 'v4', auth });
-}
-
 export async function fetchRowsForTabs(tabNames) {
-  const client = getSheetsClient();
+  const client = getPrintSheetClient();
   if (!client || !config.printSheetId || !tabNames.length) return [];
 
   const cacheKey = tabNames.join('|');
