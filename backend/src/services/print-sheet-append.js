@@ -20,16 +20,22 @@ export function isPrintSheetCellEmpty(value) {
 /** Columns B–P (15 cells) — same width as buildPrintSheetRowValues output. */
 export const PRINT_SHEET_EXPORT_COLUMN_COUNT = 15;
 
-/** Row is free for export when every B–P cell is empty. */
+/**
+ * Offsets within a B–P row (0 = column B) for manager fields we export.
+ * F is a sheet checkbox default (FALSE); K–O are printer columns — ignore for occupancy.
+ */
+export const PRINT_SHEET_MANAGER_COLUMN_OFFSETS = [0, 1, 2, 3, 5, 6, 7, 8, 14]; // B,C,D,E,G,H,I,J,P
+
+/** Row is free for export when manager columns (B–E, G–J, P) are empty. */
 export function isPrintSheetExportRowEmpty(cells) {
   if (!cells?.length) return true;
   const padded = [...cells];
   while (padded.length < PRINT_SHEET_EXPORT_COLUMN_COUNT) {
     padded.push(undefined);
   }
-  return padded
-    .slice(0, PRINT_SHEET_EXPORT_COLUMN_COUNT)
-    .every((cell) => isPrintSheetCellEmpty(cell));
+  return PRINT_SHEET_MANAGER_COLUMN_OFFSETS.every((idx) =>
+    isPrintSheetCellEmpty(padded[idx])
+  );
 }
 
 export async function findFirstEmptyPrintSheetRow(tabName, options = {}) {
@@ -66,7 +72,7 @@ export async function findFirstEmptyPrintSheetRow(tabName, options = {}) {
 }
 
 /**
- * Write B–P into the first row where all export columns (B–P) are empty.
+ * Write B–P into the first row where manager export columns are empty,
  * so values land in the correct columns and skip blank rows above the sheet tail.
  */
 export async function writePrintSheetRow(tabName, rowValues, options = {}) {

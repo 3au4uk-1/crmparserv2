@@ -46,6 +46,17 @@ describe('isPrintSheetExportRowEmpty', () => {
     row.push('комментарий');
     expect(isPrintSheetExportRowEmpty(row)).toBe(false);
   });
+
+  it('treats template row with only F=FALSE as empty', () => {
+    const row = new Array(15).fill('');
+    row[4] = 'FALSE';
+    expect(isPrintSheetExportRowEmpty(row)).toBe(true);
+  });
+
+  it('treats template row with F=FALSE and printer checkboxes as empty', () => {
+    const row = ['', '', '', '', 'FALSE', '', '', '', '', '', '', '', '', '', ''];
+    expect(isPrintSheetExportRowEmpty(row)).toBe(true);
+  });
 });
 
 describe('PRINT_SHEET_FIRST_DATA_ROW', () => {
