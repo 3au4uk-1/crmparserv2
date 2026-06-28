@@ -1,8 +1,8 @@
 import { config } from '../config.js';
 import { getPrintSheetClient } from './print-sheet-client.js';
 
-/** First data row on print sheet tabs (rows 1–2 are headers). */
-export const PRINT_SHEET_FIRST_DATA_ROW = 3;
+/** First row allowed for data (rows 1–4 are sheet headers / reserved). */
+export const PRINT_SHEET_FIRST_DATA_ROW = 5;
 
 const DEFAULT_MAX_ROW_SCAN = 500;
 const BATCH_GET_CHUNK_SIZE = 100;

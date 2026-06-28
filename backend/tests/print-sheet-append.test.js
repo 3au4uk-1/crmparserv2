@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseRowNumberFromUpdatedRange,
   isPrintSheetCellEmpty,
+  PRINT_SHEET_FIRST_DATA_ROW,
 } from '../src/services/print-sheet-append.js';
 
 describe('parseRowNumberFromUpdatedRange', () => {
@@ -25,5 +26,11 @@ describe('isPrintSheetCellEmpty', () => {
   it('treats non-blank as occupied', () => {
     expect(isPrintSheetCellEmpty('Про')).toBe(false);
     expect(isPrintSheetCellEmpty(0)).toBe(false);
+  });
+});
+
+describe('PRINT_SHEET_FIRST_DATA_ROW', () => {
+  it('skips first 4 rows (headers reserved)', () => {
+    expect(PRINT_SHEET_FIRST_DATA_ROW).toBe(5);
   });
 });
