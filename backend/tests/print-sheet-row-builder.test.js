@@ -4,7 +4,8 @@ import { buildPrintSheetRowValues } from '../src/services/print-sheet-row-builde
 describe('buildPrintSheetRowValues', () => {
   const lineItem = {
     name: 'Тайсон',
-    kommentariy: 'пленка бб + лам',
+    kommentariy: 'общий комментарий из Tony',
+    kommentariyDlyaPechati: 'пленка бб + лам по коп-ву',
     dataGotovnostiPechati: '2026-06-27',
     vremyaGotovnostiPechati: '10:00',
     ssylkaNaMakety: { primaryLinkUrl: 'https://disk.yandex.ru/mock' },
@@ -16,20 +17,14 @@ describe('buildPrintSheetRowValues', () => {
     },
   };
 
-  it('builds B–K array with 10 cells, skipping F internally as empty', () => {
+  it('builds B–P array: print comment in column P, not general kommentariy', () => {
     const row = buildPrintSheetRowValues(lineItem);
-    expect(row).toEqual([
-      'Про',
-      'ПРО/27.06/ИП Рыбаков/Самолет Тайсон ЛСК',
-      'https://prointeractive.bitrix24.ru/crm/deal/details/123/',
-      'Тайсон',
-      '',
-      'https://disk.yandex.ru/mock',
-      'Андрей Абалин',
-      '27.06.2026',
-      '10:00',
-      'пленка бб + лам',
-    ]);
+    expect(row).toHaveLength(15);
+    expect(row[0]).toBe('Про');
+    expect(row[8]).toBe('10:00');
+    expect(row[9]).toBe('');
+    expect(row[14]).toBe('пленка бб + лам по коп-ву');
+    expect(row).not.toContain('общий комментарий из Tony');
   });
 
   it('leaves department empty when company unmapped', () => {

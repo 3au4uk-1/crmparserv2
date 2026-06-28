@@ -51,7 +51,7 @@ export async function findFirstEmptyPrintSheetRow(tabName, options = {}) {
 }
 
 /**
- * Write B–K into the first empty row (column B empty). Uses update, not append,
+ * Write B–P into the first empty row (column B empty). Uses update, not append,
  * so values land in the correct columns and skip blank rows above the sheet tail.
  */
 export async function writePrintSheetRow(tabName, rowValues, options = {}) {
@@ -62,7 +62,7 @@ export async function writePrintSheetRow(tabName, rowValues, options = {}) {
 
   const rowNumber =
     options.rowNumber ?? (await findFirstEmptyPrintSheetRow(tabName, options));
-  const range = `'${tabName}'!B${rowNumber}:K${rowNumber}`;
+  const range = `'${tabName}'!B${rowNumber}:P${rowNumber}`;
 
   await client.spreadsheets.values.update({
     spreadsheetId: config.printSheetId,

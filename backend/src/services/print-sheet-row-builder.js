@@ -1,5 +1,5 @@
 import { resolvePrintSheetDepartment } from './print-sheet-departments.js';
-import { LAYOUT_LINK_FIELD } from './print-sheet-field-names.js';
+import { LAYOUT_LINK_FIELD, PRINT_COMMENT_FIELD } from './print-sheet-field-names.js';
 
 function formatUpdatedByName(updatedBy) {
   const n = updatedBy?.name;
@@ -35,6 +35,9 @@ export function buildPrintSheetRowValues(lineItem) {
   const opp = lineItem.opportunity ?? {};
   const layoutUrl = extractLayoutLinkUrl(lineItem[LAYOUT_LINK_FIELD]);
 
+  const printComment = String(lineItem[PRINT_COMMENT_FIELD] ?? '').trim();
+
+  // B–J manager fields, K empty, L–O printer fields (skip), P print comment
   return [
     resolvePrintSheetDepartment(opp.companyId),
     opp.name ?? '',
@@ -45,6 +48,11 @@ export function buildPrintSheetRowValues(lineItem) {
     formatUpdatedByName(lineItem.updatedBy),
     formatPrintReadyDate(lineItem.dataGotovnostiPechati),
     (lineItem.vremyaGotovnostiPechati ?? '').trim(),
-    (lineItem.kommentariy ?? '').trim(),
+    '',
+    '',
+    '',
+    '',
+    '',
+    printComment,
   ];
 }

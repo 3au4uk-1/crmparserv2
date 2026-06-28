@@ -41,7 +41,10 @@ vi.mock('../src/services/print-sheet-readback.js', () => ({
 }));
 
 vi.mock('../src/services/print-sheet-row-builder.js', () => ({
-  buildPrintSheetRowValues: () => ['Про', 'Order', '', 'Item', '', '', 'User', '27.06.2026', '10:00', ''],
+  buildPrintSheetRowValues: () => [
+    'Про', 'Order', '', 'Item', '', '', 'User', '27.06.2026', '10:00',
+    '', '', '', '', '', 'print comment',
+  ],
 }));
 
 vi.mock('../src/services/print-sheet-tabs.js', () => ({

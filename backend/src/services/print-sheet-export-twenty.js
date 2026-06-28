@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { LAYOUT_LINK_FIELD } from './print-sheet-field-names.js';
+import { LAYOUT_LINK_FIELD, PRINT_COMMENT_FIELD } from './print-sheet-field-names.js';
 import { V_PECHATI_LINE_ITEM_STAGE } from './print-sheet-twenty.js';
 
 const LINE_ITEM_EXPORT_FIELDS = `
@@ -7,6 +7,7 @@ const LINE_ITEM_EXPORT_FIELDS = `
   name
   stage
   kommentariy
+  ${PRINT_COMMENT_FIELD}
   dataGotovnostiPechati
   vremyaGotovnostiPechati
   printSheetSessionId
