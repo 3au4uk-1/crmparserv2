@@ -2,7 +2,16 @@ import {
   buildLineItemCreateInput,
   buildLineItemUpdateInput,
 } from './twenty-line-item.js';
+import { isRestorationItem } from './restoration.js';
 import { logTwentyStep } from './twenty-sync-log.js';
+import { DEFAULT_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
+
+/** Line items at this stage (or null) may be deleted/updated on re-sync. */
+export const DELETABLE_LINE_ITEM_STAGE = DEFAULT_OPPORTUNITY_STAGE;
+
+export function isProtectedLineItemStage(stage) {
+  return stage != null && stage !== DELETABLE_LINE_ITEM_STAGE;
+}
 
 export function computeLineItemDiff(existingLineItems, eligibleItems) {
   const eligibleNames = new Set(eligibleItems.map((i) => i.name));
@@ -10,21 +19,29 @@ export function computeLineItemDiff(existingLineItems, eligibleItems) {
 
   const toUpdate = [];
   const toCreate = [];
+  const preserved = [];
 
   for (const item of eligibleItems) {
     const existing = existingByName.get(item.name);
     if (existing) {
+      if (isProtectedLineItemStage(existing.stage)) continue;
       toUpdate.push({ twentyId: existing.id, item });
     } else {
       toCreate.push(item);
     }
   }
 
-  const toDelete = existingLineItems
-    .filter((li) => !eligibleNames.has(li.name))
-    .map((li) => li.id);
+  const toDelete = [];
+  for (const li of existingLineItems) {
+    if (eligibleNames.has(li.name)) continue;
+    if (isProtectedLineItemStage(li.stage)) {
+      preserved.push({ id: li.id, name: li.name, stage: li.stage });
+      continue;
+    }
+    toDelete.push(li.id);
+  }
 
-  return { toUpdate, toCreate, toDelete };
+  return { toUpdate, toCreate, toDelete, preserved };
 }
 
 export async function listLineItemsForOpportunity(gql, apiUrl, apiToken, oppId) {
@@ -33,7 +50,7 @@ export async function listLineItemsForOpportunity(gql, apiUrl, apiToken, oppId) 
     apiToken,
     `query ListLineItems($oppId: ID!) {
       dealLineItems(filter: { opportunityId: { eq: $oppId } }) {
-        edges { node { id name } }
+        edges { node { id name stage } }
       }
     }`,
     { oppId }
@@ -64,19 +81,32 @@ export async function syncLineItemsDiff({
   findOrCreateWarehouseItem,
   db,
   deal = null,
+  restorationList = [],
 }) {
-  const { toUpdate, toCreate, toDelete } = computeLineItemDiff(
+  const { toUpdate, toCreate, toDelete, preserved } = computeLineItemDiff(
     existingLineItems,
     eligibleItems
   );
+
+  const lineItemOptions = { deal, restorationList };
 
   logTwentyStep('line_items.diff', {
     toUpdate: toUpdate.length,
     toCreate: toCreate.length,
     toDelete: toDelete.length,
+    preserved: preserved.length,
     updateNames: toUpdate.map((x) => x.item.name).slice(0, 5),
     createNames: toCreate.map((x) => x.name).slice(0, 5),
   });
+
+  if (preserved.length) {
+    logTwentyStep('line_items.preserved', { items: preserved });
+  }
+
+  const zeroed = eligibleItems.filter((i) => isRestorationItem(i.name, restorationList));
+  if (zeroed.length) {
+    logTwentyStep('line_items.restoration_zero', { names: zeroed.map((i) => i.name) });
+  }
 
   for (const lineItemId of toDelete) {
     logTwentyStep('line_items.delete', { lineItemId });
@@ -93,7 +123,7 @@ export async function syncLineItemsDiff({
       `mutation UpdateDealLineItem($id: ID!, $input: DealLineItemUpdateInput!) {
         updateDealLineItem(id: $id, data: $input) { id }
       }`,
-      { id: twentyId, input: buildLineItemUpdateInput(item, { deal }) }
+      { id: twentyId, input: buildLineItemUpdateInput(item, lineItemOptions) }
     );
     assertHttpSuccess(resp, apiUrl);
     assertGqlSuccess(resp, `Failed to update line item "${item.name}" in Twenty`);
@@ -116,7 +146,7 @@ export async function syncLineItemsDiff({
           warehouseItemId,
           oppId,
           position === 0 ? 'first' : position,
-          { deal }
+          { deal, restorationList }
         ),
       }
     );
