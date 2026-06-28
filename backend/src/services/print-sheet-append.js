@@ -17,6 +17,21 @@ export function isPrintSheetCellEmpty(value) {
   return value === undefined || value === null || String(value).trim() === '';
 }
 
+/** Columns B–P (15 cells) — same width as buildPrintSheetRowValues output. */
+export const PRINT_SHEET_EXPORT_COLUMN_COUNT = 15;
+
+/** Row is free for export when every B–P cell is empty. */
+export function isPrintSheetExportRowEmpty(cells) {
+  if (!cells?.length) return true;
+  const padded = [...cells];
+  while (padded.length < PRINT_SHEET_EXPORT_COLUMN_COUNT) {
+    padded.push(undefined);
+  }
+  return padded
+    .slice(0, PRINT_SHEET_EXPORT_COLUMN_COUNT)
+    .every((cell) => isPrintSheetCellEmpty(cell));
+}
+
 export async function findFirstEmptyPrintSheetRow(tabName, options = {}) {
   const client = getPrintSheetClient();
   if (!client || !config.printSheetId) {
@@ -30,7 +45,7 @@ export async function findFirstEmptyPrintSheetRow(tabName, options = {}) {
     const chunkEnd = Math.min(chunkStart + BATCH_GET_CHUNK_SIZE - 1, maxRow);
     const ranges = [];
     for (let row = chunkStart; row <= chunkEnd; row++) {
-      ranges.push(`'${tabName}'!B${row}`);
+      ranges.push(`'${tabName}'!B${row}:P${row}`);
     }
 
     const resp = await client.spreadsheets.values.batchGet({
@@ -40,8 +55,8 @@ export async function findFirstEmptyPrintSheetRow(tabName, options = {}) {
 
     const valueRanges = resp.data.valueRanges ?? [];
     for (let i = 0; i < valueRanges.length; i++) {
-      const cell = valueRanges[i]?.values?.[0]?.[0];
-      if (isPrintSheetCellEmpty(cell)) {
+      const cells = valueRanges[i]?.values?.[0] ?? [];
+      if (isPrintSheetExportRowEmpty(cells)) {
         return chunkStart + i;
       }
     }
@@ -51,7 +66,7 @@ export async function findFirstEmptyPrintSheetRow(tabName, options = {}) {
 }
 
 /**
- * Write B–P into the first empty row (column B empty). Uses update, not append,
+ * Write B–P into the first row where all export columns (B–P) are empty.
  * so values land in the correct columns and skip blank rows above the sheet tail.
  */
 export async function writePrintSheetRow(tabName, rowValues, options = {}) {

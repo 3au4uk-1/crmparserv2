@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseRowNumberFromUpdatedRange,
   isPrintSheetCellEmpty,
+  isPrintSheetExportRowEmpty,
   PRINT_SHEET_FIRST_DATA_ROW,
 } from '../src/services/print-sheet-append.js';
 
@@ -26,6 +27,24 @@ describe('isPrintSheetCellEmpty', () => {
   it('treats non-blank as occupied', () => {
     expect(isPrintSheetCellEmpty('Про')).toBe(false);
     expect(isPrintSheetCellEmpty(0)).toBe(false);
+  });
+});
+
+describe('isPrintSheetExportRowEmpty', () => {
+  it('returns true when all B–P cells are empty', () => {
+    expect(isPrintSheetExportRowEmpty([])).toBe(true);
+    expect(isPrintSheetExportRowEmpty(['', '', ''])).toBe(true);
+  });
+
+  it('returns false when B is empty but another export column has data', () => {
+    const row = ['', 'ПРО/28.06/order name'];
+    expect(isPrintSheetExportRowEmpty(row)).toBe(false);
+  });
+
+  it('returns false when any cell in B–P range has data', () => {
+    const row = new Array(14).fill('');
+    row.push('комментарий');
+    expect(isPrintSheetExportRowEmpty(row)).toBe(false);
   });
 });
 
