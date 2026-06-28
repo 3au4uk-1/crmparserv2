@@ -1,7 +1,7 @@
 # Twenty → Google Print Sheet Export + Read-back — Design Spec
 
 **Date:** 2026-06-28  
-**Status:** Draft — pending user review before implementation plan  
+**Status:** Approved — implemented on `feat/print-sheet-export`  
 **Related specs:** `2026-06-15-print-sheet-plenka-design.md`, `2026-06-27-line-item-stage-protection-design.md`
 
 ## Problem
