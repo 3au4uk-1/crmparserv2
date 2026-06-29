@@ -8,6 +8,7 @@ import { syncDealToTwenty } from './twenty-sync.js';
 import { tonyLogin, getTonyConfig } from './tony-auth.js';
 import { getItemsForTwenty } from './twenty-items.js';
 import { loadBlacklist } from './blacklist.js';
+import { bookingDealKey } from './deal-keys.js';
 
 const IMPORT_EVENT_ID = 'import';
 
@@ -48,7 +49,7 @@ function replaceDealItems(db, dealId, classifiedItems) {
 async function persistSyntheticTonyDeal(db, bookingNumber, order, classifiedItems) {
   const fields = buildTonyDealFields(order);
   const hash = tonyContentHash(order);
-  const dealKey = `import#${bookingNumber}`;
+  const dealKey = bookingDealKey(bookingNumber);
 
   const existing = db.prepare('SELECT * FROM deals WHERE deal_key = ?').get(dealKey);
   if (existing) {

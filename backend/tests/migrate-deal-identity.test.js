@@ -8,7 +8,7 @@ vi.mock('../src/db/connection.js', () => ({
   initDb: () => migrateDb,
 }));
 
-import { migrateDealIdentity, migrate } from '../src/db/migrate.js';
+import { migrateDealIdentity, migrateBookingCentricDealKeys, migrate } from '../src/db/migrate.js';
 
 function createLegacyDb() {
   const db = new Database(':memory:');
@@ -84,6 +84,38 @@ describe('migrateDealIdentity', () => {
     db.prepare("DELETE FROM deals WHERE id = 1").run();
     expect(db.prepare('SELECT COUNT(*) c FROM deal_items').get().c).toBe(0);
     expect(db.prepare('SELECT COUNT(*) c FROM sync_runs').get().c).toBe(0);
+  });
+});
+
+describe('migrateBookingCentricDealKeys', () => {
+  let db;
+  beforeEach(() => {
+    db = createLegacyDb();
+    migrateDealIdentity(db);
+  });
+  afterEach(() => { db.close(); });
+
+  it('normalizes event-scoped booking keys to booking#N', () => {
+    migrateBookingCentricDealKeys(db);
+    const row = db.prepare("SELECT deal_key FROM deals WHERE crm_event_id = 'evt1'").get();
+    expect(row.deal_key).toBe('booking#169120');
+  });
+
+  it('merges duplicate deals that share the same booking number', () => {
+    db.exec('ALTER TABLE deals ADD COLUMN twenty_id TEXT');
+    db.exec('ALTER TABLE deals ADD COLUMN approval_status TEXT DEFAULT "pending"');
+    db.prepare(`
+      INSERT INTO deals (crm_event_id, deal_key, data_source, title, tony_order_id, twenty_id, approval_status)
+      VALUES ('evt3', 'evt3#169120', 'tony', 'Dup B', '169120', 'opp-b', 'synced')
+    `).run();
+
+    migrateBookingCentricDealKeys(db);
+
+    const deals = db.prepare("SELECT * FROM deals WHERE tony_order_id = '169120'").all();
+    expect(deals).toHaveLength(1);
+    expect(deals[0].deal_key).toBe('booking#169120');
+    expect(deals[0].twenty_id).toBe('opp-b');
+    expect(db.prepare('SELECT COUNT(*) c FROM deal_items').get().c).toBe(1);
   });
 });
 

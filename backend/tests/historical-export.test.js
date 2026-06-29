@@ -41,7 +41,7 @@ describe('buildExportDealsFromEvent', () => {
     };
     const deals = buildExportDealsFromEvent(event, eventId, data, ['ПРО'], keywords, blacklist);
     expect(deals).toHaveLength(1);
-    expect(deals[0].exportId).toBe('evt-1#12345');
+    expect(deals[0].exportId).toBe('booking#12345');
     expect(deals[0].items[0].name).toBe('Баннер');
   });
 

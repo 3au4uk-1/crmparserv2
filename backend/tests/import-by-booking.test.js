@@ -67,7 +67,7 @@ describe('importDealByBooking', () => {
     const db = getDb();
     const deal = db.prepare('SELECT * FROM deals WHERE tony_order_id = ?').get('169120');
     expect(deal).toBeTruthy();
-    expect(deal.deal_key).toBe('import#169120');
+    expect(deal.deal_key).toBe('booking#169120');
     expect(deal.data_source).toBe('tony');
   });
 

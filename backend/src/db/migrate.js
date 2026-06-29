@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getDb } from './connection.js';
+import { bookingDealKey, resolveBookingNumber } from '../services/deal-keys.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -65,6 +66,54 @@ export function migrateDealIdentity(db) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_deals_crm_event_id ON deals(crm_event_id);`);
 }
 
+function pickDealToKeep(deals) {
+  const score = (d) => {
+    let s = 0;
+    if (d.twenty_id) s += 100;
+    if (d.approval_status === 'approved' || d.approval_status === 'synced') s += 10;
+    return s;
+  };
+  return deals.sort((a, b) => score(b) - score(a) || a.id - b.id)[0];
+}
+
+/** Merge duplicate deals per booking and normalize deal_key to booking#N. */
+export function migrateBookingCentricDealKeys(db) {
+  const deals = db.prepare('SELECT * FROM deals').all();
+  const byBooking = new Map();
+
+  for (const deal of deals) {
+    const booking = resolveBookingNumber(deal);
+    if (!booking) continue;
+    if (!byBooking.has(booking)) byBooking.set(booking, []);
+    byBooking.get(booking).push(deal);
+  }
+
+  const tx = db.transaction(() => {
+    for (const [booking, group] of byBooking) {
+      const targetKey = bookingDealKey(booking);
+      const winner = pickDealToKeep(group);
+
+      for (const loser of group.filter((d) => d.id !== winner.id)) {
+        if (!winner.twenty_id && loser.twenty_id) {
+          db.prepare(`
+            UPDATE deals SET twenty_id = ?, approval_status = COALESCE(approval_status, ?)
+            WHERE id = ?
+          `).run(loser.twenty_id, loser.approval_status, winner.id);
+          winner.twenty_id = loser.twenty_id;
+        }
+        db.prepare('UPDATE deal_items SET deal_id = ? WHERE deal_id = ?').run(winner.id, loser.id);
+        db.prepare('DELETE FROM deals WHERE id = ?').run(loser.id);
+      }
+
+      db.prepare(`
+        UPDATE deals SET deal_key = ?, tony_order_id = COALESCE(tony_order_id, ?)
+        WHERE id = ?
+      `).run(targetKey, booking, winner.id);
+    }
+  });
+  tx();
+}
+
 export function migrate() {
   const db = getDb();
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8');
@@ -114,6 +163,7 @@ export function migrate() {
   ).run();
 
   migrateDealIdentity(db);
+  migrateBookingCentricDealKeys(db);
 
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('tony_base_url', 'https://crm.apihide.com')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('tony_login', '')").run();

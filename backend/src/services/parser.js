@@ -13,6 +13,7 @@ import { processAutoApprovals } from './auto-approve.js';
 import { buildOverrideMap, replaceDealItemsPreservingOverrides } from './deal-items-update.js';
 import {
   collectCalendarEventIds,
+  collectCalendarBookingNumbers,
   findDealsMissingFromCalendar,
 } from './calendar-missing.js';
 import { CANCELLED_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
@@ -470,7 +471,14 @@ export async function runParsing(startDate, endDate) {
     }
 
     const calendarEventIds = collectCalendarEventIds(events, startDate, endDate);
-    const missingDeals = findDealsMissingFromCalendar(db, calendarEventIds, startDate, endDate);
+    const calendarBookingNumbers = collectCalendarBookingNumbers(events, startDate, endDate);
+    const missingDeals = findDealsMissingFromCalendar(
+      db,
+      calendarEventIds,
+      startDate,
+      endDate,
+      calendarBookingNumbers,
+    );
 
     if (missingDeals.length > 0) {
       console.log(

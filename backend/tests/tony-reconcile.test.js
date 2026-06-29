@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { planEventReconciliation, desiredDealKeys } from '../src/services/tony-reconcile.js';
+import { bookingDealKey } from '../src/services/deal-keys.js';
 
 function createDb() {
   const db = new Database(':memory:');
@@ -24,10 +25,10 @@ describe('desiredDealKeys', () => {
     expect(desiredDealKeys('evt1', [])).toEqual([{ dealKey: 'evt1#cal', bookingNumber: null }]);
   });
 
-  it('returns one target per booking number, keyed by booking', () => {
+  it('returns one booking-centric target per booking number', () => {
     expect(desiredDealKeys('evt1', ['169120', '168973'])).toEqual([
-      { dealKey: 'evt1#169120', bookingNumber: '169120' },
-      { dealKey: 'evt1#168973', bookingNumber: '168973' },
+      { dealKey: 'booking#169120', bookingNumber: '169120' },
+      { dealKey: 'booking#168973', bookingNumber: '168973' },
     ]);
   });
 });
@@ -47,8 +48,8 @@ describe('planEventReconciliation', () => {
   it('plans one deal per booking number in the title', () => {
     const plan = planEventReconciliation(db, 'evt1', ['169120', '168973']);
     expect(plan.desired).toEqual([
-      { dealKey: 'evt1#169120', bookingNumber: '169120' },
-      { dealKey: 'evt1#168973', bookingNumber: '168973' },
+      { dealKey: 'booking#169120', bookingNumber: '169120' },
+      { dealKey: 'booking#168973', bookingNumber: '168973' },
     ]);
   });
 
@@ -57,7 +58,7 @@ describe('planEventReconciliation', () => {
       "INSERT INTO deals (crm_event_id, deal_key, data_source, approval_status, twenty_id) VALUES ('evt1', 'evt1#cal', 'calendar', 'approved', 'opp-1') RETURNING id"
     ).get().id;
     const plan = planEventReconciliation(db, 'evt1', ['169120']);
-    expect(plan.relink).toEqual({ dealId: id, newDealKey: 'evt1#169120', bookingNumber: '169120' });
+    expect(plan.relink).toEqual({ dealId: id, newDealKey: 'booking#169120', bookingNumber: '169120' });
     expect(plan.removeDealIds).toEqual([]);
   });
 
@@ -70,12 +71,36 @@ describe('planEventReconciliation', () => {
     expect(plan.removeDealIds).toEqual([id]);
   });
 
-  it('marks deals for removal when their booking is no longer in the title', () => {
+  it('marks legacy event-scoped deals for removal when their booking is no longer in the title', () => {
     db.prepare("INSERT INTO deals (crm_event_id, deal_key, data_source, tony_order_id, twenty_id) VALUES ('evt1', 'evt1#169120', 'tony', '169120', 'opp-1')").run();
     const goneId = db.prepare(
       "INSERT INTO deals (crm_event_id, deal_key, data_source, tony_order_id, twenty_id) VALUES ('evt1', 'evt1#168973', 'tony', '168973', 'opp-2') RETURNING id"
     ).get().id;
     const plan = planEventReconciliation(db, 'evt1', ['169120']);
     expect(plan.removeDealIds).toEqual([goneId]);
+  });
+
+  it('does NOT remove a shared booking deal when another event drops the booking from its title', () => {
+    db.prepare(`
+      INSERT INTO deals (crm_event_id, deal_key, data_source, tony_order_id, twenty_id)
+      VALUES ('evt1', ?, 'tony', '173982', 'opp-1')
+    `).run(bookingDealKey('173982'));
+
+    const plan = planEventReconciliation(db, 'evt1', []);
+    expect(plan.removeDealIds).toEqual([]);
+  });
+
+  it('removes a cal deal when a global booking deal already exists', () => {
+    db.prepare(`
+      INSERT INTO deals (crm_event_id, deal_key, data_source, tony_order_id, twenty_id)
+      VALUES ('evt2', ?, 'tony', '173982', 'opp-global')
+    `).run(bookingDealKey('173982'));
+    const calId = db.prepare(
+      "INSERT INTO deals (crm_event_id, deal_key, data_source, twenty_id) VALUES ('evt1', 'evt1#cal', 'calendar', 'opp-cal') RETURNING id"
+    ).get().id;
+
+    const plan = planEventReconciliation(db, 'evt1', ['173982']);
+    expect(plan.relink).toBeNull();
+    expect(plan.removeDealIds).toEqual([calId]);
   });
 });
