@@ -485,6 +485,77 @@ export default function Settings() {
               </div>
             </div>
           </Section>
+
+          <Section title="Расходы">
+            <div className="space-y-4 max-w-2xl">
+              <div>
+                <FieldLabel>expense_sheet_field_team</FieldLabel>
+                <input
+                  defaultValue={settings?.expense_sheet_field_team || ''}
+                  onBlur={(e) =>
+                    updateSetting.mutate({ key: 'expense_sheet_field_team', value: e.target.value })
+                  }
+                  className="input-field font-mono"
+                  placeholder="https://docs.google.com/spreadsheets/..."
+                />
+              </div>
+              <div>
+                <FieldLabel>expense_sheet_printing</FieldLabel>
+                <input
+                  defaultValue={settings?.expense_sheet_printing || ''}
+                  onBlur={(e) =>
+                    updateSetting.mutate({ key: 'expense_sheet_printing', value: e.target.value })
+                  }
+                  className="input-field font-mono"
+                  placeholder="https://docs.google.com/spreadsheets/..."
+                />
+              </div>
+              <div>
+                <FieldLabel>expense_sheet_milling</FieldLabel>
+                <input
+                  defaultValue={settings?.expense_sheet_milling || ''}
+                  onBlur={(e) =>
+                    updateSetting.mutate({ key: 'expense_sheet_milling', value: e.target.value })
+                  }
+                  className="input-field font-mono"
+                  placeholder="https://docs.google.com/spreadsheets/..."
+                />
+              </div>
+              <div>
+                <FieldLabel>expense_sheet_logistics</FieldLabel>
+                <input
+                  defaultValue={settings?.expense_sheet_logistics || ''}
+                  onBlur={(e) =>
+                    updateSetting.mutate({ key: 'expense_sheet_logistics', value: e.target.value })
+                  }
+                  className="input-field font-mono"
+                  placeholder="https://docs.google.com/spreadsheets/..."
+                />
+              </div>
+              <div>
+                <FieldLabel>expense_sheet_beznal</FieldLabel>
+                <input
+                  defaultValue={settings?.expense_sheet_beznal || ''}
+                  onBlur={(e) =>
+                    updateSetting.mutate({ key: 'expense_sheet_beznal', value: e.target.value })
+                  }
+                  className="input-field font-mono"
+                  placeholder="https://docs.google.com/spreadsheets/..."
+                />
+              </div>
+              <div>
+                <FieldLabel>expense_sync_schedule</FieldLabel>
+                <input
+                  defaultValue={settings?.expense_sync_schedule || ''}
+                  onBlur={(e) =>
+                    updateSetting.mutate({ key: 'expense_sync_schedule', value: e.target.value })
+                  }
+                  className="input-field font-mono"
+                  placeholder="0 */2 * * *"
+                />
+              </div>
+            </div>
+          </Section>
         </>
       )}
 

@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import Dashboard from './pages/Dashboard';
 import Deals from './pages/Deals';
 import Export from './pages/Export';
+import Expenses from './pages/Expenses';
 import Settings from './pages/Settings';
 import Logs from './pages/Logs';
 import Login from './pages/Login';
@@ -15,6 +16,7 @@ const navItems = [
   { to: '/', label: 'Дашборд', end: true },
   { to: '/deals', label: 'Сделки' },
   { to: '/export', label: 'Выгрузка' },
+  { to: '/expenses', label: 'Расходы' },
   { to: '/settings', label: 'Настройки' },
   { to: '/logs', label: 'Логи' },
 ];
@@ -153,6 +155,7 @@ export default function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/deals" element={<Deals />} />
               <Route path="/export" element={<Export />} />
+              <Route path="/expenses" element={<Expenses />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/logs" element={<Logs />} />
             </Routes>

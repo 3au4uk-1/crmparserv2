@@ -99,6 +99,7 @@ export const navIcons = {
   '/': IconDashboard,
   '/deals': IconDeals,
   '/export': IconExport,
+  '/expenses': IconExport,
   '/settings': IconSettings,
   '/logs': IconLogs,
 };

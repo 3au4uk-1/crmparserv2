@@ -116,6 +116,26 @@ CREATE TABLE IF NOT EXISTS restoration_items (
   UNIQUE (pattern, match_type)
 );
 
+CREATE TABLE IF NOT EXISTS expense_sync_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  status TEXT NOT NULL DEFAULT 'queued',
+  trigger TEXT NOT NULL,
+  started_at TEXT,
+  finished_at TEXT,
+  deals_targeted INTEGER DEFAULT 0,
+  deals_updated INTEGER DEFAULT 0,
+  deals_with_expenses INTEGER DEFAULT 0,
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS expense_beznal_uploads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  storage_path TEXT NOT NULL,
+  original_filename TEXT,
+  uploaded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 INSERT OR IGNORE INTO companies (code, full_name) VALUES ('ПРО', 'ProInteractive');
 INSERT OR IGNORE INTO companies (code, full_name) VALUES ('АРТ', 'Art-Active');
 INSERT OR IGNORE INTO companies (code, full_name) VALUES ('АРЕНДА', 'Arenda');
@@ -132,3 +152,10 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('llm_prompt', 'Ты помо
 INSERT OR IGNORE INTO settings (key, value) VALUES ('tony_base_url', 'https://crm.apihide.com');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('tony_login', '');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('tony_password', '');
+
+INSERT OR IGNORE INTO settings (key, value) VALUES ('expense_sheet_field_team', '1cqOIF0MBJggXdUzJ_ll4GaW9jVcDmFPKyrsbWr3ofwk');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('expense_sheet_printing', '1OYLaUJukGnjvx5qmdHAaKWuVaCTscDsdffzCTqy64pA');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('expense_sheet_milling', '1fKlBKDQlOQgvqyEz-qVDWIE5oBKin40RSuRkWvrw-xA');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('expense_sheet_logistics', '1MtGMGzsSS-0ci1HVwdjXcapQQrkaC6qOdI8MdH2mTFM');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('expense_sheet_beznal', '');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('expense_sync_schedule', '0 6 * * *');

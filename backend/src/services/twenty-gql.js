@@ -19,6 +19,28 @@ function isTimeoutError(err) {
   return err.code === 'ECONNABORTED' || /timeout/i.test(err.message || '');
 }
 
+export function assertHttpSuccess(resp, apiUrl) {
+  if (resp.status === 404) {
+    throw new Error(
+      `Twenty GraphQL endpoint not found (${apiUrl}). ` +
+      'Use URL вида https://your-domain/graphql (не /rest).'
+    );
+  }
+  if (resp.status === 401 || resp.status === 403) {
+    throw new Error('Twenty API: неверный токен или нет доступа (401/403)');
+  }
+  if (resp.status >= 400) {
+    throw new Error(`Twenty API error: HTTP ${resp.status}`);
+  }
+}
+
+export function assertGqlSuccess(resp, fallbackMessage) {
+  const errors = resp.data?.errors;
+  if (errors?.length) {
+    throw new Error(errors[0].message || fallbackMessage);
+  }
+}
+
 export async function gql(apiUrl, apiToken, query, variables = {}, attempt = 0) {
   const maxAttempts = 5;
   const timeoutMs = config.twentyApiTimeoutMs;

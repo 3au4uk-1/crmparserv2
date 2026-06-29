@@ -12,10 +12,12 @@ import logsRouter from './routes/logs.js';
 import blacklistRouter from './routes/blacklist.js';
 import restorationRouter from './routes/restoration.js';
 import exportRouter from './routes/export.js';
+import expensesRouter from './routes/expenses.js';
 import authRouter from './routes/auth.js';
 import { appAuthMiddleware } from './middleware/app-auth.js';
 import { initScheduler } from './services/scheduler.js';
 import { initPrintSheetCron } from './services/print-sheet-cron.js';
+import { initExpenseSyncCron } from './services/expense-sync-cron.js';
 import { recoverStaleParseRuns } from './services/parser.js';
 import { getDb } from './db/connection.js';
 
@@ -33,6 +35,7 @@ app.use('/api/logs', logsRouter);
 app.use('/api/blacklist', blacklistRouter);
 app.use('/api/restoration', restorationRouter);
 app.use('/api/export', exportRouter);
+app.use('/api/expenses', expensesRouter);
 
 app.use(express.static(path.join(__dirname, '../public')));
 
@@ -48,6 +51,7 @@ async function start() {
   recoverStaleParseRuns(getDb());
   initScheduler();
   initPrintSheetCron();
+  initExpenseSyncCron();
   app.listen(config.port, () => {
     console.log(`CRM Parser running on port ${config.port}`);
   });

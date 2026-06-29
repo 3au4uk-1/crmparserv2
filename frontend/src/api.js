@@ -429,6 +429,61 @@ export function useActiveExportJob() {
   });
 }
 
+function isExpenseJobRunning(status) {
+  return status === 'queued' || status === 'running';
+}
+
+export function useStartExpenseSync() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post('/expenses/sync').then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['expense-active-job'] });
+    },
+  });
+}
+
+export function useActiveExpenseJob() {
+  return useQuery({
+    queryKey: ['expense-active-job'],
+    queryFn: () => api.get('/expenses/jobs/active').then((r) => r.data),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return isExpenseJobRunning(status) ? 2000 : false;
+    },
+  });
+}
+
+export function useExpenseJob(jobId, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: ['expense-job', jobId],
+    queryFn: () => api.get(`/expenses/jobs/${jobId}`).then((r) => r.data),
+    enabled: enabled && !!jobId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return isExpenseJobRunning(status) ? 2000 : false;
+    },
+  });
+}
+
+export function useUploadBeznal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      return api
+        .post('/expenses/beznal-upload', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+        .then((r) => r.data);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['expense-active-job'] });
+    },
+  });
+}
+
 export async function downloadExportFile(jobId, from, to) {
   const resp = await api.get(`/export/${jobId}/file`, { responseType: 'blob' });
   const url = URL.createObjectURL(resp.data);
