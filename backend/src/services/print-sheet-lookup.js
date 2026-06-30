@@ -41,5 +41,5 @@ export function matchFilmsFromRows(allRows, normalizedOrderName, lineItemName = 
 
 export function formatPlenkaText(matches) {
   if (!matches.length) return 'Плёнка не найдена';
-  return matches.map(({ type, film }) => `${type} - ${film}`).join('\n');
+  return matches.map(({ film }) => String(film)).join('\n');
 }

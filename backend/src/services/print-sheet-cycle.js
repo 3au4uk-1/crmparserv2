@@ -57,7 +57,7 @@ export async function runPrintSheetCycle(gql) {
 
     try {
       const cells = await fetchPrintSheetRow(tab, row);
-      const readback = extractReadbackFromRow(cells, lineItem.name);
+      const readback = extractReadbackFromRow(cells);
       const input = buildReadbackUpdateInput(lineItem, readback);
       if (Object.keys(input).length === 0) continue;
       await updateDealLineItemPrintSheet(gql, lineItem.id, input);

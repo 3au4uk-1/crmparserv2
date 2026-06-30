@@ -2,10 +2,10 @@ import { config } from '../config.js';
 import { getPrintSheetClient } from './print-sheet-client.js';
 import { COL_A_INDEX, COL_W_INDEX, COL_X_INDEX } from './print-sheet-field-names.js';
 
-export function formatPlenkaFromCellA(lineItemName, cellA) {
+export function formatPlenkaFromCellA(cellA) {
   const film = String(cellA ?? '').trim();
   if (!film) return 'Плёнка не найдена';
-  return `${lineItemName} - ${film}`;
+  return film;
 }
 
 export function parseSheetCheckbox(value) {
@@ -13,12 +13,12 @@ export function parseSheetCheckbox(value) {
   return false;
 }
 
-export function extractReadbackFromRow(cells, lineItemName) {
+export function extractReadbackFromRow(cells) {
   const cellA = cells[COL_A_INDEX];
   const cellW = cells[COL_W_INDEX];
   const cellX = cells[COL_X_INDEX];
   return {
-    plenkaText: formatPlenkaFromCellA(lineItemName, cellA),
+    plenkaText: formatPlenkaFromCellA(cellA),
     vzatoVRabotu: parseSheetCheckbox(cellW),
     gotovo: parseSheetCheckbox(cellX),
   };

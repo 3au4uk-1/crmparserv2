@@ -6,12 +6,12 @@ import {
 } from '../src/services/print-sheet-readback.js';
 
 describe('formatPlenkaFromCellA', () => {
-  it('formats line with sequential number from A', () => {
-    expect(formatPlenkaFromCellA('Тайсон', '295')).toBe('Тайсон - 295');
+  it('returns sequential number from A', () => {
+    expect(formatPlenkaFromCellA('295')).toBe('295');
   });
 
   it('returns not found when A empty', () => {
-    expect(formatPlenkaFromCellA('Тайсон', '')).toBe('Плёнка не найдена');
+    expect(formatPlenkaFromCellA('')).toBe('Плёнка не найдена');
   });
 });
 
@@ -31,8 +31,8 @@ describe('extractReadbackFromRow', () => {
     cells[0] = '295';
     cells[22] = 'TRUE';
     cells[23] = 'FALSE';
-    expect(extractReadbackFromRow(cells, 'Тайсон')).toEqual({
-      plenkaText: 'Тайсон - 295',
+    expect(extractReadbackFromRow(cells)).toEqual({
+      plenkaText: '295',
       vzatoVRabotu: true,
       gotovo: false,
     });

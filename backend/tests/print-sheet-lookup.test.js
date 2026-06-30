@@ -55,7 +55,7 @@ describe('formatPlenkaText', () => {
       { type: 'плашки', film: 7 },
       { type: 'плашки', film: 8 },
     ]);
-    expect(text).toBe('плашки - 7\nплашки - 8');
+    expect(text).toBe('7\n8');
   });
 
   it('returns not found message when empty', () => {
