@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getDb } from '../db/connection.js';
-import { syncDealToTwenty, buildSyncPreview } from '../services/twenty-sync.js';
+import { syncDealToTwenty, buildSyncPreview, resyncDealIfSynced } from '../services/twenty-sync.js';
 import { enrichDealItems } from '../services/twenty-items.js';
 import { loadBlacklist, createBlacklistEntry } from '../services/blacklist.js';
 import { loadRestorationList, createRestorationEntry } from '../services/restoration.js';
@@ -8,6 +8,11 @@ import { importAuthMiddleware } from '../middleware/import-auth.js';
 import { importDealByBooking } from '../services/import-by-booking.js';
 
 const router = Router();
+
+async function respondWithOptionalSync(res, dealId) {
+  const sync = await resyncDealIfSynced(dealId);
+  res.json({ success: true, ...(sync ? { sync } : {}) });
+}
 
 const VALID_SYNC_OVERRIDES = new Set(['include', 'exclude', null]);
 
@@ -247,66 +252,76 @@ router.delete('/:id', (req, res) => {
   res.json({ success: true });
 });
 
-router.post('/:id/items/reset-sync-overrides', (req, res) => {
-  const db = getDb();
-  const deal = db.prepare('SELECT id FROM deals WHERE id = ?').get(req.params.id);
-  if (!deal) return res.status(404).json({ error: 'Deal not found' });
-
-  db.prepare('UPDATE deal_items SET sync_override = NULL WHERE deal_id = ?').run(deal.id);
-  res.json({ success: true });
-});
-
-router.patch('/:dealId/items/:itemId/sync-override', (req, res) => {
-  const { syncOverride } = req.body;
-  if (!VALID_SYNC_OVERRIDES.has(syncOverride ?? null)) {
-    return res.status(400).json({ error: 'syncOverride must be include, exclude, or null' });
-  }
-
-  const db = getDb();
-  const item = db.prepare(
-    'SELECT id FROM deal_items WHERE id = ? AND deal_id = ?'
-  ).get(req.params.itemId, req.params.dealId);
-  if (!item) return res.status(404).json({ error: 'Item not found' });
-
-  db.prepare('UPDATE deal_items SET sync_override = ? WHERE id = ?').run(syncOverride, item.id);
-  res.json({ success: true });
-});
-
-router.post('/:dealId/items/:itemId/blacklist', (req, res) => {
-  const db = getDb();
-  const item = db
-    .prepare('SELECT id, name FROM deal_items WHERE id = ? AND deal_id = ?')
-    .get(req.params.itemId, req.params.dealId);
-  if (!item) return res.status(404).json({ error: 'Item not found' });
-
+router.post('/:id/items/reset-sync-overrides', async (req, res, next) => {
   try {
-    const entry = createBlacklistEntry(db, {
+    const db = getDb();
+    const deal = db.prepare('SELECT id FROM deals WHERE id = ?').get(req.params.id);
+    if (!deal) return res.status(404).json({ error: 'Deal not found' });
+
+    db.prepare('UPDATE deal_items SET sync_override = NULL WHERE deal_id = ?').run(deal.id);
+    await respondWithOptionalSync(res, Number(req.params.id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch('/:dealId/items/:itemId/sync-override', async (req, res, next) => {
+  try {
+    const { syncOverride } = req.body;
+    if (!VALID_SYNC_OVERRIDES.has(syncOverride ?? null)) {
+      return res.status(400).json({ error: 'syncOverride must be include, exclude, or null' });
+    }
+
+    const db = getDb();
+    const item = db.prepare(
+      'SELECT id FROM deal_items WHERE id = ? AND deal_id = ?'
+    ).get(req.params.itemId, req.params.dealId);
+    if (!item) return res.status(404).json({ error: 'Item not found' });
+
+    db.prepare('UPDATE deal_items SET sync_override = ? WHERE id = ?').run(syncOverride, item.id);
+    await respondWithOptionalSync(res, Number(req.params.dealId));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:dealId/items/:itemId/blacklist', async (req, res, next) => {
+  try {
+    const db = getDb();
+    const item = db
+      .prepare('SELECT id, name FROM deal_items WHERE id = ? AND deal_id = ?')
+      .get(req.params.itemId, req.params.dealId);
+    if (!item) return res.status(404).json({ error: 'Item not found' });
+
+    createBlacklistEntry(db, {
       pattern: item.name,
       matchType: 'exact',
       sourceName: item.name,
     });
-    res.status(201).json({ item: entry });
+    await respondWithOptionalSync(res, Number(req.params.dealId));
   } catch (err) {
-    res.status(err.status || 500).json({ error: err.message });
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
   }
 });
 
-router.post('/:dealId/items/:itemId/restoration', (req, res) => {
-  const db = getDb();
-  const item = db
-    .prepare('SELECT id, name FROM deal_items WHERE id = ? AND deal_id = ?')
-    .get(req.params.itemId, req.params.dealId);
-  if (!item) return res.status(404).json({ error: 'Item not found' });
-
+router.post('/:dealId/items/:itemId/restoration', async (req, res, next) => {
   try {
-    const entry = createRestorationEntry(db, {
+    const db = getDb();
+    const item = db
+      .prepare('SELECT id, name FROM deal_items WHERE id = ? AND deal_id = ?')
+      .get(req.params.itemId, req.params.dealId);
+    if (!item) return res.status(404).json({ error: 'Item not found' });
+
+    createRestorationEntry(db, {
       pattern: item.name,
       matchType: 'exact',
       sourceName: item.name,
     });
-    res.status(201).json({ item: entry });
+    await respondWithOptionalSync(res, Number(req.params.dealId));
   } catch (err) {
-    res.status(err.status || 500).json({ error: err.message });
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
   }
 });
 
