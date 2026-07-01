@@ -9,3 +9,4 @@ data/
 skills-lock.json
 backend/scripts/debug-*.mjs
 backend/scripts/count-events.mjs
+.worktrees/
