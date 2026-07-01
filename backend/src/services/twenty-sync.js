@@ -390,6 +390,13 @@ export function buildSyncPreview(dealId) {
   };
 }
 
+export async function resyncDealIfSynced(dealId) {
+  const db = getDb();
+  const deal = db.prepare('SELECT twenty_id FROM deals WHERE id = ?').get(dealId);
+  if (!deal?.twenty_id) return null;
+  return syncDealToTwenty(dealId);
+}
+
 export async function syncDealToTwenty(dealId) {
   const twenty = requireTwentyConfig();
   const db = getDb();
