@@ -107,6 +107,19 @@ export function useResetSyncOverrides() {
   });
 }
 
+export function useAttachTonyBooking() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ dealId, bookingNumber }) =>
+      api.patch(`/deals/${dealId}/tony-booking`, { bookingNumber }).then((r) => r.data),
+    onSuccess: (_, { dealId }) => {
+      qc.invalidateQueries({ queryKey: ['deal', dealId] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['sync-logs'] });
+    },
+  });
+}
+
 export function useApproveDeal() {
   const qc = useQueryClient();
   return useMutation({

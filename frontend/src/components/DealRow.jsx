@@ -3,6 +3,7 @@ import { useDeal, useApproveDeal, useRejectDeal, useDeleteDeal, useResyncDeal } 
 import { formatEventDate, formatDateTime } from '../utils/dates';
 import StatusBadge from './StatusBadge';
 import DealItems from './DealItems';
+import TonyBookingField from './TonyBookingField';
 import { IconCheck, IconX, IconRefresh } from './ui/Icons';
 
 export default function DealRow({ deal, selected, onSelect }) {
@@ -111,6 +112,7 @@ export default function DealRow({ deal, selected, onSelect }) {
                 <div><dt className="text-ink-muted text-xs mb-0.5">Компания</dt><dd>{details?.contact_company || '—'}</dd></div>
                 <div><dt className="text-ink-muted text-xs mb-0.5">Адрес</dt><dd>{details?.address || '—'}</dd></div>
               </dl>
+              <TonyBookingField dealId={deal.id} currentBookingId={details?.tony_order_id} />
               <DealItems dealId={deal.id} items={details?.items} />
             </div>
           </td>
