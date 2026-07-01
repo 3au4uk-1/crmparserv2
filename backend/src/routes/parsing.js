@@ -6,7 +6,7 @@ import {
   tryAcquireParsingLock,
   releaseParsingLock,
 } from '../services/parsing-lock.js';
-import { getDefaultParseRange, normalizeParseRange } from '../utils/crm-dates.js';
+import { getDefaultParseRange, normalizeManualParseRange } from '../utils/crm-dates.js';
 
 const router = Router();
 
@@ -17,11 +17,13 @@ router.post('/run', async (req, res, next) => {
 
   try {
     const { startDate, endDate } = req.body;
-    const { start, end } = normalizeParseRange(startDate, endDate);
-
+    const { start, end } = normalizeManualParseRange(startDate, endDate);
     const result = await runParsing(start, end);
     res.json(result);
   } catch (err) {
+    if (err.message === 'from must be <= to') {
+      return res.status(400).json({ error: err.message });
+    }
     next(err);
   } finally {
     releaseParsingLock();

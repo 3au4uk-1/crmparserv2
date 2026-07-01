@@ -59,7 +59,7 @@ export default function Dashboard() {
               Запуск парсинга
             </h2>
             <p className="text-sm text-ink-muted mt-1 max-w-lg">
-              По умолчанию охватывает 2 недели вперёд. Даты раньше сегодняшней недоступны.
+              По умолчанию — с сегодня на 2 недели вперёд. Для ручного запуска можно указать прошлые даты.
             </p>
           </div>
           <button
@@ -78,7 +78,6 @@ export default function Dashboard() {
             <input
               type="date"
               value={dateRange.from}
-              min={defaults?.startDate || undefined}
               onChange={(e) => setDateRange((prev) => ({ ...prev, from: e.target.value }))}
               className="input-field w-auto min-w-[10rem]"
             />
