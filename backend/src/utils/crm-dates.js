@@ -115,6 +115,28 @@ export function normalizeParseRange(startDate, endDate, now = new Date()) {
   return { start, end };
 }
 
+/** Manual parse only: no min-date clamp; validates from <= to. */
+export function normalizeManualParseRange(startDate, endDate, now = new Date()) {
+  const defaults = getDefaultParseRange(now);
+  let start = startDate || defaults.start;
+  let end = endDate || defaults.end;
+
+  if (DATE_INPUT_RE.test(start)) {
+    start = `${start}T00:00:00${crmOffsetSuffix()}`;
+  }
+  if (DATE_INPUT_RE.test(end)) {
+    end = `${end}T23:59:59${crmOffsetSuffix()}`;
+  }
+
+  const startTs = parseEventDate(start)?.getTime() ?? 0;
+  const endTs = parseEventDate(end)?.getTime() ?? 0;
+  if (startTs > endTs) {
+    throw new Error('from must be <= to');
+  }
+
+  return { start, end };
+}
+
 export function normalizeExportRange(startDate, endDate, now = new Date()) {
   if (!DATE_INPUT_RE.test(startDate) || !DATE_INPUT_RE.test(endDate)) {
     throw new Error('from and to required (YYYY-MM-DD)');
