@@ -6,6 +6,7 @@ import { loadBlacklist, createBlacklistEntry } from '../services/blacklist.js';
 import { loadRestorationList, createRestorationEntry } from '../services/restoration.js';
 import { importAuthMiddleware } from '../middleware/import-auth.js';
 import { importDealByBooking } from '../services/import-by-booking.js';
+import { attachTonyBooking } from '../services/attach-tony-booking.js';
 
 const router = Router();
 
@@ -161,6 +162,17 @@ router.post('/:id/resync', async (req, res, next) => {
     res.json({ success: true, ...result });
   } catch (err) {
     console.error(`[twenty-sync] ${new Date().toISOString()} api.resync_failed {"dealId":${Number(req.params.id)},"error":${JSON.stringify(err.message)}}`);
+    next(err);
+  }
+});
+
+router.patch('/:id/tony-booking', async (req, res, next) => {
+  try {
+    const bookingNumber = String(req.body?.bookingNumber ?? '').trim();
+    const result = await attachTonyBooking(Number(req.params.id), bookingNumber);
+    res.json(result);
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);
   }
 });

@@ -3,6 +3,11 @@ import express from 'express';
 import request from 'supertest';
 
 const resyncDealIfSyncedMock = vi.fn();
+const attachTonyBookingMock = vi.fn();
+
+vi.mock('../src/services/attach-tony-booking.js', () => ({
+  attachTonyBooking: (...args) => attachTonyBookingMock(...args),
+}));
 
 vi.mock('../src/services/twenty-sync.js', () => ({
   syncDealToTwenty: vi.fn(),
@@ -67,5 +72,44 @@ describe('deal item mutations auto-resync', () => {
       sync: { action: 'updated', twentyId: 'opp-1' },
     });
     expect(resyncDealIfSyncedMock).toHaveBeenCalledWith(dealId);
+  });
+});
+
+describe('PATCH /deals/:id/tony-booking', () => {
+  beforeEach(() => {
+    initDb();
+    migrate();
+    const db = getDb();
+    db.prepare('DELETE FROM deal_items').run();
+    db.prepare('DELETE FROM deals').run();
+    attachTonyBookingMock.mockReset();
+    attachTonyBookingMock.mockResolvedValue({
+      success: true,
+      dealId: 1,
+      bookingNumber: '169120',
+      itemCount: 3,
+      sync: null,
+    });
+
+    db.prepare(`
+      INSERT INTO deals (crm_event_id, deal_key, data_source, title)
+      VALUES ('evt1', 'evt1#cal', 'calendar', 'Test')
+    `).run();
+  });
+
+  it('returns 200 with attachTonyBooking result', async () => {
+    const res = await request(createApp())
+      .patch('/deals/1/tony-booking')
+      .send({ bookingNumber: '169120' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      success: true,
+      dealId: 1,
+      bookingNumber: '169120',
+      itemCount: 3,
+      sync: null,
+    });
+    expect(attachTonyBookingMock).toHaveBeenCalledWith(1, '169120');
   });
 });
