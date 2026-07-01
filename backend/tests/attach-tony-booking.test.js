@@ -1,7 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
+
+let testDbPath;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const tonyHtml = fs.readFileSync(path.join(__dirname, 'fixtures/tony-order-169120.html'), 'utf-8');
@@ -38,6 +41,8 @@ import { bookingDealKey } from '../src/services/deal-keys.js';
 
 describe('attachTonyBooking', () => {
   beforeEach(() => {
+    testDbPath = path.join(os.tmpdir(), `attach-tony-${Date.now()}-${Math.random()}.db`);
+    process.env.DB_PATH = testDbPath;
     initDb();
     migrate();
     const db = getDb();
@@ -48,6 +53,14 @@ describe('attachTonyBooking', () => {
     ).run(JSON.stringify(['брендинг', 'баннер', 'печать']));
     vi.mocked(fetchTonyOrderHtml).mockResolvedValue(tonyHtml);
     vi.mocked(resyncDealIfSynced).mockClear();
+  });
+
+  afterEach(() => {
+    try {
+      getDb().close();
+    } catch { /* not initialized */ }
+    if (testDbPath && fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
+    delete process.env.DB_PATH;
   });
 
   it('attaches booking to calendar deal and preserves sync_override', async () => {

@@ -6,11 +6,12 @@ import { config } from '../config.js';
 let db;
 
 export function initDb() {
-  const dbDir = path.dirname(config.dbPath);
+  const dbPath = process.env.DB_PATH || config.dbPath;
+  const dbDir = path.dirname(dbPath);
   if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true });
   }
-  db = new Database(config.dbPath);
+  db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   return db;

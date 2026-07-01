@@ -1,7 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
+
+let testDbPath;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const tonyHtml = fs.readFileSync(path.join(__dirname, 'fixtures/tony-order-169120.html'), 'utf-8');
@@ -44,6 +47,8 @@ import { importDealByBooking } from '../src/services/import-by-booking.js';
 
 describe('importDealByBooking', () => {
   beforeEach(() => {
+    testDbPath = path.join(os.tmpdir(), `import-booking-${Date.now()}-${Math.random()}.db`);
+    process.env.DB_PATH = testDbPath;
     initDb();
     migrate();
     const db = getDb();
@@ -54,6 +59,14 @@ describe('importDealByBooking', () => {
     ).run(JSON.stringify(['брендинг', 'баннер', 'печать', 'наклейка', 'логотип']));
     vi.mocked(fetchTonyOrderHtml).mockReset();
     vi.mocked(fetchTonyOrderHtml).mockResolvedValue(tonyHtml);
+  });
+
+  afterEach(() => {
+    try {
+      getDb().close();
+    } catch { /* not initialized */ }
+    if (testDbPath && fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
+    delete process.env.DB_PATH;
   });
 
   it('imports a Tony-only deal and syncs to Twenty', async () => {
