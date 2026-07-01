@@ -22,6 +22,13 @@ vi.mock('../src/services/twenty-sync.js', () => ({
   resyncDealIfSynced: vi.fn().mockResolvedValue({ action: 'updated', twentyId: 'opp-1' }),
 }));
 
+vi.mock('../src/services/calendar-deal-metadata.js', () => ({
+  refreshDealCalendarMetadata: vi.fn().mockImplementation(async (dealId) => {
+    const { getDb } = await import('../src/db/connection.js');
+    return getDb().prepare('SELECT * FROM deals WHERE id = ?').get(dealId);
+  }),
+}));
+
 vi.mock('../src/services/classifier.js', () => ({
   classifyItems: vi.fn(async (items) =>
     items.map((item) => ({
@@ -36,6 +43,7 @@ import { getDb, initDb } from '../src/db/connection.js';
 import { migrate } from '../src/db/migrate.js';
 import { fetchTonyOrderHtml } from '../src/services/tony-client.js';
 import { resyncDealIfSynced } from '../src/services/twenty-sync.js';
+import { refreshDealCalendarMetadata } from '../src/services/calendar-deal-metadata.js';
 import { attachTonyBooking } from '../src/services/attach-tony-booking.js';
 import { bookingDealKey } from '../src/services/deal-keys.js';
 
@@ -85,6 +93,7 @@ describe('attachTonyBooking', () => {
     expect(deal.title).toBe('Calendar Event');
     expect(deal.company_code).toBe('ACME');
     expect(resyncDealIfSynced).toHaveBeenCalledWith(dealId);
+    expect(refreshDealCalendarMetadata).toHaveBeenCalledWith(dealId);
 
     const items = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(dealId);
     expect(items.length).toBeGreaterThan(0);

@@ -14,6 +14,7 @@ import {
   replaceDealItemsPreservingOverrides,
 } from './deal-items-update.js';
 import { resyncDealIfSynced } from './twenty-sync.js';
+import { refreshDealCalendarMetadata } from './calendar-deal-metadata.js';
 
 function getSetting(key) {
   const db = getDb();
@@ -65,12 +66,18 @@ export async function attachTonyBooking(dealId, bookingNumber) {
 
   const existingItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(dealId);
   const overrideMap = buildOverrideMap(existingItems);
+  const calendarTitle = deal.title;
+  const calendarCompany = deal.company_code;
+  const calendarManager = deal.manager_name;
 
   db.prepare(`
     UPDATE deals SET
       tony_order_id = ?,
       deal_key = ?,
       data_source = 'tony',
+      title = ?,
+      company_code = ?,
+      manager_name = ?,
       address = ?, work_time = ?, arrival_time = ?, dismantle_time = ?,
       load_date = ?, load_time = ?, budget = ?,
       start_date = ?, end_date = ?,
@@ -80,6 +87,9 @@ export async function attachTonyBooking(dealId, bookingNumber) {
   `).run(
     bookingNumber,
     targetKey,
+    calendarTitle,
+    calendarCompany,
+    calendarManager,
     fields.address,
     fields.work_time,
     fields.arrival_time,
@@ -94,6 +104,12 @@ export async function attachTonyBooking(dealId, bookingNumber) {
   );
 
   replaceDealItemsPreservingOverrides(db, dealId, classifiedItems, overrideMap);
+
+  try {
+    await refreshDealCalendarMetadata(dealId);
+  } catch (err) {
+    console.warn(`[attach-tony-booking] calendar metadata refresh failed for deal ${dealId}: ${err.message}`);
+  }
 
   const sync = await resyncDealIfSynced(dealId);
   const itemCount = db.prepare('SELECT COUNT(*) AS c FROM deal_items WHERE deal_id = ?').get(dealId).c;
