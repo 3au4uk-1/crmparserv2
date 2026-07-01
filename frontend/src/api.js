@@ -89,6 +89,7 @@ export function useUpdateItemSyncOverride() {
     onSuccess: (_, { dealId }) => {
       qc.invalidateQueries({ queryKey: ['deal', dealId] });
       qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['sync-logs'] });
     },
   });
 }
@@ -101,6 +102,7 @@ export function useResetSyncOverrides() {
     onSuccess: (_, dealId) => {
       qc.invalidateQueries({ queryKey: ['deal', dealId] });
       qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['sync-logs'] });
     },
   });
 }
@@ -314,6 +316,7 @@ export function useAddItemToBlacklist() {
       qc.invalidateQueries({ queryKey: ['blacklist'] });
       qc.invalidateQueries({ queryKey: ['deal', dealId] });
       qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['sync-logs'] });
     },
   });
 }
@@ -359,6 +362,7 @@ export function useAddItemToRestoration() {
       qc.invalidateQueries({ queryKey: ['restoration'] });
       qc.invalidateQueries({ queryKey: ['deal', dealId] });
       qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['sync-logs'] });
     },
   });
 }

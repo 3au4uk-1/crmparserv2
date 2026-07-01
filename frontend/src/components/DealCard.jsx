@@ -105,11 +105,7 @@ export default function DealCard({ deal, selected, onSelect }) {
             <div><dt className="text-ink-muted text-xs mb-0.5">Компания</dt><dd>{details?.contact_company || '—'}</dd></div>
             <div><dt className="text-ink-muted text-xs mb-0.5">Адрес</dt><dd>{details?.address || '—'}</dd></div>
           </dl>
-          <DealItems
-            dealId={deal.id}
-            items={details?.items}
-            readOnly={deal.approval_status === 'synced'}
-          />
+          <DealItems dealId={deal.id} items={details?.items} />
         </div>
       )}
     </div>
