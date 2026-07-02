@@ -3,6 +3,7 @@ import {
   buildLineItemUpdateInput,
 } from './twenty-line-item.js';
 import { isRestorationItem } from './restoration.js';
+import { isPodryadItem } from './podryad.js';
 import { logTwentyStep } from './twenty-sync-log.js';
 import { DEFAULT_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
 
@@ -82,13 +83,14 @@ export async function syncLineItemsDiff({
   db,
   deal = null,
   restorationList = [],
+  podryadList = [],
 }) {
   const { toUpdate, toCreate, toDelete, preserved } = computeLineItemDiff(
     existingLineItems,
     eligibleItems
   );
 
-  const lineItemOptions = { deal, restorationList };
+  const lineItemOptions = { deal, restorationList, podryadList };
 
   logTwentyStep('line_items.diff', {
     toUpdate: toUpdate.length,
@@ -106,6 +108,11 @@ export async function syncLineItemsDiff({
   const zeroed = eligibleItems.filter((i) => isRestorationItem(i.name, restorationList));
   if (zeroed.length) {
     logTwentyStep('line_items.restoration_zero', { names: zeroed.map((i) => i.name) });
+  }
+
+  const podryadItems = eligibleItems.filter((i) => isPodryadItem(i.name, podryadList));
+  if (podryadItems.length) {
+    logTwentyStep('line_items.podryad_tip', { names: podryadItems.map((i) => i.name) });
   }
 
   for (const lineItemId of toDelete) {
@@ -146,7 +153,7 @@ export async function syncLineItemsDiff({
           warehouseItemId,
           oppId,
           position === 0 ? 'first' : position,
-          { deal, restorationList }
+          { deal, restorationList, podryadList }
         ),
       }
     );

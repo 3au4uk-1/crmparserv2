@@ -131,3 +131,35 @@ describe('restoration line items', () => {
     expect(input.amount.amountMicros).toBe(0);
   });
 });
+
+describe('podryad line items', () => {
+  const podryadList = [{ id: 1, pattern: 'флаги односторонние на виндеры', matchType: 'exact' }];
+  const tonyDeal = { data_source: 'tony' };
+  const item = {
+    name: 'Флаги односторонние на виндеры',
+    price: 5000,
+    quantity: '2',
+    sum: 10000,
+    quantity_num: 2,
+  };
+
+  it('builds create input with tip PODRYAD when podryad match', () => {
+    const input = buildLineItemCreateInput(
+      item, 'wh-001', 'opp-456', 'first', { deal: tonyDeal, podryadList }
+    );
+    expect(input.tip).toBe('PODRYAD');
+    expect(input.amount.amountMicros).toBe(5000000000);
+  });
+
+  it('omits tip when not in podryad list', () => {
+    const input = buildLineItemCreateInput(
+      { ...item, name: 'Баннер' }, 'wh-001', 'opp-456', 'first', { deal: tonyDeal, podryadList }
+    );
+    expect(input.tip).toBeUndefined();
+  });
+
+  it('builds update input with tip PODRYAD when podryad match', () => {
+    const input = buildLineItemUpdateInput(item, { deal: tonyDeal, podryadList });
+    expect(input.tip).toBe('PODRYAD');
+  });
+});

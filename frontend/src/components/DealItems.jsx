@@ -3,6 +3,7 @@ import {
   useResetSyncOverrides,
   useAddItemToBlacklist,
   useAddItemToRestoration,
+  useAddItemToPodryad,
 } from '../api';
 
 const classColors = {
@@ -24,6 +25,7 @@ export default function DealItems({ dealId, items, readOnly = false }) {
   const resetOverrides = useResetSyncOverrides();
   const addToBlacklist = useAddItemToBlacklist();
   const addToRestoration = useAddItemToRestoration();
+  const addToPodryad = useAddItemToPodryad();
 
   if (!items?.length) {
     return <p className="text-sm text-ink-muted py-2">Позиций в заказе нет</p>;
@@ -100,6 +102,11 @@ export default function DealItems({ dealId, items, readOnly = false }) {
                         реставрация · 0 ₽
                       </span>
                     )}
+                    {item.podryadMatch && item.eligibleForTwenty && (
+                      <span className="text-xs bg-pastel-blue-bg text-pastel-blue-text px-1.5 py-0.5 rounded">
+                        подряд
+                      </span>
+                    )}
                   </div>
                 </td>
                 <td className="tabular-nums">{item.price?.toLocaleString('ru-RU')} ₽</td>
@@ -132,6 +139,18 @@ export default function DealItems({ dealId, items, readOnly = false }) {
                           className="text-xs text-pastel-yellow-text hover:opacity-80 disabled:opacity-50 text-left"
                         >
                           В реставрацию
+                        </button>
+                      )}
+                      {item.podryadMatch ? (
+                        <span className="text-xs text-pastel-blue-text">подряд</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => addToPodryad.mutate({ dealId, itemId: item.id })}
+                          disabled={addToPodryad.isPending}
+                          className="text-xs text-pastel-blue-text hover:opacity-80 disabled:opacity-50 text-left"
+                        >
+                          В подряд
                         </button>
                       )}
                     </div>

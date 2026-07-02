@@ -3,6 +3,7 @@ import { getDb } from '../db/connection.js';
 import { getTwentyConfig, requireTwentyConfig } from './twenty-config.js';
 import { loadBlacklist } from './blacklist.js';
 import { loadRestorationList, isRestorationItem } from './restoration.js';
+import { loadPodryadList, isPodryadItem } from './podryad.js';
 import { buildOpportunityInput, computeDealItemsTotal, computeLineItemTotal, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
 import {
   getItemsForTwenty,
@@ -229,7 +230,7 @@ function createLineItemSyncDeps(warehouseCache) {
   };
 }
 
-async function updateDealInTwenty(dealId, deal, items, twenty, restorationList) {
+async function updateDealInTwenty(dealId, deal, items, twenty, restorationList, podryadList) {
   const db = getDb();
   const oppId = deal.twenty_id;
 
@@ -291,6 +292,7 @@ async function updateDealInTwenty(dealId, deal, items, twenty, restorationList) 
     db,
     deal,
     restorationList,
+    podryadList,
   });
 
   const action = items.length === 0 ? 'updated_empty' : 'updated';
@@ -304,7 +306,7 @@ async function updateDealInTwenty(dealId, deal, items, twenty, restorationList) 
   return { twentyId: oppId, action, itemCount: items.length };
 }
 
-async function createDealInTwenty(dealId, deal, items, twenty, restorationList) {
+async function createDealInTwenty(dealId, deal, items, twenty, restorationList, podryadList) {
   const db = getDb();
 
   const { companyTwentyId, personTwentyId } = await resolveCompanyAndPerson(deal, twenty);
@@ -342,6 +344,7 @@ async function createDealInTwenty(dealId, deal, items, twenty, restorationList) 
     db,
     deal,
     restorationList,
+    podryadList,
   });
 
   db.prepare(`
@@ -367,6 +370,7 @@ export function buildSyncPreview(dealId) {
   const allItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(dealId);
   const blacklist = loadBlacklist(db);
   const restorationList = loadRestorationList(db);
+  const podryadList = loadPodryadList(db);
   const eligibleItems = getItemsForTwenty(allItems, blacklist);
   const eligibleAmount = computeDealItemsTotal(deal, eligibleItems, restorationList);
 
@@ -383,6 +387,7 @@ export function buildSyncPreview(dealId) {
       reason: getItemEligibleReason(item, blacklist),
       twentyLineAmount: computeLineItemTotal(item, deal, restorationList),
       restorationMatch: isRestorationItem(item.name, restorationList),
+      podryadMatch: isPodryadItem(item.name, podryadList),
     })),
     alreadySynced: Boolean(deal.twenty_id),
     twentyId: deal.twenty_id || null,
@@ -406,6 +411,7 @@ export async function syncDealToTwenty(dealId) {
   const allItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(dealId);
   const blacklist = loadBlacklist(db);
   const restorationList = loadRestorationList(db);
+  const podryadList = loadPodryadList(db);
   const items = getItemsForTwenty(allItems, blacklist);
   const mode = deal.twenty_id ? 'update' : 'create';
 
@@ -429,7 +435,7 @@ export async function syncDealToTwenty(dealId) {
   try {
     let result;
     if (deal.twenty_id) {
-      result = await updateDealInTwenty(dealId, deal, items, twenty, restorationList);
+      result = await updateDealInTwenty(dealId, deal, items, twenty, restorationList, podryadList);
     } else {
       if (items.length === 0) {
         const message = 'Нет позиций для переноса в Twenty';
@@ -439,7 +445,7 @@ export async function syncDealToTwenty(dealId) {
         throw new Error(message);
       }
 
-      result = await createDealInTwenty(dealId, deal, items, twenty, restorationList);
+      result = await createDealInTwenty(dealId, deal, items, twenty, restorationList, podryadList);
     }
 
     await refreshPrintSheetAfterSync(twenty, result.twentyId);

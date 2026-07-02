@@ -380,6 +380,52 @@ export function useAddItemToRestoration() {
   });
 }
 
+export function usePodryadList() {
+  return useQuery({
+    queryKey: ['podryad'],
+    queryFn: () => api.get('/podryad').then((r) => r.data.items),
+  });
+}
+
+export function useAddPodryadItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ pattern, matchType, sourceName }) =>
+      api.post('/podryad', { pattern, matchType, sourceName }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['podryad'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal'] });
+    },
+  });
+}
+
+export function useRemovePodryadItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => api.delete(`/podryad/${id}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['podryad'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal'] });
+    },
+  });
+}
+
+export function useAddItemToPodryad() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ dealId, itemId }) =>
+      api.post(`/deals/${dealId}/items/${itemId}/podryad`).then((r) => r.data),
+    onSuccess: (_, { dealId }) => {
+      qc.invalidateQueries({ queryKey: ['podryad'] });
+      qc.invalidateQueries({ queryKey: ['deal', dealId] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['sync-logs'] });
+    },
+  });
+}
+
 export function useCompanies() {
   return useQuery({
     queryKey: ['companies'],

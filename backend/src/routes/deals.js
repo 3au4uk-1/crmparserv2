@@ -4,6 +4,7 @@ import { syncDealToTwenty, buildSyncPreview, resyncDealIfSynced } from '../servi
 import { enrichDealItems } from '../services/twenty-items.js';
 import { loadBlacklist, createBlacklistEntry } from '../services/blacklist.js';
 import { loadRestorationList, createRestorationEntry } from '../services/restoration.js';
+import { loadPodryadList, createPodryadEntry } from '../services/podryad.js';
 import { importAuthMiddleware } from '../middleware/import-auth.js';
 import { importDealByBooking } from '../services/import-by-booking.js';
 import { attachTonyBooking } from '../services/attach-tony-booking.js';
@@ -39,6 +40,7 @@ function attachDealItemCounts(deals, db) {
   if (!deals.length) return deals;
   const blacklist = loadBlacklist(db);
   const restorationList = loadRestorationList(db);
+  const podryadList = loadPodryadList(db);
   const ids = deals.map((d) => d.id);
   const placeholders = ids.map(() => '?').join(',');
   const rows = db
@@ -56,7 +58,8 @@ function attachDealItemCounts(deals, db) {
       byDeal.get(deal.id) || [],
       blacklist,
       restorationList,
-      deal
+      deal,
+      podryadList
     );
     return {
       ...deal,
@@ -137,8 +140,9 @@ router.get('/:id', (req, res) => {
   if (!deal) return res.status(404).json({ error: 'Deal not found' });
   const blacklist = loadBlacklist(db);
   const restorationList = loadRestorationList(db);
+  const podryadList = loadPodryadList(db);
   const items = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(req.params.id);
-  const enrichedItems = enrichDealItems(items, blacklist, restorationList, deal);
+  const enrichedItems = enrichDealItems(items, blacklist, restorationList, deal, podryadList);
   res.json({
     ...deal,
     items: enrichedItems,
@@ -326,6 +330,26 @@ router.post('/:dealId/items/:itemId/restoration', async (req, res, next) => {
     if (!item) return res.status(404).json({ error: 'Item not found' });
 
     createRestorationEntry(db, {
+      pattern: item.name,
+      matchType: 'exact',
+      sourceName: item.name,
+    });
+    await respondWithOptionalSync(res, Number(req.params.dealId));
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+router.post('/:dealId/items/:itemId/podryad', async (req, res, next) => {
+  try {
+    const db = getDb();
+    const item = db
+      .prepare('SELECT id, name FROM deal_items WHERE id = ? AND deal_id = ?')
+      .get(req.params.itemId, req.params.dealId);
+    if (!item) return res.status(404).json({ error: 'Item not found' });
+
+    createPodryadEntry(db, {
       pattern: item.name,
       matchType: 'exact',
       sourceName: item.name,

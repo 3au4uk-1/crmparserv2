@@ -13,6 +13,9 @@ import {
   useRestorationList,
   useAddRestorationItem,
   useRemoveRestorationItem,
+  usePodryadList,
+  useAddPodryadItem,
+  useRemovePodryadItem,
 } from '../api';
 import PageHeader from '../components/ui/PageHeader';
 
@@ -79,6 +82,7 @@ export default function Settings() {
   const { data: keywords } = useKeywords();
   const { data: blacklist } = useBlacklist();
   const { data: restorationList } = useRestorationList();
+  const { data: podryadList } = usePodryadList();
   const { data: companies } = useCompanies();
   const updateSetting = useUpdateSetting();
   const updateKeywords = useUpdateKeywords();
@@ -86,6 +90,8 @@ export default function Settings() {
   const removeBlacklistItem = useRemoveBlacklistItem();
   const addRestorationItem = useAddRestorationItem();
   const removeRestorationItem = useRemoveRestorationItem();
+  const addPodryadItem = useAddPodryadItem();
+  const removePodryadItem = useRemovePodryadItem();
   const clearParsingData = useClearParsingData();
   const createCompany = useCreateCompany();
 
@@ -98,6 +104,9 @@ export default function Settings() {
   const [newRestorationPattern, setNewRestorationPattern] = useState('');
   const [newRestorationMatchType, setNewRestorationMatchType] = useState('exact');
   const [restorationError, setRestorationError] = useState('');
+  const [newPodryadPattern, setNewPodryadPattern] = useState('');
+  const [newPodryadMatchType, setNewPodryadMatchType] = useState('exact');
+  const [podryadError, setPodryadError] = useState('');
   const [cookieValue, setCookieValue] = useState('');
 
   useEffect(() => {
@@ -344,6 +353,73 @@ export default function Settings() {
                   );
                 }}
                 disabled={!newRestorationPattern.trim() || addRestorationItem.isPending}
+                className="btn-primary btn-sm"
+              >
+                Добавить
+              </button>
+            </div>
+          </Section>
+
+          <Section
+            title="Подряд"
+            description="Eligible-позиции из списка попадают в Twenty с типом «подряд». Не eligible — не синкаются."
+          >
+            <div className="flex flex-wrap gap-2 mb-4">
+              {(podryadList || []).map((entry) => (
+                <span
+                  key={entry.id}
+                  className="inline-flex items-center gap-1.5 bg-pastel-blue-bg text-pastel-blue-text px-2.5 py-1 rounded-md text-sm"
+                >
+                  {entry.sourceName || entry.pattern}
+                  <span className="text-xs opacity-70">
+                    ({entry.matchType === 'exact' ? 'точное' : 'фрагмент'})
+                  </span>
+                  <button
+                    onClick={() => removePodryadItem.mutate(entry.id)}
+                    className="opacity-60 hover:opacity-100 transition-opacity"
+                    aria-label="Удалить из списка подряд"
+                  >
+                    &times;
+                  </button>
+                </span>
+              ))}
+            </div>
+            {podryadError && (
+              <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-3">{podryadError}</p>
+            )}
+            <div className="flex flex-wrap gap-2 items-end max-w-2xl">
+              <input
+                type="text"
+                value={newPodryadPattern}
+                onChange={(e) => setNewPodryadPattern(e.target.value)}
+                className="input-field flex-1 min-w-[12rem]"
+                placeholder="Флаги односторонние на виндеры"
+              />
+              <select
+                value={newPodryadMatchType}
+                onChange={(e) => setNewPodryadMatchType(e.target.value)}
+                className="select-field"
+              >
+                <option value="exact">Точное</option>
+                <option value="substring">Фрагмент</option>
+              </select>
+              <button
+                onClick={() => {
+                  setPodryadError('');
+                  addPodryadItem.mutate(
+                    { pattern: newPodryadPattern, matchType: newPodryadMatchType },
+                    {
+                      onSuccess: () => setNewPodryadPattern(''),
+                      onError: (err) => {
+                        const msg = err.response?.status === 409
+                          ? 'Уже в списке подряд'
+                          : err.response?.data?.error || 'Ошибка добавления';
+                        setPodryadError(msg);
+                      },
+                    }
+                  );
+                }}
+                disabled={!newPodryadPattern.trim() || addPodryadItem.isPending}
                 className="btn-primary btn-sm"
               >
                 Добавить

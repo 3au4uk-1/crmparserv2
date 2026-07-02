@@ -1,5 +1,6 @@
 import { findBlacklistMatch, isBlacklisted } from './blacklist.js';
 import { findRestorationMatch } from './restoration.js';
+import { findPodryadMatch } from './podryad.js';
 import { computeLineItemTotal } from './twenty-opportunity.js';
 
 const AUTO_ELIGIBLE = new Set(['keyword_match', 'llm_confirmed']);
@@ -23,11 +24,18 @@ export function getItemsForTwenty(items, blacklist = []) {
   return items.filter((item) => isItemEligibleForTwenty(item, blacklist));
 }
 
-export function enrichDealItems(items, blacklist = [], restorationList = [], deal = null) {
+export function enrichDealItems(
+  items,
+  blacklist = [],
+  restorationList = [],
+  deal = null,
+  podryadList = []
+) {
   const dealContext = deal ? { data_source: deal.data_source } : null;
   return items.map((item) => {
     const blacklistHit = findBlacklistMatch(item.name, blacklist);
     const restorationHit = findRestorationMatch(item.name, restorationList);
+    const podryadHit = findPodryadMatch(item.name, podryadList);
     return {
       ...item,
       blacklisted: Boolean(blacklistHit),
@@ -37,6 +45,10 @@ export function enrichDealItems(items, blacklist = [], restorationList = [], dea
       restorationMatch: Boolean(restorationHit),
       restorationMatchEntry: restorationHit
         ? { id: restorationHit.id, pattern: restorationHit.pattern, matchType: restorationHit.matchType }
+        : null,
+      podryadMatch: Boolean(podryadHit),
+      podryadMatchEntry: podryadHit
+        ? { id: podryadHit.id, pattern: podryadHit.pattern, matchType: podryadHit.matchType }
         : null,
       twentyLineAmount: computeLineItemTotal(item, dealContext, restorationList),
       eligibleForTwenty: isItemEligibleForTwenty(item, blacklist),
