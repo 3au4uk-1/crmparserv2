@@ -8,6 +8,13 @@ import { loadPodryadList, createPodryadEntry } from '../services/podryad.js';
 import { importAuthMiddleware } from '../middleware/import-auth.js';
 import { importDealByBooking } from '../services/import-by-booking.js';
 import { attachTonyBooking } from '../services/attach-tony-booking.js';
+import {
+  countSyncedDeals,
+  createBulkResyncJob,
+  executeBulkResyncJob,
+  getActiveBulkResyncJob,
+  getBulkResyncJob,
+} from '../services/bulk-resync-jobs.js';
 
 const router = Router();
 
@@ -107,6 +114,39 @@ router.get('/stats', (req, res) => {
     rejected: db.prepare("SELECT COUNT(*) as c FROM deals WHERE approval_status = 'rejected'").get().c,
   };
   res.json(stats);
+});
+
+router.get('/bulk-resync/preview', (req, res) => {
+  res.json({ count: countSyncedDeals() });
+});
+
+router.post('/bulk-resync', (req, res) => {
+  if (getActiveBulkResyncJob()) {
+    return res.status(409).json({ error: 'Массовая пересинхронизация уже выполняется' });
+  }
+
+  const requestedTrigger = req.body?.trigger;
+  const trigger =
+    typeof requestedTrigger === 'string' && requestedTrigger.trim()
+      ? requestedTrigger.trim()
+      : 'manual';
+
+  const job = createBulkResyncJob({ trigger });
+  executeBulkResyncJob(job.jobId).catch((err) => {
+    console.error(`[bulk-resync] job ${job.jobId} failed:`, err.message);
+  });
+
+  res.status(201).json({ jobId: job.jobId });
+});
+
+router.get('/bulk-resync/jobs/active', (req, res) => {
+  res.json(getActiveBulkResyncJob() ?? null);
+});
+
+router.get('/bulk-resync/jobs/:id', (req, res) => {
+  const job = getBulkResyncJob(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Задача не найдена' });
+  res.json(job);
 });
 
 router.post('/import-by-booking', importAuthMiddleware, async (req, res) => {
