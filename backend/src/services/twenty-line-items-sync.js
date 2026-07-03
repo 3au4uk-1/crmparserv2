@@ -14,7 +14,8 @@ export function isProtectedLineItemStage(stage) {
   return stage != null && stage !== DELETABLE_LINE_ITEM_STAGE;
 }
 
-export function computeLineItemDiff(existingLineItems, eligibleItems) {
+export function computeLineItemDiff(existingLineItems, eligibleItems, { ignoreStageProtection = false } = {}) {
+  const isProtected = (stage) => !ignoreStageProtection && isProtectedLineItemStage(stage);
   const eligibleNames = new Set(eligibleItems.map((i) => i.name));
   const existingByName = new Map(existingLineItems.map((li) => [li.name, li]));
 
@@ -25,7 +26,7 @@ export function computeLineItemDiff(existingLineItems, eligibleItems) {
   for (const item of eligibleItems) {
     const existing = existingByName.get(item.name);
     if (existing) {
-      if (isProtectedLineItemStage(existing.stage)) continue;
+      if (isProtected(existing.stage)) continue;
       toUpdate.push({ twentyId: existing.id, item });
     } else {
       toCreate.push(item);
@@ -35,7 +36,7 @@ export function computeLineItemDiff(existingLineItems, eligibleItems) {
   const toDelete = [];
   for (const li of existingLineItems) {
     if (eligibleNames.has(li.name)) continue;
-    if (isProtectedLineItemStage(li.stage)) {
+    if (isProtected(li.stage)) {
       preserved.push({ id: li.id, name: li.name, stage: li.stage });
       continue;
     }
@@ -84,10 +85,12 @@ export async function syncLineItemsDiff({
   deal = null,
   restorationList = [],
   podryadList = [],
+  ignoreStageProtection = false,
 }) {
   const { toUpdate, toCreate, toDelete, preserved } = computeLineItemDiff(
     existingLineItems,
-    eligibleItems
+    eligibleItems,
+    { ignoreStageProtection },
   );
 
   const lineItemOptions = { deal, restorationList, podryadList };
@@ -97,6 +100,7 @@ export async function syncLineItemsDiff({
     toCreate: toCreate.length,
     toDelete: toDelete.length,
     preserved: preserved.length,
+    ignoreStageProtection,
     updateNames: toUpdate.map((x) => x.item.name).slice(0, 5),
     createNames: toCreate.map((x) => x.name).slice(0, 5),
   });

@@ -152,8 +152,14 @@ describe('bulk-resync-jobs', () => {
     const finished = await promise;
 
     expect(syncDealToTwentyMock).toHaveBeenCalledTimes(2);
-    expect(syncDealToTwentyMock).toHaveBeenNthCalledWith(1, 1, { skipPrintSheetRefresh: true });
-    expect(syncDealToTwentyMock).toHaveBeenNthCalledWith(2, 2, { skipPrintSheetRefresh: true });
+    expect(syncDealToTwentyMock).toHaveBeenNthCalledWith(1, 1, {
+      skipPrintSheetRefresh: true,
+      ignoreLineItemStageProtection: true,
+    });
+    expect(syncDealToTwentyMock).toHaveBeenNthCalledWith(2, 2, {
+      skipPrintSheetRefresh: true,
+      ignoreLineItemStageProtection: true,
+    });
     expect(runPrintSheetRefreshMock).toHaveBeenCalledTimes(1);
     expect(finished.dealsTotal).toBe(2);
     expect(finished.dealsDone).toBe(2);

@@ -183,7 +183,10 @@ export async function executeBulkResyncJob(jobId) {
       const dealId = dealIds[i];
 
       try {
-        const result = await syncDealToTwenty(dealId, { skipPrintSheetRefresh: true });
+        const result = await syncDealToTwenty(dealId, {
+          skipPrintSheetRefresh: true,
+          ignoreLineItemStageProtection: true,
+        });
         if (result?.action === 'updated' || result?.action === 'updated_empty') {
           job.dealsUpdated += 1;
           anyUpdated = true;

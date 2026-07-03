@@ -91,4 +91,16 @@ describe('computeLineItemDiff', () => {
     expect(diff.toDelete).toEqual(['li-1', 'li-3']);
     expect(diff.preserved).toEqual([{ id: 'li-2', name: 'B', stage: 'V_PECHATI' }]);
   });
+
+  it('ignoreStageProtection updates and deletes protected stages', () => {
+    const existing = [
+      { id: 'li-1', name: 'Баннер', stage: 'V_PECHATI' },
+      { id: 'li-2', name: 'Ролл-ап', stage: 'V_RABOTE' },
+    ];
+    const eligible = [{ id: 10, name: 'Баннер', price: 0 }];
+    const diff = computeLineItemDiff(existing, eligible, { ignoreStageProtection: true });
+    expect(diff.toUpdate).toEqual([{ twentyId: 'li-1', item: eligible[0] }]);
+    expect(diff.toDelete).toEqual(['li-2']);
+    expect(diff.preserved).toEqual([]);
+  });
 });

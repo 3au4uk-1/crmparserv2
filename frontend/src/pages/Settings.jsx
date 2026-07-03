@@ -100,7 +100,7 @@ function BulkResyncPanel() {
       <h4 className="text-sm font-semibold text-ink mb-1">Применить фильтры к синхронизированным сделкам</h4>
       <p className="text-xs text-ink-muted mb-3 max-w-xl leading-relaxed">
         Пересинхронизирует все сделки с Twenty, применяя текущие списки блеклиста, реставрации и подряда.
-        Позиции в Twenty со стадией дальше «Новый» не изменяются.
+        В отличие от обычной пересинхронизации, обновляет и удаляет позиции на любой стадии в Twenty.
       </p>
       <button type="button" onClick={onStartBulkResync} disabled={running} className="btn-secondary">
         {running ? 'Пересинхронизация выполняется…' : 'Применить фильтры ко всем синхронизированным сделкам'}

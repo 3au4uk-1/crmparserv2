@@ -243,7 +243,15 @@ function createLineItemSyncDeps(warehouseCache) {
   };
 }
 
-async function updateDealInTwenty(dealId, deal, items, twenty, restorationList, podryadList) {
+async function updateDealInTwenty(
+  dealId,
+  deal,
+  items,
+  twenty,
+  restorationList,
+  podryadList,
+  { ignoreLineItemStageProtection = false } = {},
+) {
   const db = getDb();
   const oppId = deal.twenty_id;
 
@@ -306,6 +314,7 @@ async function updateDealInTwenty(dealId, deal, items, twenty, restorationList, 
     deal,
     restorationList,
     podryadList,
+    ignoreStageProtection: ignoreLineItemStageProtection,
   });
 
   const action = items.length === 0 ? 'updated_empty' : 'updated';
@@ -415,7 +424,10 @@ export async function resyncDealIfSynced(dealId) {
   return syncDealToTwenty(dealId);
 }
 
-export async function syncDealToTwenty(dealId, { skipPrintSheetRefresh = false } = {}) {
+export async function syncDealToTwenty(
+  dealId,
+  { skipPrintSheetRefresh = false, ignoreLineItemStageProtection = false } = {},
+) {
   const twenty = requireTwentyConfig();
   const db = getDb();
   const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(dealId);
@@ -448,7 +460,15 @@ export async function syncDealToTwenty(dealId, { skipPrintSheetRefresh = false }
   try {
     let result;
     if (deal.twenty_id) {
-      result = await updateDealInTwenty(dealId, deal, items, twenty, restorationList, podryadList);
+      result = await updateDealInTwenty(
+        dealId,
+        deal,
+        items,
+        twenty,
+        restorationList,
+        podryadList,
+        { ignoreLineItemStageProtection },
+      );
     } else {
       if (items.length === 0) {
         const message = 'Нет позиций для переноса в Twenty';
