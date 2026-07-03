@@ -547,6 +547,47 @@ export function useUploadBeznal() {
   });
 }
 
+function isBulkResyncJobRunning(status) {
+  return status === 'queued' || status === 'running';
+}
+
+export function fetchBulkResyncPreview() {
+  return api.get('/deals/bulk-resync/preview').then((r) => r.data);
+}
+
+export function useStartBulkResync() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post('/deals/bulk-resync').then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bulk-resync-active-job'] });
+    },
+  });
+}
+
+export function useActiveBulkResyncJob() {
+  return useQuery({
+    queryKey: ['bulk-resync-active-job'],
+    queryFn: () => api.get('/deals/bulk-resync/jobs/active').then((r) => r.data),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return isBulkResyncJobRunning(status) ? 2000 : false;
+    },
+  });
+}
+
+export function useBulkResyncJob(jobId, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: ['bulk-resync-job', jobId],
+    queryFn: () => api.get(`/deals/bulk-resync/jobs/${jobId}`).then((r) => r.data),
+    enabled: enabled && !!jobId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return isBulkResyncJobRunning(status) ? 2000 : false;
+    },
+  });
+}
+
 export async function downloadExportFile(jobId, from, to) {
   const resp = await api.get(`/export/${jobId}/file`, { responseType: 'blob' });
   const url = URL.createObjectURL(resp.data);
