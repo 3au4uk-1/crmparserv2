@@ -188,6 +188,37 @@ describe('syncDealToTwenty', () => {
     expect(runPrintSheetCycleMock).toHaveBeenCalledWith(expect.any(Function));
   });
 
+  it('skips print sheet refresh when skipPrintSheetRefresh is true', async () => {
+    const dealId = dbMock.__seedDeal({
+      id: 10,
+      twenty_id: 'opp-skip-print',
+      approval_status: 'synced',
+      title: 'Deal skip print',
+      start_date: '2026-06-10',
+      crm_event_id: 'e10',
+    });
+    dbMock.__seedItem({
+      deal_id: dealId,
+      name: 'Баннер',
+      price: 1000,
+      classification: 'keyword_match',
+      sync_override: null,
+    });
+
+    axiosPost
+      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-skip-print' } }))
+      .mockResolvedValueOnce(gqlOk({
+        dealLineItems: { edges: [{ node: { id: 'li-1', name: 'Баннер', stage: 'NOVYY' } }] },
+      }))
+      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-1' } }));
+
+    runPrintSheetCycleMock.mockResolvedValue({ exported: 0, readbackUpdated: 0, sessionsCleared: 0 });
+
+    await syncDealToTwenty(dealId, { skipPrintSheetRefresh: true });
+
+    expect(runPrintSheetCycleMock).not.toHaveBeenCalled();
+  });
+
   it('refreshes plenka for print-stage line items after sync', async () => {
     const dealId = dbMock.__seedDeal({
       id: 5,

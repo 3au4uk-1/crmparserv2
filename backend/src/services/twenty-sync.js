@@ -73,6 +73,19 @@ async function refreshPrintSheetAfterSync(twenty, oppId) {
   }
 }
 
+export async function runPrintSheetRefresh() {
+  const twenty = requireTwentyConfig();
+  try {
+    const gqlClient = createTwentyGqlClient(twenty.apiUrl, twenty.apiToken);
+    const result = await runPrintSheetCycle(gqlClient);
+    logTwentyStep('print_sheet.refresh.done', { bulk: true, ...result });
+    return result;
+  } catch (err) {
+    logTwenty('warn', 'print_sheet.refresh.failed', { bulk: true, error: err.message });
+    throw err;
+  }
+}
+
 async function findOrCreateWarehouseItem(apiUrl, apiToken, name, warehouseCache) {
   if (warehouseCache?.has(name)) {
     return warehouseCache.get(name);
@@ -402,7 +415,7 @@ export async function resyncDealIfSynced(dealId) {
   return syncDealToTwenty(dealId);
 }
 
-export async function syncDealToTwenty(dealId) {
+export async function syncDealToTwenty(dealId, { skipPrintSheetRefresh = false } = {}) {
   const twenty = requireTwentyConfig();
   const db = getDb();
   const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(dealId);
@@ -448,7 +461,9 @@ export async function syncDealToTwenty(dealId) {
       result = await createDealInTwenty(dealId, deal, items, twenty, restorationList, podryadList);
     }
 
-    await refreshPrintSheetAfterSync(twenty, result.twentyId);
+    if (!skipPrintSheetRefresh) {
+      await refreshPrintSheetAfterSync(twenty, result.twentyId);
+    }
     return result;
   } catch (err) {
     logTwenty('error', 'sync.failed', { mode, error: err.message });
