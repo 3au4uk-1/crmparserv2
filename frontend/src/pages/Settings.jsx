@@ -16,6 +16,10 @@ import {
   usePodryadList,
   useAddPodryadItem,
   useRemovePodryadItem,
+  useStartBulkResync,
+  useActiveBulkResyncJob,
+  useBulkResyncJob,
+  fetchBulkResyncPreview,
 } from '../api';
 import PageHeader from '../components/ui/PageHeader';
 
@@ -36,6 +40,111 @@ const TABS = [
   { id: 'directories', label: 'Справочники' },
   { id: 'data', label: 'Данные' },
 ];
+
+function isBulkResyncRunning(status) {
+  return status === 'queued' || status === 'running';
+}
+
+function BulkResyncPanel() {
+  const [jobId, setJobId] = useState('');
+  const [startError, setStartError] = useState('');
+
+  const startBulkResync = useStartBulkResync();
+  const { data: activeJob } = useActiveBulkResyncJob();
+  const { data: job, error: jobError } = useBulkResyncJob(jobId, { enabled: !!jobId });
+
+  useEffect(() => {
+    if (!activeJob?.jobId || jobId) return;
+    setJobId(activeJob.jobId);
+  }, [activeJob, jobId]);
+
+  const status = job?.status || activeJob?.status;
+  const running = startBulkResync.isPending || isBulkResyncRunning(status);
+  const details = job || activeJob || {};
+
+  async function onStartBulkResync() {
+    setStartError('');
+    try {
+      const preview = await fetchBulkResyncPreview();
+      const count = preview?.count ?? 0;
+      if (count === 0) {
+        setStartError('Нет синхронизированных сделок для пересинхронизации');
+        return;
+      }
+      const confirmed = window.confirm(
+        `Будет пересинхронизировано ${count} сделок. Актуальные фильтры (блеклист, реставрация, подряд) будут применены в Twenty. Продолжить?`,
+      );
+      if (!confirmed) return;
+
+      startBulkResync.mutate(undefined, {
+        onSuccess: (data) => {
+          if (data?.jobId) setJobId(String(data.jobId));
+        },
+        onError: (err) => {
+          if (err.response?.status === 409) {
+            setStartError('Массовая пересинхронизация уже выполняется');
+            return;
+          }
+          setStartError(
+            err.response?.data?.error || err.message || 'Не удалось запустить пересинхронизацию',
+          );
+        },
+      });
+    } catch (err) {
+      setStartError(err.response?.data?.error || err.message || 'Не удалось получить количество сделок');
+    }
+  }
+
+  return (
+    <div className="mt-6 pt-6 border-t border-border">
+      <h4 className="text-sm font-semibold text-ink mb-1">Применить фильтры к синхронизированным сделкам</h4>
+      <p className="text-xs text-ink-muted mb-3 max-w-xl leading-relaxed">
+        Пересинхронизирует все сделки с Twenty, применяя текущие списки блеклиста, реставрации и подряда.
+        Позиции в Twenty со стадией дальше «Новый» не изменяются.
+      </p>
+      <button type="button" onClick={onStartBulkResync} disabled={running} className="btn-secondary">
+        {running ? 'Пересинхронизация выполняется…' : 'Применить фильтры ко всем синхронизированным сделкам'}
+      </button>
+
+      {(jobId || activeJob?.jobId) && (
+        <div className="mt-4 space-y-1 text-sm text-ink-muted">
+          <p>
+            Статус: <span className="font-medium text-ink">{status || 'unknown'}</span>
+          </p>
+          <p>
+            Прогресс:{' '}
+            <span className="font-medium tabular-nums text-ink">
+              {details.dealsDone ?? 0} / {details.dealsTotal ?? 0}
+            </span>
+          </p>
+          <p>
+            Обновлено: <span className="font-medium tabular-nums text-ink">{details.dealsUpdated ?? 0}</span>
+            {' · '}
+            Ошибок: <span className="font-medium tabular-nums text-ink">{details.dealsFailed ?? 0}</span>
+          </p>
+          {Array.isArray(details.errors) && details.errors.length > 0 && (
+            <ul className="mt-2 text-xs text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md space-y-1">
+              {details.errors.map((entry) => (
+                <li key={`${entry.dealId}-${entry.error}`}>
+                  Сделка #{entry.dealId}: {entry.error}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {startError && (
+        <p className="mt-3 text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md">{startError}</p>
+      )}
+      {jobError && (
+        <p className="mt-3 text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md">
+          {jobError.response?.data?.error || jobError.message || 'Не удалось получить статус задачи'}
+        </p>
+      )}
+    </div>
+  );
+}
 
 function Section({ title, description, children }) {
   return (
@@ -528,6 +637,7 @@ export default function Settings() {
                   В API Twenty передаётся код стадии, не подпись из интерфейса.
                 </p>
               </div>
+              <BulkResyncPanel />
             </div>
           </Section>
 
