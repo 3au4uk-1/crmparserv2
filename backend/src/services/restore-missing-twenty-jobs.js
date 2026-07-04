@@ -78,6 +78,28 @@ export function resetRestoreMissingTwentyJobsForTests() {
   jobs.clear();
 }
 
+export function recoverStaleRestoreMissingTwentyJobs(db) {
+  const result = db.prepare(`
+    UPDATE restore_missing_twenty_runs
+    SET status = 'failed',
+        finished_at = datetime('now'),
+        error = ?
+    WHERE status IN ('queued', 'running')
+  `).run('Interrupted: server restarted while restore job was in progress');
+
+  for (const [jobId, job] of jobs.entries()) {
+    if (ACTIVE_STATUSES.has(job.status)) {
+      jobs.delete(jobId);
+    }
+  }
+
+  if (result.changes > 0) {
+    console.warn(`[restore-missing-twenty] marked ${result.changes} stale job(s) as failed`);
+  }
+
+  return result.changes;
+}
+
 export function listSyncedDealsForRestore() {
   const db = getDb();
   return db

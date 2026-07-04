@@ -28,6 +28,7 @@ import {
   createRestoreMissingTwentyJob,
   executeRestoreMissingTwentyJob,
   resetRestoreMissingTwentyJobsForTests,
+  recoverStaleRestoreMissingTwentyJobs,
   restoreMissingDealInTwenty,
 } from '../src/services/restore-missing-twenty-jobs.js';
 
@@ -154,6 +155,22 @@ describe('restore-missing-twenty-jobs', () => {
     expect(testDb.prepare('SELECT twenty_id FROM deals WHERE id = 1').get().twenty_id).toBeNull();
     expect(testDb.prepare('SELECT twenty_id FROM deal_items WHERE deal_id = 1').get().twenty_id).toBeNull();
     expect(syncDealToTwentyMock).toHaveBeenCalledWith(1);
+  });
+
+  it('recovers stale running jobs on startup', () => {
+    testDb.prepare("INSERT INTO restore_missing_twenty_runs (status) VALUES ('running')").run();
+    testDb.prepare("INSERT INTO restore_missing_twenty_runs (status) VALUES ('queued')").run();
+    testDb.prepare("INSERT INTO restore_missing_twenty_runs (status) VALUES ('completed')").run();
+
+    const changes = recoverStaleRestoreMissingTwentyJobs(testDb);
+    expect(changes).toBe(2);
+
+    const rows = testDb
+      .prepare('SELECT status, error FROM restore_missing_twenty_runs ORDER BY id ASC')
+      .all();
+    expect(rows[0].status).toBe('failed');
+    expect(rows[1].status).toBe('failed');
+    expect(rows[2].status).toBe('completed');
   });
 
   it('executes restore job and tracks progress', async () => {

@@ -20,6 +20,7 @@ import { initScheduler } from './services/scheduler.js';
 import { initPrintSheetCron } from './services/print-sheet-cron.js';
 import { initExpenseSyncCron } from './services/expense-sync-cron.js';
 import { recoverStaleParseRuns } from './services/parser.js';
+import { recoverStaleRestoreMissingTwentyJobs } from './services/restore-missing-twenty-jobs.js';
 import { getDb } from './db/connection.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -51,6 +52,7 @@ async function start() {
   initDb();
   migrate();
   recoverStaleParseRuns(getDb());
+  recoverStaleRestoreMissingTwentyJobs(getDb());
   initScheduler();
   initPrintSheetCron();
   initExpenseSyncCron();
