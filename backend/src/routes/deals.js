@@ -15,6 +15,13 @@ import {
   getActiveBulkResyncJob,
   getBulkResyncJob,
 } from '../services/bulk-resync-jobs.js';
+import {
+  countSyncedDealsForRestore,
+  createRestoreMissingTwentyJob,
+  executeRestoreMissingTwentyJob,
+  getActiveRestoreMissingTwentyJob,
+  getRestoreMissingTwentyJob,
+} from '../services/restore-missing-twenty-jobs.js';
 
 const router = Router();
 
@@ -124,6 +131,9 @@ router.post('/bulk-resync', (req, res) => {
   if (getActiveBulkResyncJob()) {
     return res.status(409).json({ error: 'Массовая пересинхронизация уже выполняется' });
   }
+  if (getActiveRestoreMissingTwentyJob()) {
+    return res.status(409).json({ error: 'Восстановление отсутствующих сделок уже выполняется' });
+  }
 
   const requestedTrigger = req.body?.trigger;
   const trigger =
@@ -145,6 +155,42 @@ router.get('/bulk-resync/jobs/active', (req, res) => {
 
 router.get('/bulk-resync/jobs/:id', (req, res) => {
   const job = getBulkResyncJob(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Задача не найдена' });
+  res.json(job);
+});
+
+router.get('/restore-missing-twenty/preview', (req, res) => {
+  res.json({ count: countSyncedDealsForRestore() });
+});
+
+router.post('/restore-missing-twenty', (req, res) => {
+  if (getActiveRestoreMissingTwentyJob()) {
+    return res.status(409).json({ error: 'Восстановление отсутствующих сделок уже выполняется' });
+  }
+  if (getActiveBulkResyncJob()) {
+    return res.status(409).json({ error: 'Массовая пересинхронизация уже выполняется' });
+  }
+
+  const requestedTrigger = req.body?.trigger;
+  const trigger =
+    typeof requestedTrigger === 'string' && requestedTrigger.trim()
+      ? requestedTrigger.trim()
+      : 'manual';
+
+  const job = createRestoreMissingTwentyJob({ trigger });
+  executeRestoreMissingTwentyJob(job.jobId).catch((err) => {
+    console.error(`[restore-missing-twenty] job ${job.jobId} failed:`, err.message);
+  });
+
+  res.status(201).json({ jobId: job.jobId });
+});
+
+router.get('/restore-missing-twenty/jobs/active', (req, res) => {
+  res.json(getActiveRestoreMissingTwentyJob() ?? null);
+});
+
+router.get('/restore-missing-twenty/jobs/:id', (req, res) => {
+  const job = getRestoreMissingTwentyJob(req.params.id);
   if (!job) return res.status(404).json({ error: 'Задача не найдена' });
   res.json(job);
 });

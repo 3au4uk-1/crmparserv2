@@ -588,6 +588,47 @@ export function useBulkResyncJob(jobId, { enabled = true } = {}) {
   });
 }
 
+function isRestoreMissingTwentyJobRunning(status) {
+  return status === 'queued' || status === 'running';
+}
+
+export function fetchRestoreMissingTwentyPreview() {
+  return api.get('/deals/restore-missing-twenty/preview').then((r) => r.data);
+}
+
+export function useStartRestoreMissingTwenty() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post('/deals/restore-missing-twenty').then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['restore-missing-twenty-active-job'] });
+    },
+  });
+}
+
+export function useActiveRestoreMissingTwentyJob() {
+  return useQuery({
+    queryKey: ['restore-missing-twenty-active-job'],
+    queryFn: () => api.get('/deals/restore-missing-twenty/jobs/active').then((r) => r.data),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return isRestoreMissingTwentyJobRunning(status) ? 2000 : false;
+    },
+  });
+}
+
+export function useRestoreMissingTwentyJob(jobId, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: ['restore-missing-twenty-job', jobId],
+    queryFn: () => api.get(`/deals/restore-missing-twenty/jobs/${jobId}`).then((r) => r.data),
+    enabled: enabled && !!jobId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return isRestoreMissingTwentyJobRunning(status) ? 2000 : false;
+    },
+  });
+}
+
 export async function downloadExportFile(jobId, from, to) {
   const resp = await api.get(`/export/${jobId}/file`, { responseType: 'blob' });
   const url = URL.createObjectURL(resp.data);

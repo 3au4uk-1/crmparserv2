@@ -20,6 +20,10 @@ import {
   useActiveBulkResyncJob,
   useBulkResyncJob,
   fetchBulkResyncPreview,
+  useStartRestoreMissingTwenty,
+  useActiveRestoreMissingTwentyJob,
+  useRestoreMissingTwentyJob,
+  fetchRestoreMissingTwentyPreview,
 } from '../api';
 import PageHeader from '../components/ui/PageHeader';
 
@@ -119,6 +123,112 @@ function BulkResyncPanel() {
           </p>
           <p>
             Обновлено: <span className="font-medium tabular-nums text-ink">{details.dealsUpdated ?? 0}</span>
+            {' · '}
+            Ошибок: <span className="font-medium tabular-nums text-ink">{details.dealsFailed ?? 0}</span>
+          </p>
+          {Array.isArray(details.errors) && details.errors.length > 0 && (
+            <ul className="mt-2 text-xs text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md space-y-1">
+              {details.errors.map((entry) => (
+                <li key={`${entry.dealId}-${entry.error}`}>
+                  Сделка #{entry.dealId}: {entry.error}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {startError && (
+        <p className="mt-3 text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md">{startError}</p>
+      )}
+      {jobError && (
+        <p className="mt-3 text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md">
+          {jobError.response?.data?.error || jobError.message || 'Не удалось получить статус задачи'}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function RestoreMissingTwentyPanel() {
+  const [jobId, setJobId] = useState('');
+  const [startError, setStartError] = useState('');
+
+  const startRestore = useStartRestoreMissingTwenty();
+  const { data: activeJob } = useActiveRestoreMissingTwentyJob();
+  const { data: job, error: jobError } = useRestoreMissingTwentyJob(jobId, { enabled: !!jobId });
+
+  useEffect(() => {
+    if (!activeJob?.jobId || jobId) return;
+    setJobId(activeJob.jobId);
+  }, [activeJob, jobId]);
+
+  const status = job?.status || activeJob?.status;
+  const running = startRestore.isPending || isBulkResyncRunning(status);
+  const details = job || activeJob || {};
+
+  async function onStartRestore() {
+    setStartError('');
+    try {
+      const preview = await fetchRestoreMissingTwentyPreview();
+      const count = preview?.count ?? 0;
+      if (count === 0) {
+        setStartError('Нет синхронизированных сделок для проверки');
+        return;
+      }
+      const confirmed = window.confirm(
+        `Будет проверено ${count} сделок с twenty_id. Отсутствующие в Twenty будут созданы заново. Продолжить?`,
+      );
+      if (!confirmed) return;
+
+      startRestore.mutate(undefined, {
+        onSuccess: (data) => {
+          if (data?.jobId) setJobId(String(data.jobId));
+        },
+        onError: (err) => {
+          if (err.response?.status === 409) {
+            setStartError(
+              err.response?.data?.error || 'Другая задача синхронизации с Twenty уже выполняется',
+            );
+            return;
+          }
+          setStartError(
+            err.response?.data?.error || err.message || 'Не удалось запустить восстановление',
+          );
+        },
+      });
+    } catch (err) {
+      setStartError(err.response?.data?.error || err.message || 'Не удалось получить количество сделок');
+    }
+  }
+
+  return (
+    <div className="mt-6 pt-6 border-t border-border">
+      <h4 className="text-sm font-semibold text-ink mb-1">Восстановить отсутствующие в Twenty</h4>
+      <p className="text-xs text-ink-muted mb-3 max-w-xl leading-relaxed">
+        Проверит все локальные сделки с twenty_id и создаст в Twenty те, которые были удалены.
+        Если сделка уже есть по номеру брони, будет привязана к существующей записи.
+      </p>
+      <button type="button" onClick={onStartRestore} disabled={running} className="btn-secondary">
+        {running ? 'Проверка выполняется…' : 'Проверить и восстановить'}
+      </button>
+
+      {(jobId || activeJob?.jobId) && (
+        <div className="mt-4 space-y-1 text-sm text-ink-muted">
+          <p>
+            Статус: <span className="font-medium text-ink">{status || 'unknown'}</span>
+          </p>
+          <p>
+            Прогресс:{' '}
+            <span className="font-medium tabular-nums text-ink">
+              {details.dealsDone ?? 0} / {details.dealsTotal ?? 0}
+            </span>
+          </p>
+          <p>
+            Восстановлено:{' '}
+            <span className="font-medium tabular-nums text-ink">{details.dealsRestored ?? 0}</span>
+            {' · '}
+            Пропущено: <span className="font-medium tabular-nums text-ink">{details.dealsSkipped ?? 0}</span>
             {' · '}
             Ошибок: <span className="font-medium tabular-nums text-ink">{details.dealsFailed ?? 0}</span>
           </p>
@@ -638,6 +748,7 @@ export default function Settings() {
                 </p>
               </div>
               <BulkResyncPanel />
+              <RestoreMissingTwentyPanel />
             </div>
           </Section>
 

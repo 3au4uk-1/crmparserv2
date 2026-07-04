@@ -160,6 +160,22 @@ CREATE TABLE IF NOT EXISTS bulk_resync_runs (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS restore_missing_twenty_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  status TEXT NOT NULL DEFAULT 'queued',
+  trigger TEXT NOT NULL DEFAULT 'manual',
+  started_at TEXT,
+  finished_at TEXT,
+  deals_total INTEGER DEFAULT 0,
+  deals_done INTEGER DEFAULT 0,
+  deals_restored INTEGER DEFAULT 0,
+  deals_skipped INTEGER DEFAULT 0,
+  deals_failed INTEGER DEFAULT 0,
+  errors_json TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 INSERT OR IGNORE INTO companies (code, full_name) VALUES ('ПРО', 'ProInteractive');
 INSERT OR IGNORE INTO companies (code, full_name) VALUES ('АРТ', 'Art-Active');
 INSERT OR IGNORE INTO companies (code, full_name) VALUES ('АРЕНДА', 'Arenda');

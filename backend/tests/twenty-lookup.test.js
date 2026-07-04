@@ -9,7 +9,35 @@ vi.mock('../src/services/twenty-config.js', () => ({
   requireTwentyConfig: () => ({ apiUrl: 'https://crm.example/graphql', apiToken: 'tok' }),
 }));
 
-import { findTwentyOpportunityIdByBooking } from '../src/services/twenty-lookup.js';
+import {
+  findTwentyOpportunityIdByBooking,
+  opportunityExistsInTwenty,
+} from '../src/services/twenty-lookup.js';
+
+describe('opportunityExistsInTwenty', () => {
+  beforeEach(() => gqlMock.mockReset());
+
+  it('returns true when opportunity exists', async () => {
+    gqlMock.mockResolvedValue({
+      status: 200,
+      data: {
+        data: {
+          opportunities: { edges: [{ node: { id: 'opp-abc' } }] },
+        },
+      },
+    });
+
+    expect(await opportunityExistsInTwenty('opp-abc')).toBe(true);
+  });
+
+  it('returns false when opportunity is missing', async () => {
+    gqlMock.mockResolvedValue({
+      status: 200,
+      data: { data: { opportunities: { edges: [] } } },
+    });
+    expect(await opportunityExistsInTwenty('opp-gone')).toBe(false);
+  });
+});
 
 describe('findTwentyOpportunityIdByBooking', () => {
   beforeEach(() => gqlMock.mockReset());
