@@ -47,9 +47,9 @@ export function getDefaultParseRange(now = new Date()) {
 }
 
 const TIER_DAY_OFFSET = {
-  'weekday-fast': 4,
+  'weekday-fast': 7,
   'weekday-deep': 14,
-  'night-light': 2,
+  'night-light': 4,
   weekend: 7,
 };
 

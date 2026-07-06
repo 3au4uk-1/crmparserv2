@@ -58,8 +58,8 @@ describe('resolveParseTier', () => {
 });
 
 describe('getParseRangeForTier integration', () => {
-  it('weekday-fast range matches +4 day offset', () => {
+  it('weekday-fast range matches +7 day offset', () => {
     const range = getParseRangeForTier('weekday-fast', new Date('2026-06-19T10:00:00+03:00'));
-    expect(range.endDate).toBe('2026-06-23');
+    expect(range.endDate).toBe('2026-06-26');
   });
 });

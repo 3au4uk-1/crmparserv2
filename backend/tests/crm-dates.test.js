@@ -36,10 +36,10 @@ describe('crm-dates', () => {
 });
 
 describe('getParseRangeForTier', () => {
-  it('weekday-fast ends 4 days ahead', () => {
+  it('weekday-fast ends 7 days ahead', () => {
     const now = new Date('2026-06-19T10:00:00+03:00');
     const range = getParseRangeForTier('weekday-fast', now);
-    expect(range.endDate).toBe('2026-06-23');
+    expect(range.endDate).toBe('2026-06-26');
   });
 
   it('weekday-deep ends 14 days ahead', () => {
@@ -48,10 +48,10 @@ describe('getParseRangeForTier', () => {
     expect(range.endDate).toBe('2026-07-03');
   });
 
-  it('night-light ends 2 days ahead', () => {
+  it('night-light ends 4 days ahead', () => {
     const now = new Date('2026-06-19T02:00:00+03:00');
     const range = getParseRangeForTier('night-light', now);
-    expect(range.endDate).toBe('2026-06-21');
+    expect(range.endDate).toBe('2026-06-23');
   });
 
   it('weekend ends 7 days ahead', () => {
