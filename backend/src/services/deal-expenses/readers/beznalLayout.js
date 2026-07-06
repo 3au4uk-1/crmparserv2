@@ -39,6 +39,11 @@ function getCellHyperlink(meta, rowIndex, colIndex) {
   return cell?.l?.Target || cell?.l?.Rel?.Target || null;
 }
 
+function isCancelledPayment(row, statusCol) {
+  const status = String(row[statusCol] || "").toLowerCase();
+  return status.includes("отменен");
+}
+
 function isPaymentRow(row, statusCol, nameCol) {
   const status = String(row[statusCol] || "").toLowerCase();
   const name = String(row[nameCol] || "").toLowerCase();
@@ -66,6 +71,8 @@ function parseBeznalSheet(data, meta) {
     if (!row) continue;
 
     if (isPaymentRow(row, statusCol, nameCol)) {
+      if (isCancelledPayment(row, statusCol)) continue;
+
       const amount = parseAmount(row[amountCol]);
       if (amount === null || amount === 0) continue;
 

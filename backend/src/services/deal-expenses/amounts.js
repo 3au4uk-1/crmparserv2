@@ -4,8 +4,9 @@ function parseAmount(value) {
 
   let text = String(value)
     .replace(/\u00a0/g, " ")
-    .replace(/р\.?/gi, "")
+    .replace(/руб\.?/gi, "")
     .replace(/₽/g, "")
+    .replace(/р\.?/gi, "")
     .trim();
 
   if (!text) return null;
