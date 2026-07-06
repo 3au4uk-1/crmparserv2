@@ -22,6 +22,15 @@ import {
   getActiveRestoreMissingTwentyJob,
   getRestoreMissingTwentyJob,
 } from '../services/restore-missing-twenty-jobs.js';
+import {
+  countPaymentSyncTargets,
+  runPaymentSync,
+} from '../services/payment-sync.js';
+import {
+  isPaymentSyncInProgress,
+  releasePaymentSyncLock,
+  tryAcquirePaymentSyncLock,
+} from '../services/payment-sync-lock.js';
 
 const router = Router();
 
@@ -193,6 +202,50 @@ router.get('/restore-missing-twenty/jobs/:id', (req, res) => {
   const job = getRestoreMissingTwentyJob(req.params.id);
   if (!job) return res.status(404).json({ error: 'Задача не найдена' });
   res.json(job);
+});
+
+router.get('/payment-sync/preview', (req, res) => {
+  const { from, to } = req.query;
+  if (!from || !to) {
+    return res.status(400).json({ error: 'from and to required (YYYY-MM-DD)' });
+  }
+  try {
+    const db = getDb();
+    res.json(countPaymentSyncTargets(db, from, to));
+  } catch (err) {
+    if (err.message === 'from must be <= to' || err.message === 'from and to required (YYYY-MM-DD)') {
+      return res.status(400).json({ error: err.message });
+    }
+    throw err;
+  }
+});
+
+router.post('/payment-sync', async (req, res, next) => {
+  if (!tryAcquirePaymentSyncLock()) {
+    return res.status(409).json({ error: 'Синхронизация поступлений уже выполняется' });
+  }
+
+  const { from, to } = req.body || {};
+  if (!from || !to) {
+    releasePaymentSyncLock();
+    return res.status(400).json({ error: 'from and to required (YYYY-MM-DD)' });
+  }
+
+  try {
+    const result = await runPaymentSync({ from, to });
+    res.json(result);
+  } catch (err) {
+    if (err.message === 'from must be <= to' || err.message === 'from and to required (YYYY-MM-DD)') {
+      return res.status(400).json({ error: err.message });
+    }
+    next(err);
+  } finally {
+    releasePaymentSyncLock();
+  }
+});
+
+router.get('/payment-sync/status', (req, res) => {
+  res.json({ inProgress: isPaymentSyncInProgress() });
 });
 
 router.post('/import-by-booking', importAuthMiddleware, async (req, res) => {

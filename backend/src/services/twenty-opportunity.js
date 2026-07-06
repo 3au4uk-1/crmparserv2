@@ -1,6 +1,18 @@
 /** Twenty GraphQL enum values for Opportunity.stage (UI labels are localized separately). */
 import { buildCloseDate } from '../utils/crm-dates.js';
 import { isRestorationItem } from './restoration.js';
+import { PAYMENT_FIELDS, PAYMENT_STATUS } from './payment-field-names.js';
+
+export function buildPaymentFieldsInput(deal) {
+  const input = {
+    [PAYMENT_FIELDS.status]: deal.payment_status || PAYMENT_STATUS.NONE,
+    [PAYMENT_FIELDS.amount]: {
+      amountMicros: Math.round((deal.payment_amount || 0) * 1_000_000),
+      currencyCode: 'RUB',
+    },
+  };
+  return input;
+}
 
 export const OPPORTUNITY_STAGE_OPTIONS = [
   { value: 'NOVYY', label: 'Новый' },
@@ -95,6 +107,16 @@ export function buildOpportunityInput(deal, items, options = {}) {
   if (deal.load_date) {
     const time = /^\d{1,2}:\d{2}$/.test(deal.load_time || '') ? deal.load_time : '00:00';
     input.loadDate = `${deal.load_date}T${time.padStart(5, '0')}:00+03:00`;
+  }
+
+  if (deal.payment_amount != null && deal.payment_amount > 0) {
+    input[PAYMENT_FIELDS.amount] = {
+      amountMicros: Math.round(deal.payment_amount * 1_000_000),
+      currencyCode: 'RUB',
+    };
+  }
+  if (deal.payment_status) {
+    input[PAYMENT_FIELDS.status] = deal.payment_status;
   }
 
   return input;

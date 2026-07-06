@@ -596,6 +596,21 @@ export function fetchRestoreMissingTwentyPreview() {
   return api.get('/deals/restore-missing-twenty/preview').then((r) => r.data);
 }
 
+export function fetchPaymentSyncPreview({ from, to }) {
+  return api.get('/deals/payment-sync/preview', { params: { from, to } }).then((r) => r.data);
+}
+
+export function usePaymentSync() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ from, to }) =>
+      api.post('/deals/payment-sync', { from, to }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['deals'] });
+    },
+  });
+}
+
 export function useStartRestoreMissingTwenty() {
   const qc = useQueryClient();
   return useMutation({

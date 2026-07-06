@@ -24,6 +24,7 @@ import { parseTonyOrder } from './tony-parser.js';
 import { buildTonyDealFields, buildTonyItems, tonyContentHash } from './tony-mapping.js';
 import { planEventReconciliation } from './tony-reconcile.js';
 import { createPool, withRetry } from './fetch-pool.js';
+import { parseCalendarPayments, paymentContentHash, applyPaymentAggregateToDb } from './payment-parser.js';
 
 function buildUrl(path) {
   const base = config.crmBaseUrl.replace(/\/$/, '');
@@ -75,7 +76,7 @@ export async function fetchEvents(startDate, endDate) {
   return normalizeEventsResponse(resp.data);
 }
 
-async function fetchDescription(eventId) {
+export async function fetchDescription(eventId) {
   const url = buildUrl('includes/cal_description.php');
 
   const resp = await axios.post(
@@ -94,6 +95,27 @@ async function fetchDescription(eventId) {
   );
 
   return resp.data;
+}
+
+export function parseDescriptionResponse(data) {
+  const json = typeof data === 'string' ? JSON.parse(data) : data;
+  return {
+    descHtml: json?.description || '',
+    calPayments: json?.payments || null,
+  };
+}
+
+function persistDealPayments(db, dealId, calPayments, existing, dealsToResync) {
+  const aggregate = parseCalendarPayments(calPayments);
+  const hash = paymentContentHash(aggregate);
+  if (existing?.payment_hash === hash) return false;
+
+  applyPaymentAggregateToDb(db, dealId, aggregate);
+
+  if (existing?.twenty_id && !dealsToResync.includes(dealId)) {
+    dealsToResync.push(dealId);
+  }
+  return true;
 }
 
 function getSetting(key) {
@@ -128,9 +150,7 @@ export async function fetchEventData(event, eventId, tonyReady) {
     return null;
   }
 
-  const descHtml = typeof descJson === 'string'
-    ? JSON.parse(descJson).description
-    : descJson.description;
+  const { descHtml, calPayments } = parseDescriptionResponse(descJson);
 
   if (!descHtml) return null;
 
@@ -138,7 +158,7 @@ export async function fetchEventData(event, eventId, tonyReady) {
   const tonyOrders = await resolveTonyOrders(tonyReady, bookingNumbers);
   const calParsed = parseDealDescription(descHtml);
 
-  return { bookingNumbers, descHtml, calParsed, tonyOrders };
+  return { bookingNumbers, descHtml, calParsed, calPayments, tonyOrders };
 }
 
 /** Pooled, delay-free variant of resolveTonyOrders for the parallel pipeline. */
@@ -184,15 +204,13 @@ export async function prefetchAll(events, tonyReady, startDate, endDate, run) {
         console.error(`Failed to fetch description for event ${eventId}:`, err.message);
         return;
       }
-      const descHtml = typeof descJson === 'string'
-        ? JSON.parse(descJson).description
-        : descJson.description;
+      const { descHtml, calPayments } = parseDescriptionResponse(descJson);
       if (!descHtml) return;
 
       const tonyOrders = await resolveTonyOrdersPooled(tonyReady, bookingNumbers, run);
       const calParsed = parseDealDescription(descHtml);
 
-      map.set(eventId, { bookingNumbers, descHtml, calParsed, tonyOrders });
+      map.set(eventId, { bookingNumbers, descHtml, calParsed, calPayments, tonyOrders });
 
       done++;
       if (done % 25 === 0 || done === total) {
@@ -216,10 +234,12 @@ export function recoverStaleParseRuns(db) {
 }
 
 export async function applyEvent(db, event, eventId, data, ctx) {
-  const { bookingNumbers, descHtml, calParsed, tonyOrders } = data;
+  const { bookingNumbers, descHtml, calParsed, calPayments, tonyOrders } = data;
   const { knownCodes, keywords, llmPrompt, counters, dealsToResync } = ctx;
   const titleInfo = parseDealTitle(event.title || '', knownCodes);
   const plan = planEventReconciliation(db, eventId, bookingNumbers);
+  const paymentAggregate = parseCalendarPayments(calPayments);
+  const paymentHash = paymentContentHash(paymentAggregate);
 
   // Relink a lone calendar deal to a single new booking: change only its key/booking,
   // keeping its data_source so the per-target logic below decides the source.
@@ -242,7 +262,12 @@ export async function applyEvent(db, event, eventId, data, ctx) {
         continue;
       }
       const hash = tonyContentHash(order);
-      if (existing && existing.content_hash === hash) { counters.skippedDeals++; continue; }
+      if (existing && existing.content_hash === hash) {
+        if (!persistDealPayments(db, existing.id, calPayments, existing, dealsToResync)) {
+          counters.skippedDeals++;
+        }
+        continue;
+      }
 
       const fields = buildTonyDealFields(order);
       const classifiedItems = await classifyItems(buildTonyItems(order), keywords, llmPrompt);
@@ -257,6 +282,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
                 address = ?, work_time = ?, arrival_time = ?, dismantle_time = ?,
                 load_date = ?, load_time = ?, budget = ?,
                 content_hash = ?, data_source = 'tony', tony_order_id = ?, crm_lead_id = ?,
+                payment_amount = ?, payment_status = ?, payment_count = ?, payment_hash = ?,
                 twenty_stage = CASE WHEN ? THEN NULL ELSE twenty_stage END,
                 updated_at = datetime('now')
               WHERE id = ?
@@ -267,6 +293,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           fields.address, fields.work_time, fields.arrival_time, fields.dismantle_time,
           fields.load_date, fields.load_time, fields.budget,
           hash, target.bookingNumber, event.leadid,
+          paymentAggregate.paymentAmount, paymentAggregate.paymentStatus, paymentAggregate.paymentCount, paymentHash,
           wasCancelled ? 1 : 0, existing.id
         );
         const existingItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(existing.id);
@@ -279,13 +306,15 @@ export async function applyEvent(db, event, eventId, data, ctx) {
                 crm_event_id, deal_key, data_source, crm_lead_id, title, company_code, manager_name,
                 start_date, end_date, department, contact_name, contact_email, contact_company, contact_phone,
                 address, work_time, arrival_time, dismantle_time, load_date, load_time, budget,
-                tony_order_id, content_hash, raw_description
-              ) VALUES (?, ?, 'tony', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                tony_order_id, content_hash, raw_description,
+                payment_amount, payment_status, payment_count, payment_hash
+              ) VALUES (?, ?, 'tony', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `).run(
           eventId, target.dealKey, event.leadid, event.title, titleInfo.companyCode, titleInfo.managerName,
           fields.start_date, fields.end_date, event.department, calContact.name, calContact.email, calContact.company, calContact.phone,
           fields.address, fields.work_time, fields.arrival_time, fields.dismantle_time, fields.load_date, fields.load_time, fields.budget,
-          target.bookingNumber, hash, descHtml
+          target.bookingNumber, hash, descHtml,
+          paymentAggregate.paymentAmount, paymentAggregate.paymentStatus, paymentAggregate.paymentCount, paymentHash
         );
         const dealId = insert.lastInsertRowid;
         for (const item of classifiedItems) {
@@ -297,11 +326,21 @@ export async function applyEvent(db, event, eventId, data, ctx) {
     } else {
       // No Tony order for this target: title has no booking, or Tony unreachable/404.
       // Keep existing Tony-sourced data untouched during an outage (do not clobber with calendar).
-      if (existing && existing.data_source === 'tony') { counters.skippedDeals++; continue; }
+      if (existing && existing.data_source === 'tony') {
+        if (!persistDealPayments(db, existing.id, calPayments, existing, dealsToResync)) {
+          counters.skippedDeals++;
+        }
+        continue;
+      }
 
       const calTonyOrderId = target.bookingNumber || titleInfo.tonyOrderId || null;
       const hash = contentHash(descHtml);
-      if (existing && existing.content_hash === hash) { counters.skippedDeals++; continue; }
+      if (existing && existing.content_hash === hash) {
+        if (!persistDealPayments(db, existing.id, calPayments, existing, dealsToResync)) {
+          counters.skippedDeals++;
+        }
+        continue;
+      }
 
       const parsed = calParsed;
       const classifiedItems = await classifyItems(parsed.items, keywords, llmPrompt);
@@ -315,6 +354,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
                 contact_name = ?, contact_email = ?, contact_company = ?, contact_phone = ?,
                 address = ?, venue_type = ?, arrival_time = ?, ready_time = ?, work_time = ?, dismantle_time = ?,
                 content_hash = ?, raw_description = ?, crm_lead_id = ?, tony_order_id = ?, data_source = 'calendar',
+                payment_amount = ?, payment_status = ?, payment_count = ?, payment_hash = ?,
                 twenty_stage = CASE WHEN ? THEN NULL ELSE twenty_stage END, updated_at = datetime('now')
               WHERE id = ?
             `).run(
@@ -323,7 +363,9 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           parsed.contact.name, parsed.contact.email, parsed.contact.company, parsed.contact.phone,
           parsed.event.address, parsed.event.venueType, parsed.event.arrivalTime || null, parsed.event.readyTime || null,
           parsed.event.workTime || null, parsed.event.dismantleTime || null,
-          hash, descHtml, event.leadid, calTonyOrderId, wasCancelled ? 1 : 0, existing.id
+          hash, descHtml, event.leadid, calTonyOrderId,
+          paymentAggregate.paymentAmount, paymentAggregate.paymentStatus, paymentAggregate.paymentCount, paymentHash,
+          wasCancelled ? 1 : 0, existing.id
         );
         const existingItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(existing.id);
         replaceDealItemsPreservingOverrides(db, existing.id, classifiedItems, buildOverrideMap(existingItems));
@@ -335,14 +377,16 @@ export async function applyEvent(db, event, eventId, data, ctx) {
                 crm_event_id, deal_key, data_source, crm_lead_id, title, company_code, manager_name,
                 start_date, end_date, department, status, legal_entity, invoice_number, budget, discount,
                 contact_name, contact_email, contact_company, contact_phone, address, venue_type,
-                arrival_time, ready_time, work_time, dismantle_time, tony_order_id, content_hash, raw_description
-              ) VALUES (?, ?, 'calendar', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                arrival_time, ready_time, work_time, dismantle_time, tony_order_id, content_hash, raw_description,
+                payment_amount, payment_status, payment_count, payment_hash
+              ) VALUES (?, ?, 'calendar', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `).run(
           eventId, target.dealKey, event.leadid, event.title, titleInfo.companyCode, titleInfo.managerName,
           event.start, event.end, event.department, parsed.meta.status, parsed.meta.legalEntity, parsed.meta.invoiceNumber,
           parsed.meta.budget, parsed.meta.discount, parsed.contact.name, parsed.contact.email, parsed.contact.company, parsed.contact.phone,
           parsed.event.address, parsed.event.venueType, parsed.event.arrivalTime || null, parsed.event.readyTime || null,
-          parsed.event.workTime || null, parsed.event.dismantleTime || null, calTonyOrderId, hash, descHtml
+          parsed.event.workTime || null, parsed.event.dismantleTime || null, calTonyOrderId, hash, descHtml,
+          paymentAggregate.paymentAmount, paymentAggregate.paymentStatus, paymentAggregate.paymentCount, paymentHash
         );
         const dealId = insert.lastInsertRowid;
         for (const item of classifiedItems) {

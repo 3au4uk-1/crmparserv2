@@ -165,6 +165,10 @@ export function migrate() {
   ensureColumn(db, 'deals', 'dismantle_time', 'TEXT');
   ensureColumn(db, 'sync_runs', 'action', 'TEXT');
   ensureColumn(db, 'deals', 'twenty_stage', 'TEXT');
+  ensureColumn(db, 'deals', 'payment_amount', 'REAL');
+  ensureColumn(db, 'deals', 'payment_status', 'TEXT');
+  ensureColumn(db, 'deals', 'payment_count', 'INTEGER');
+  ensureColumn(db, 'deals', 'payment_hash', 'TEXT');
 
   db.prepare(
     "INSERT OR IGNORE INTO settings (key, value) VALUES ('opportunity_stage', 'NOVYY')"

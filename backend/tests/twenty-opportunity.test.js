@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildOpportunityInput,
+  buildPaymentFieldsInput,
   computeDealItemsTotal,
   computeLineItemTotal,
   parseQuantity,
@@ -82,6 +83,30 @@ describe('buildOpportunityInput', () => {
   it('omits loadDate when no load_date', () => {
     const input = buildOpportunityInput({ title: 'T', crm_event_id: 'e1' }, []);
     expect(input.loadDate).toBeUndefined();
+  });
+
+  it('includes payment fields when deal has payments', () => {
+    const input = buildOpportunityInput(
+      { title: 'T', crm_event_id: 'e1', payment_amount: 235752, payment_status: 'PREDOPLATA' },
+      []
+    );
+    expect(input.summaPostupleniy).toEqual({ amountMicros: 235752_000_000, currencyCode: 'RUB' });
+    expect(input.statusOplaty).toBe('PREDOPLATA');
+  });
+
+  it('buildPaymentFieldsInput always includes amount and status', () => {
+    const input = buildPaymentFieldsInput({ payment_amount: 0, payment_status: 'NE_OPLACHENO' });
+    expect(input.summaPostupleniy.amountMicros).toBe(0);
+    expect(input.statusOplaty).toBe('NE_OPLACHENO');
+  });
+
+  it('omits payment amount when zero', () => {
+    const input = buildOpportunityInput(
+      { title: 'T', crm_event_id: 'e1', payment_amount: 0, payment_status: 'NE_OPLACHENO' },
+      []
+    );
+    expect(input.summaPostupleniy).toBeUndefined();
+    expect(input.statusOplaty).toBe('NE_OPLACHENO');
   });
 });
 

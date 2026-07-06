@@ -7,7 +7,10 @@ import {
   useBulkReject,
   useBulkDeleteDeals,
   useDeleteAllRejected,
+  usePaymentSync,
+  fetchPaymentSyncPreview,
 } from '../api';
+import { IconRefresh } from '../components/ui/Icons';
 import DealRow from '../components/DealRow';
 import DealCard from '../components/DealCard';
 import PageHeader from '../components/ui/PageHeader';
@@ -43,6 +46,8 @@ export default function Deals() {
   const [page, setPage] = useState(0);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [sort, setSort] = useState({ sortBy: 'start_date', sortDir: 'desc' });
+  const [paymentSyncError, setPaymentSyncError] = useState('');
+  const [paymentSyncResult, setPaymentSyncResult] = useState(null);
 
   useEffect(() => {
     const status = searchParams.get('status') || '';
@@ -62,6 +67,7 @@ export default function Deals() {
   const bulkReject = useBulkReject();
   const bulkDelete = useBulkDeleteDeals();
   const deleteAllRejected = useDeleteAllRejected();
+  const paymentSync = usePaymentSync();
 
   const deals = data?.deals || [];
   const total = data?.total ?? 0;
@@ -121,6 +127,50 @@ export default function Deals() {
     );
   }
 
+  async function onPaymentSync() {
+    setPaymentSyncError('');
+    setPaymentSyncResult(null);
+
+    if (!filters.from || !filters.to) {
+      setPaymentSyncError('Укажите обе даты — с и по');
+      return;
+    }
+
+    try {
+      const preview = await fetchPaymentSyncPreview({
+        from: filters.from,
+        to: filters.to,
+      });
+      if (!preview.dealsInRange) {
+        setPaymentSyncError('В выбранном диапазоне нет сделок');
+        return;
+      }
+
+      const confirmed = window.confirm(
+        `Синхронизировать поступления для ${preview.dealsInRange} сделок` +
+          (preview.dealsInTwenty
+            ? ` (${preview.dealsInTwenty} будут обновлены в Twenty)`
+            : '') +
+          ` за период ${filters.from} — ${filters.to}?`,
+      );
+      if (!confirmed) return;
+
+      const result = await paymentSync.mutateAsync({
+        from: filters.from,
+        to: filters.to,
+      });
+      setPaymentSyncResult(result);
+    } catch (err) {
+      if (err.response?.status === 409) {
+        setPaymentSyncError('Синхронизация поступлений уже выполняется');
+        return;
+      }
+      setPaymentSyncError(
+        err.response?.data?.error || err.message || 'Не удалось синхронизировать поступления',
+      );
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -177,6 +227,17 @@ export default function Deals() {
             />
           </label>
 
+          <button
+            type="button"
+            onClick={onPaymentSync}
+            disabled={paymentSync.isPending}
+            className="btn-secondary btn-sm"
+            title="Загрузить поступления из календаря и обновить статус оплаты в Twenty"
+          >
+            <IconRefresh />
+            {paymentSync.isPending ? 'Синхронизация…' : 'Синхр. поступления'}
+          </button>
+
           {filters.status === 'rejected' && total > 0 && selectedIds.size === 0 && (
             <button
               onClick={() => {
@@ -190,6 +251,26 @@ export default function Deals() {
             </button>
           )}
         </div>
+
+        {(paymentSyncError || paymentSyncResult) && (
+          <div className="mt-3 text-sm">
+            {paymentSyncError && (
+              <p className="text-pastel-red-text">{paymentSyncError}</p>
+            )}
+            {paymentSyncResult && (
+              <p className="text-pastel-green-text">
+                Готово: обновлено локально — {paymentSyncResult.dealsUpdatedLocal},
+                в Twenty — {paymentSyncResult.dealsUpdatedTwenty}
+                {paymentSyncResult.dealsWithPayments > 0
+                  ? `, с поступлениями — ${paymentSyncResult.dealsWithPayments}`
+                  : ''}
+                {paymentSyncResult.dealsFailed > 0
+                  ? `, ошибок — ${paymentSyncResult.dealsFailed}`
+                  : ''}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {selectedIds.size > 0 && (
@@ -271,6 +352,7 @@ export default function Deals() {
                     <SortableTh column="manager_name" label="Менеджер" />
                     <th title="Позиций в Twenty / всего">Twenty</th>
                     <SortableTh column="budget" label="Бюджет" />
+                    <th>Оплата</th>
                     <SortableTh column="approval_status" label="Статус" />
                     <th>Действия</th>
                   </tr>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useDeal, useApproveDeal, useRejectDeal, useDeleteDeal, useResyncDeal } from '../api';
 import { formatEventDate, formatDateTime } from '../utils/dates';
 import StatusBadge from './StatusBadge';
+import PaymentBadge from './PaymentBadge';
 import DealItems from './DealItems';
 import TonyBookingField from './TonyBookingField';
 import { IconCheck, IconX, IconRefresh } from './ui/Icons';
@@ -40,6 +41,9 @@ export default function DealCard({ deal, selected, onSelect }) {
           <p className="text-xs text-ink-faint mt-0.5 font-mono">
             {deal.company_code} · {deal.manager_name}
           </p>
+          <div className="mt-1">
+            <PaymentBadge status={deal.payment_status} amount={deal.payment_amount} />
+          </div>
         </div>
       </div>
 

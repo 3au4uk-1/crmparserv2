@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useDeal, useApproveDeal, useRejectDeal, useDeleteDeal, useResyncDeal } from '../api';
 import { formatEventDate, formatDateTime } from '../utils/dates';
 import StatusBadge from './StatusBadge';
+import PaymentBadge from './PaymentBadge';
 import DealItems from './DealItems';
 import TonyBookingField from './TonyBookingField';
 import { IconCheck, IconX, IconRefresh } from './ui/Icons';
@@ -40,6 +41,9 @@ export default function DealRow({ deal, selected, onSelect }) {
           {deal.branding_count}/{deal.total_items}
         </td>
         <td className="text-sm tabular-nums">{deal.budget}</td>
+        <td>
+          <PaymentBadge status={deal.payment_status} amount={deal.payment_amount} />
+        </td>
         <td>
           <StatusBadge status={deal.approval_status} />
           {deal.twenty_error && (
@@ -104,7 +108,7 @@ export default function DealRow({ deal, selected, onSelect }) {
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={9} className="bg-surface-muted p-0">
+          <td colSpan={10} className="bg-surface-muted p-0">
             <div className="p-5 border-t border-border">
               <dl className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
                 <div><dt className="text-ink-muted text-xs mb-0.5">Контакт</dt><dd>{details?.contact_name || '—'}</dd></div>
