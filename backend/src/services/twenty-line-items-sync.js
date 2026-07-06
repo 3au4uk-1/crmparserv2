@@ -4,6 +4,7 @@ import {
 } from './twenty-line-item.js';
 import { isRestorationItem } from './restoration.js';
 import { isPodryadItem } from './podryad.js';
+import { isBannerItem } from './banner.js';
 import { logTwentyStep } from './twenty-sync-log.js';
 import { DEFAULT_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
 
@@ -85,6 +86,7 @@ export async function syncLineItemsDiff({
   deal = null,
   restorationList = [],
   podryadList = [],
+  bannerList = [],
   ignoreStageProtection = false,
 }) {
   const { toUpdate, toCreate, toDelete, preserved } = computeLineItemDiff(
@@ -93,7 +95,7 @@ export async function syncLineItemsDiff({
     { ignoreStageProtection },
   );
 
-  const lineItemOptions = { deal, restorationList, podryadList };
+  const lineItemOptions = { deal, restorationList, podryadList, bannerList };
 
   logTwentyStep('line_items.diff', {
     toUpdate: toUpdate.length,
@@ -117,6 +119,11 @@ export async function syncLineItemsDiff({
   const podryadItems = eligibleItems.filter((i) => isPodryadItem(i.name, podryadList));
   if (podryadItems.length) {
     logTwentyStep('line_items.podryad_tip', { names: podryadItems.map((i) => i.name) });
+  }
+
+  const bannerItems = eligibleItems.filter((i) => isBannerItem(i.name, bannerList));
+  if (bannerItems.length) {
+    logTwentyStep('line_items.banner_tip', { names: bannerItems.map((i) => i.name) });
   }
 
   for (const lineItemId of toDelete) {
@@ -157,7 +164,7 @@ export async function syncLineItemsDiff({
           warehouseItemId,
           oppId,
           position === 0 ? 'first' : position,
-          { deal, restorationList, podryadList }
+          { deal, restorationList, podryadList, bannerList }
         ),
       }
     );

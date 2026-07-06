@@ -426,6 +426,52 @@ export function useAddItemToPodryad() {
   });
 }
 
+export function useBannerList() {
+  return useQuery({
+    queryKey: ['banner'],
+    queryFn: () => api.get('/banner').then((r) => r.data.items),
+  });
+}
+
+export function useAddBannerItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ pattern, matchType, sourceName }) =>
+      api.post('/banner', { pattern, matchType, sourceName }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['banner'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal'] });
+    },
+  });
+}
+
+export function useRemoveBannerItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => api.delete(`/banner/${id}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['banner'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal'] });
+    },
+  });
+}
+
+export function useAddItemToBanner() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ dealId, itemId }) =>
+      api.post(`/deals/${dealId}/items/${itemId}/banner`).then((r) => r.data),
+    onSuccess: (_, { dealId }) => {
+      qc.invalidateQueries({ queryKey: ['banner'] });
+      qc.invalidateQueries({ queryKey: ['deal', dealId] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['sync-logs'] });
+    },
+  });
+}
+
 export function useCompanies() {
   return useQuery({
     queryKey: ['companies'],

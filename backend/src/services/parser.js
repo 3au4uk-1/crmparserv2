@@ -379,7 +379,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
                 contact_name, contact_email, contact_company, contact_phone, address, venue_type,
                 arrival_time, ready_time, work_time, dismantle_time, tony_order_id, content_hash, raw_description,
                 payment_amount, payment_status, payment_count, payment_hash
-              ) VALUES (?, ?, 'calendar', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ) VALUES (?, ?, 'calendar', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `).run(
           eventId, target.dealKey, event.leadid, event.title, titleInfo.companyCode, titleInfo.managerName,
           event.start, event.end, event.department, parsed.meta.status, parsed.meta.legalEntity, parsed.meta.invoiceNumber,

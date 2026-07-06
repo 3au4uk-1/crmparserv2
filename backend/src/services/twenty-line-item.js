@@ -1,12 +1,13 @@
 import { computeLineItemTotal, parseQuantityNum } from './twenty-opportunity.js';
 import { isPodryadItem, PODRYAD_TIP } from './podryad.js';
+import { isBannerItem, BANNER_TIP } from './banner.js';
 
 export function buildWarehouseItemCreateInput(name, position = 'first') {
   return { name, position };
 }
 
 function buildLineItemFields(item, options = {}) {
-  const { deal = null, restorationList = [], podryadList = [] } = options;
+  const { deal = null, restorationList = [], podryadList = [], bannerList = [] } = options;
   const qty = item.quantity_num ?? parseQuantityNum(item.quantity);
   const lineTotal = computeLineItemTotal(item, deal, restorationList);
   const unitPrice = qty > 0 ? lineTotal / qty : 0;
@@ -24,6 +25,8 @@ function buildLineItemFields(item, options = {}) {
 
   if (isPodryadItem(item.name, podryadList)) {
     fields.tip = PODRYAD_TIP;
+  } else if (isBannerItem(item.name, bannerList)) {
+    fields.tip = BANNER_TIP;
   }
 
   return fields;

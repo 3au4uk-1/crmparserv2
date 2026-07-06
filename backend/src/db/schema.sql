@@ -129,6 +129,15 @@ CREATE TABLE IF NOT EXISTS podryad_items (
   UNIQUE (pattern, match_type)
 );
 
+CREATE TABLE IF NOT EXISTS banner_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  pattern TEXT NOT NULL,
+  match_type TEXT NOT NULL CHECK (match_type IN ('exact', 'substring')),
+  source_name TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (pattern, match_type)
+);
+
 CREATE TABLE IF NOT EXISTS expense_sync_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   status TEXT NOT NULL DEFAULT 'queued',

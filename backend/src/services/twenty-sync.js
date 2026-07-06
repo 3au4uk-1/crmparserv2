@@ -4,6 +4,7 @@ import { getTwentyConfig, requireTwentyConfig } from './twenty-config.js';
 import { loadBlacklist } from './blacklist.js';
 import { loadRestorationList, isRestorationItem } from './restoration.js';
 import { loadPodryadList, isPodryadItem } from './podryad.js';
+import { loadBannerList, isBannerItem } from './banner.js';
 import { buildOpportunityInput, computeDealItemsTotal, computeLineItemTotal, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
 import {
   getItemsForTwenty,
@@ -250,6 +251,7 @@ async function updateDealInTwenty(
   twenty,
   restorationList,
   podryadList,
+  bannerList,
   { ignoreLineItemStageProtection = false } = {},
 ) {
   const db = getDb();
@@ -314,6 +316,7 @@ async function updateDealInTwenty(
     deal,
     restorationList,
     podryadList,
+    bannerList,
     ignoreStageProtection: ignoreLineItemStageProtection,
   });
 
@@ -328,7 +331,7 @@ async function updateDealInTwenty(
   return { twentyId: oppId, action, itemCount: items.length };
 }
 
-async function createDealInTwenty(dealId, deal, items, twenty, restorationList, podryadList) {
+async function createDealInTwenty(dealId, deal, items, twenty, restorationList, podryadList, bannerList) {
   const db = getDb();
 
   const { companyTwentyId, personTwentyId } = await resolveCompanyAndPerson(deal, twenty);
@@ -367,6 +370,7 @@ async function createDealInTwenty(dealId, deal, items, twenty, restorationList, 
     deal,
     restorationList,
     podryadList,
+    bannerList,
   });
 
   db.prepare(`
@@ -393,6 +397,7 @@ export function buildSyncPreview(dealId) {
   const blacklist = loadBlacklist(db);
   const restorationList = loadRestorationList(db);
   const podryadList = loadPodryadList(db);
+  const bannerList = loadBannerList(db);
   const eligibleItems = getItemsForTwenty(allItems, blacklist);
   const eligibleAmount = computeDealItemsTotal(deal, eligibleItems, restorationList);
 
@@ -410,6 +415,7 @@ export function buildSyncPreview(dealId) {
       twentyLineAmount: computeLineItemTotal(item, deal, restorationList),
       restorationMatch: isRestorationItem(item.name, restorationList),
       podryadMatch: isPodryadItem(item.name, podryadList),
+      bannerMatch: isBannerItem(item.name, bannerList),
     })),
     alreadySynced: Boolean(deal.twenty_id),
     twentyId: deal.twenty_id || null,
@@ -437,6 +443,7 @@ export async function syncDealToTwenty(
   const blacklist = loadBlacklist(db);
   const restorationList = loadRestorationList(db);
   const podryadList = loadPodryadList(db);
+  const bannerList = loadBannerList(db);
   const items = getItemsForTwenty(allItems, blacklist);
   const mode = deal.twenty_id ? 'update' : 'create';
 
@@ -467,6 +474,7 @@ export async function syncDealToTwenty(
         twenty,
         restorationList,
         podryadList,
+        bannerList,
         { ignoreLineItemStageProtection },
       );
     } else {
@@ -478,7 +486,7 @@ export async function syncDealToTwenty(
         throw new Error(message);
       }
 
-      result = await createDealInTwenty(dealId, deal, items, twenty, restorationList, podryadList);
+      result = await createDealInTwenty(dealId, deal, items, twenty, restorationList, podryadList, bannerList);
     }
 
     if (!skipPrintSheetRefresh) {

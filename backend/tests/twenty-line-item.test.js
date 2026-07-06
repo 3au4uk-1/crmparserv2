@@ -163,3 +163,30 @@ describe('podryad line items', () => {
     expect(input.tip).toBe('PODRYAD');
   });
 });
+
+describe('banner line items', () => {
+  const bannerList = [{ id: 1, pattern: 'баннер 3x6', matchType: 'exact' }];
+  const tonyDeal = { data_source: 'tony' };
+  const item = {
+    name: 'Баннер 3x6',
+    price: 5000,
+    quantity: '1',
+    sum: 5000,
+    quantity_num: 1,
+  };
+
+  it('builds create input with tip BANNER when banner match', () => {
+    const input = buildLineItemCreateInput(
+      item, 'wh-001', 'opp-456', 'first', { deal: tonyDeal, bannerList }
+    );
+    expect(input.tip).toBe('BANNERA');
+  });
+
+  it('podryad takes precedence over banner when both match', () => {
+    const podryadList = [{ id: 2, pattern: 'баннер 3x6', matchType: 'exact' }];
+    const input = buildLineItemCreateInput(
+      item, 'wh-001', 'opp-456', 'first', { deal: tonyDeal, podryadList, bannerList }
+    );
+    expect(input.tip).toBe('PODRYAD');
+  });
+});

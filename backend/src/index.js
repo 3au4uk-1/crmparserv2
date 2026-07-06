@@ -12,6 +12,7 @@ import logsRouter from './routes/logs.js';
 import blacklistRouter from './routes/blacklist.js';
 import restorationRouter from './routes/restoration.js';
 import podryadRouter from './routes/podryad.js';
+import bannerRouter from './routes/banner.js';
 import exportRouter from './routes/export.js';
 import expensesRouter from './routes/expenses.js';
 import authRouter from './routes/auth.js';
@@ -37,6 +38,7 @@ app.use('/api/logs', logsRouter);
 app.use('/api/blacklist', blacklistRouter);
 app.use('/api/restoration', restorationRouter);
 app.use('/api/podryad', podryadRouter);
+app.use('/api/banner', bannerRouter);
 app.use('/api/export', exportRouter);
 app.use('/api/expenses', expensesRouter);
 

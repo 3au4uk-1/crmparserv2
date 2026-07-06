@@ -16,6 +16,9 @@ import {
   usePodryadList,
   useAddPodryadItem,
   useRemovePodryadItem,
+  useBannerList,
+  useAddBannerItem,
+  useRemoveBannerItem,
   useStartBulkResync,
   useActiveBulkResyncJob,
   useBulkResyncJob,
@@ -76,7 +79,7 @@ function BulkResyncPanel() {
         return;
       }
       const confirmed = window.confirm(
-        `Будет пересинхронизировано ${count} сделок. Актуальные фильтры (блеклист, реставрация, подряд) будут применены в Twenty. Продолжить?`,
+        `Будет пересинхронизировано ${count} сделок. Актуальные фильтры (блеклист, реставрация, подряд, баннера) будут применены в Twenty. Продолжить?`,
       );
       if (!confirmed) return;
 
@@ -103,7 +106,7 @@ function BulkResyncPanel() {
     <div className="mt-6 pt-6 border-t border-border">
       <h4 className="text-sm font-semibold text-ink mb-1">Применить фильтры к синхронизированным сделкам</h4>
       <p className="text-xs text-ink-muted mb-3 max-w-xl leading-relaxed">
-        Пересинхронизирует все сделки с Twenty, применяя текущие списки блеклиста, реставрации и подряда.
+        Пересинхронизирует все сделки с Twenty, применяя текущие списки блеклиста, реставрации, подряда и баннера.
         В отличие от обычной пересинхронизации, обновляет и удаляет позиции на любой стадии в Twenty.
       </p>
       <button type="button" onClick={onStartBulkResync} disabled={running} className="btn-secondary">
@@ -302,6 +305,7 @@ export default function Settings() {
   const { data: blacklist } = useBlacklist();
   const { data: restorationList } = useRestorationList();
   const { data: podryadList } = usePodryadList();
+  const { data: bannerList } = useBannerList();
   const { data: companies } = useCompanies();
   const updateSetting = useUpdateSetting();
   const updateKeywords = useUpdateKeywords();
@@ -311,6 +315,8 @@ export default function Settings() {
   const removeRestorationItem = useRemoveRestorationItem();
   const addPodryadItem = useAddPodryadItem();
   const removePodryadItem = useRemovePodryadItem();
+  const addBannerItem = useAddBannerItem();
+  const removeBannerItem = useRemoveBannerItem();
   const clearParsingData = useClearParsingData();
   const createCompany = useCreateCompany();
 
@@ -326,6 +332,9 @@ export default function Settings() {
   const [newPodryadPattern, setNewPodryadPattern] = useState('');
   const [newPodryadMatchType, setNewPodryadMatchType] = useState('exact');
   const [podryadError, setPodryadError] = useState('');
+  const [newBannerPattern, setNewBannerPattern] = useState('');
+  const [newBannerMatchType, setNewBannerMatchType] = useState('exact');
+  const [bannerError, setBannerError] = useState('');
   const [cookieValue, setCookieValue] = useState('');
 
   useEffect(() => {
@@ -639,6 +648,73 @@ export default function Settings() {
                   );
                 }}
                 disabled={!newPodryadPattern.trim() || addPodryadItem.isPending}
+                className="btn-primary btn-sm"
+              >
+                Добавить
+              </button>
+            </div>
+          </Section>
+
+          <Section
+            title="Баннера"
+            description="Eligible-позиции из списка попадают в Twenty с типом «баннер». Не eligible — не синкаются."
+          >
+            <div className="flex flex-wrap gap-2 mb-4">
+              {(bannerList || []).map((entry) => (
+                <span
+                  key={entry.id}
+                  className="inline-flex items-center gap-1.5 bg-pastel-green-bg text-pastel-green-text px-2.5 py-1 rounded-md text-sm"
+                >
+                  {entry.sourceName || entry.pattern}
+                  <span className="text-xs opacity-70">
+                    ({entry.matchType === 'exact' ? 'точное' : 'фрагмент'})
+                  </span>
+                  <button
+                    onClick={() => removeBannerItem.mutate(entry.id)}
+                    className="opacity-60 hover:opacity-100 transition-opacity"
+                    aria-label="Удалить из списка баннера"
+                  >
+                    &times;
+                  </button>
+                </span>
+              ))}
+            </div>
+            {bannerError && (
+              <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-3">{bannerError}</p>
+            )}
+            <div className="flex flex-wrap gap-2 items-end max-w-2xl">
+              <input
+                type="text"
+                value={newBannerPattern}
+                onChange={(e) => setNewBannerPattern(e.target.value)}
+                className="input-field flex-1 min-w-[12rem]"
+                placeholder="Баннер 3x6"
+              />
+              <select
+                value={newBannerMatchType}
+                onChange={(e) => setNewBannerMatchType(e.target.value)}
+                className="select-field"
+              >
+                <option value="exact">Точное</option>
+                <option value="substring">Фрагмент</option>
+              </select>
+              <button
+                onClick={() => {
+                  setBannerError('');
+                  addBannerItem.mutate(
+                    { pattern: newBannerPattern, matchType: newBannerMatchType },
+                    {
+                      onSuccess: () => setNewBannerPattern(''),
+                      onError: (err) => {
+                        const msg = err.response?.status === 409
+                          ? 'Уже в списке баннера'
+                          : err.response?.data?.error || 'Ошибка добавления';
+                        setBannerError(msg);
+                      },
+                    }
+                  );
+                }}
+                disabled={!newBannerPattern.trim() || addBannerItem.isPending}
                 className="btn-primary btn-sm"
               >
                 Добавить

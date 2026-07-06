@@ -4,6 +4,7 @@ import {
   useAddItemToBlacklist,
   useAddItemToRestoration,
   useAddItemToPodryad,
+  useAddItemToBanner,
 } from '../api';
 
 const classColors = {
@@ -26,6 +27,7 @@ export default function DealItems({ dealId, items, readOnly = false }) {
   const addToBlacklist = useAddItemToBlacklist();
   const addToRestoration = useAddItemToRestoration();
   const addToPodryad = useAddItemToPodryad();
+  const addToBanner = useAddItemToBanner();
 
   if (!items?.length) {
     return <p className="text-sm text-ink-muted py-2">Позиций в заказе нет</p>;
@@ -107,6 +109,11 @@ export default function DealItems({ dealId, items, readOnly = false }) {
                         подряд
                       </span>
                     )}
+                    {item.bannerMatch && item.eligibleForTwenty && (
+                      <span className="text-xs bg-pastel-green-bg text-pastel-green-text px-1.5 py-0.5 rounded">
+                        баннер
+                      </span>
+                    )}
                   </div>
                 </td>
                 <td className="tabular-nums">{item.price?.toLocaleString('ru-RU')} ₽</td>
@@ -151,6 +158,18 @@ export default function DealItems({ dealId, items, readOnly = false }) {
                           className="text-xs text-pastel-blue-text hover:opacity-80 disabled:opacity-50 text-left"
                         >
                           В подряд
+                        </button>
+                      )}
+                      {item.bannerMatch ? (
+                        <span className="text-xs text-pastel-green-text">баннер</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => addToBanner.mutate({ dealId, itemId: item.id })}
+                          disabled={addToBanner.isPending}
+                          className="text-xs text-pastel-green-text hover:opacity-80 disabled:opacity-50 text-left"
+                        >
+                          В баннера
                         </button>
                       )}
                     </div>
