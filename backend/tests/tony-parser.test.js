@@ -62,6 +62,23 @@ describe('parseTonyOrder', () => {
     expect(empty.budget).toBe(0);
   });
 
+  it('parses comment from product_text_value for catalog product rows', () => {
+    const productHtml = `
+      <table data-src="order_products_list" data-var="products"><tbody>
+        <tr data-id="954636" data-price="0" data-sum="0">
+          <td><a class="item_name_link">БРЕНДИНГ свободная запись ( КОМЕНТАРИЙ ОБЯЗАТЕЛЕН )</a></td>
+          <td><input type="text" value="Брус 3 метра - 20 шт." class="product_text_value"></td>
+          <td><input type="number" value="1" class="orders_edit"></td>
+          <td><input type="text" value="0" class="price_value"></td>
+          <td><input type="text" value="0" class="discount_value"></td>
+        </tr>
+      </tbody></table>
+    `;
+    const parsed = parseTonyOrder(productHtml);
+    expect(parsed.items).toHaveLength(1);
+    expect(parsed.items[0].comment).toBe('Брус 3 метра - 20 шт.');
+  });
+
   it('parses AJAX-loaded catalog rows with item_name_link and orders_edit', () => {
     const ajaxHtml = `
       <table data-src="order_products_list" data-var="products"><tbody>
