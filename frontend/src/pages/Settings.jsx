@@ -277,7 +277,7 @@ function FieldLabel({ children }) {
   return <label className="block text-sm font-medium text-ink-muted mb-1.5">{children}</label>;
 }
 
-function parseKeywordInput(text) {
+function parseCommaSeparatedInput(text) {
   return text
     .split(',')
     .map((part) => part.trim())
@@ -295,6 +295,52 @@ function mergeKeywords(existing, incoming) {
     }
   }
   return result;
+}
+
+async function addPatternsFromInput(text, matchType, mutateAsync) {
+  const patterns = parseCommaSeparatedInput(text);
+  if (patterns.length === 0) {
+    return { added: 0, duplicates: [], failures: [] };
+  }
+
+  const duplicates = [];
+  const failures = [];
+  let added = 0;
+
+  for (const pattern of patterns) {
+    try {
+      await mutateAsync({ pattern, matchType });
+      added += 1;
+    } catch (err) {
+      if (err.response?.status === 409) {
+        duplicates.push(pattern);
+      } else {
+        failures.push({
+          pattern,
+          message: err.response?.data?.error || err.message || 'ошибка добавления',
+        });
+      }
+    }
+  }
+
+  return { added, duplicates, failures };
+}
+
+function formatPatternAddResult({ added, duplicates, failures }, duplicateLabel) {
+  const parts = [];
+  if (duplicates.length > 0) {
+    parts.push(`${duplicateLabel}: ${duplicates.join(', ')}`);
+  }
+  if (failures.length > 0) {
+    parts.push(failures.map((entry) => `«${entry.pattern}» — ${entry.message}`).join('; '));
+  }
+  if (parts.length === 0 && added > 0) {
+    return '';
+  }
+  if (added > 0) {
+    parts.unshift(added === 1 ? 'Добавлено 1 значение' : `Добавлено ${added} значений`);
+  }
+  return parts.join('. ');
 }
 
 export default function Settings() {
@@ -335,6 +381,7 @@ export default function Settings() {
   const [newBannerPattern, setNewBannerPattern] = useState('');
   const [newBannerMatchType, setNewBannerMatchType] = useState('exact');
   const [bannerError, setBannerError] = useState('');
+  const [patternListBusy, setPatternListBusy] = useState(null);
   const [cookieValue, setCookieValue] = useState('');
 
   useEffect(() => {
@@ -342,10 +389,31 @@ export default function Settings() {
   }, [settings?.crm_cookies]);
 
   function addKeyword() {
-    const parsed = parseKeywordInput(newKeyword);
+    const parsed = parseCommaSeparatedInput(newKeyword);
     if (parsed.length === 0) return;
     updateKeywords.mutate(mergeKeywords(keywords, parsed));
     setNewKeyword('');
+  }
+
+  async function handleAddPatterns({
+    listKey,
+    text,
+    matchType,
+    mutateAsync,
+    setError,
+    clearInput,
+    duplicateLabel,
+  }) {
+    setPatternListBusy(listKey);
+    setError('');
+    try {
+      const result = await addPatternsFromInput(text, matchType, mutateAsync);
+      if (result.added > 0) clearInput();
+      const message = formatPatternAddResult(result, duplicateLabel);
+      if (message) setError(message);
+    } finally {
+      setPatternListBusy(null);
+    }
   }
 
   function removeKeyword(kw) {
@@ -456,7 +524,7 @@ export default function Settings() {
 
           <Section
             title="Блеклист позиций"
-            description="Позиции в блеклисте не попадают в Twenty автоматически. Ручная галочка в сделке перебивает блеклист."
+            description="Позиции в блеклисте не попадают в Twenty автоматически. Ручная галочка в сделке перебивает блеклист. Можно добавить одно значение или несколько через запятую."
           >
             <div className="flex flex-wrap gap-2 mb-4">
               {(blacklist || []).map((entry) => (
@@ -482,12 +550,12 @@ export default function Settings() {
               <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-3">{blacklistError}</p>
             )}
             <div className="flex flex-wrap gap-2 items-end max-w-2xl">
-              <input
-                type="text"
+              <textarea
                 value={newBlacklistPattern}
                 onChange={(e) => setNewBlacklistPattern(e.target.value)}
+                rows={2}
                 className="input-field flex-1 min-w-[12rem]"
-                placeholder="Стойка указатель напольная А4"
+                placeholder="Стойка указатель напольная А4, стойка ролл-ап"
               />
               <select
                 value={newBlacklistMatchType}
@@ -498,22 +566,16 @@ export default function Settings() {
                 <option value="substring">Фрагмент</option>
               </select>
               <button
-                onClick={() => {
-                  setBlacklistError('');
-                  addBlacklistItem.mutate(
-                    { pattern: newBlacklistPattern, matchType: newBlacklistMatchType },
-                    {
-                      onSuccess: () => setNewBlacklistPattern(''),
-                      onError: (err) => {
-                        const msg = err.response?.status === 409
-                          ? 'Уже в блеклисте'
-                          : err.response?.data?.error || 'Ошибка добавления';
-                        setBlacklistError(msg);
-                      },
-                    }
-                  );
-                }}
-                disabled={!newBlacklistPattern.trim() || addBlacklistItem.isPending}
+                onClick={() => handleAddPatterns({
+                  listKey: 'blacklist',
+                  text: newBlacklistPattern,
+                  matchType: newBlacklistMatchType,
+                  mutateAsync: addBlacklistItem.mutateAsync,
+                  setError: setBlacklistError,
+                  clearInput: () => setNewBlacklistPattern(''),
+                  duplicateLabel: 'Уже в блеклисте',
+                })}
+                disabled={!newBlacklistPattern.trim() || patternListBusy === 'blacklist' || addBlacklistItem.isPending}
                 className="btn-danger btn-sm"
               >
                 Добавить
@@ -523,7 +585,7 @@ export default function Settings() {
 
           <Section
             title="Реставрация"
-            description="Eligible-позиции из списка попадают в Twenty с суммой 0 ₽. Не eligible — не синкаются. Стадия не меняется."
+            description="Eligible-позиции из списка попадают в Twenty с суммой 0 ₽. Не eligible — не синкаются. Стадия не меняется. Можно добавить одно значение или несколько через запятую."
           >
             <div className="flex flex-wrap gap-2 mb-4">
               {(restorationList || []).map((entry) => (
@@ -549,12 +611,12 @@ export default function Settings() {
               <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-3">{restorationError}</p>
             )}
             <div className="flex flex-wrap gap-2 items-end max-w-2xl">
-              <input
-                type="text"
+              <textarea
                 value={newRestorationPattern}
                 onChange={(e) => setNewRestorationPattern(e.target.value)}
+                rows={2}
                 className="input-field flex-1 min-w-[12rem]"
-                placeholder="Колесо фортуны"
+                placeholder="Колесо фортуны, колесо удачи"
               />
               <select
                 value={newRestorationMatchType}
@@ -565,22 +627,16 @@ export default function Settings() {
                 <option value="substring">Фрагмент</option>
               </select>
               <button
-                onClick={() => {
-                  setRestorationError('');
-                  addRestorationItem.mutate(
-                    { pattern: newRestorationPattern, matchType: newRestorationMatchType },
-                    {
-                      onSuccess: () => setNewRestorationPattern(''),
-                      onError: (err) => {
-                        const msg = err.response?.status === 409
-                          ? 'Уже в списке реставрации'
-                          : err.response?.data?.error || 'Ошибка добавления';
-                        setRestorationError(msg);
-                      },
-                    }
-                  );
-                }}
-                disabled={!newRestorationPattern.trim() || addRestorationItem.isPending}
+                onClick={() => handleAddPatterns({
+                  listKey: 'restoration',
+                  text: newRestorationPattern,
+                  matchType: newRestorationMatchType,
+                  mutateAsync: addRestorationItem.mutateAsync,
+                  setError: setRestorationError,
+                  clearInput: () => setNewRestorationPattern(''),
+                  duplicateLabel: 'Уже в списке реставрации',
+                })}
+                disabled={!newRestorationPattern.trim() || patternListBusy === 'restoration' || addRestorationItem.isPending}
                 className="btn-primary btn-sm"
               >
                 Добавить
@@ -590,7 +646,7 @@ export default function Settings() {
 
           <Section
             title="Подряд"
-            description="Eligible-позиции из списка попадают в Twenty с типом «подряд». Не eligible — не синкаются."
+            description="Eligible-позиции из списка попадают в Twenty с типом «подряд». Не eligible — не синкаются. Можно добавить одно значение или несколько через запятую."
           >
             <div className="flex flex-wrap gap-2 mb-4">
               {(podryadList || []).map((entry) => (
@@ -616,12 +672,12 @@ export default function Settings() {
               <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-3">{podryadError}</p>
             )}
             <div className="flex flex-wrap gap-2 items-end max-w-2xl">
-              <input
-                type="text"
+              <textarea
                 value={newPodryadPattern}
                 onChange={(e) => setNewPodryadPattern(e.target.value)}
+                rows={2}
                 className="input-field flex-1 min-w-[12rem]"
-                placeholder="Флаги односторонние на виндеры"
+                placeholder="Флаги односторонние на виндеры, флаги двусторонние"
               />
               <select
                 value={newPodryadMatchType}
@@ -632,22 +688,16 @@ export default function Settings() {
                 <option value="substring">Фрагмент</option>
               </select>
               <button
-                onClick={() => {
-                  setPodryadError('');
-                  addPodryadItem.mutate(
-                    { pattern: newPodryadPattern, matchType: newPodryadMatchType },
-                    {
-                      onSuccess: () => setNewPodryadPattern(''),
-                      onError: (err) => {
-                        const msg = err.response?.status === 409
-                          ? 'Уже в списке подряд'
-                          : err.response?.data?.error || 'Ошибка добавления';
-                        setPodryadError(msg);
-                      },
-                    }
-                  );
-                }}
-                disabled={!newPodryadPattern.trim() || addPodryadItem.isPending}
+                onClick={() => handleAddPatterns({
+                  listKey: 'podryad',
+                  text: newPodryadPattern,
+                  matchType: newPodryadMatchType,
+                  mutateAsync: addPodryadItem.mutateAsync,
+                  setError: setPodryadError,
+                  clearInput: () => setNewPodryadPattern(''),
+                  duplicateLabel: 'Уже в списке подряд',
+                })}
+                disabled={!newPodryadPattern.trim() || patternListBusy === 'podryad' || addPodryadItem.isPending}
                 className="btn-primary btn-sm"
               >
                 Добавить
@@ -657,7 +707,7 @@ export default function Settings() {
 
           <Section
             title="Баннера"
-            description="Eligible-позиции из списка попадают в Twenty с типом «баннер». Не eligible — не синкаются."
+            description="Eligible-позиции из списка попадают в Twenty с типом «баннер». Не eligible — не синкаются. Можно добавить одно значение или несколько через запятую."
           >
             <div className="flex flex-wrap gap-2 mb-4">
               {(bannerList || []).map((entry) => (
@@ -683,12 +733,12 @@ export default function Settings() {
               <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-3">{bannerError}</p>
             )}
             <div className="flex flex-wrap gap-2 items-end max-w-2xl">
-              <input
-                type="text"
+              <textarea
                 value={newBannerPattern}
                 onChange={(e) => setNewBannerPattern(e.target.value)}
+                rows={2}
                 className="input-field flex-1 min-w-[12rem]"
-                placeholder="Баннер 3x6"
+                placeholder="Баннер 3x6, баннер 2x1"
               />
               <select
                 value={newBannerMatchType}
@@ -699,22 +749,16 @@ export default function Settings() {
                 <option value="substring">Фрагмент</option>
               </select>
               <button
-                onClick={() => {
-                  setBannerError('');
-                  addBannerItem.mutate(
-                    { pattern: newBannerPattern, matchType: newBannerMatchType },
-                    {
-                      onSuccess: () => setNewBannerPattern(''),
-                      onError: (err) => {
-                        const msg = err.response?.status === 409
-                          ? 'Уже в списке баннера'
-                          : err.response?.data?.error || 'Ошибка добавления';
-                        setBannerError(msg);
-                      },
-                    }
-                  );
-                }}
-                disabled={!newBannerPattern.trim() || addBannerItem.isPending}
+                onClick={() => handleAddPatterns({
+                  listKey: 'banner',
+                  text: newBannerPattern,
+                  matchType: newBannerMatchType,
+                  mutateAsync: addBannerItem.mutateAsync,
+                  setError: setBannerError,
+                  clearInput: () => setNewBannerPattern(''),
+                  duplicateLabel: 'Уже в списке баннера',
+                })}
+                disabled={!newBannerPattern.trim() || patternListBusy === 'banner' || addBannerItem.isPending}
                 className="btn-primary btn-sm"
               >
                 Добавить
