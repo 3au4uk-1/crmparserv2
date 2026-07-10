@@ -47,6 +47,8 @@ export const config = {
   sessionSecret: process.env.SESSION_SECRET || 'dev-secret',
   appPassword: process.env.APP_PASSWORD || '',
   importApiSecret: process.env.IMPORT_API_SECRET || '',
+  twentyAppApiSecret: process.env.TWENTY_APP_API_SECRET || '',
+  twentyAppCorsOrigin: process.env.TWENTY_APP_CORS_ORIGIN || '',
   dbPath: process.env.DB_PATH || './data/crmparser.db',
   printSheetId: process.env.PRINT_SHEET_ID || '',
   googleServiceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '',
