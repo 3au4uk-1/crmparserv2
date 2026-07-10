@@ -33,6 +33,8 @@ services:
       - SESSION_SECRET=${SESSION_SECRET:-change-me-in-production}
       - APP_PASSWORD=${APP_PASSWORD}
       - IMPORT_API_SECRET=${IMPORT_API_SECRET}
+      - TWENTY_APP_API_SECRET=${TWENTY_APP_API_SECRET}
+      - TWENTY_APP_CORS_ORIGIN=${TWENTY_APP_CORS_ORIGIN}
     networks:
       - twenty
     restart: unless-stopped
