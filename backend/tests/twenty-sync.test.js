@@ -101,10 +101,14 @@ vi.mock('../src/services/twenty-config.js', () => ({
   getTwentyConfig: () => ({ apiUrl: 'https://twenty.test/graphql', apiToken: 'token', source: 'env' }),
 }));
 
-vi.mock('../src/services/blacklist.js', () => ({
-  loadBlacklist: () => [],
-  isBlacklisted: () => false,
-}));
+vi.mock('../src/services/blacklist.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    loadBlacklist: () => [],
+    isBlacklisted: () => false,
+  };
+});
 
 const runPrintSheetCycleMock = vi.fn();
 vi.mock('../src/services/print-sheet-cycle.js', () => ({

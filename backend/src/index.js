@@ -16,6 +16,7 @@ import bannerRouter from './routes/banner.js';
 import exportRouter from './routes/export.js';
 import expensesRouter from './routes/expenses.js';
 import authRouter from './routes/auth.js';
+import twentyRouter from './routes/twenty.js';
 import { appAuthMiddleware } from './middleware/app-auth.js';
 import { initScheduler } from './services/scheduler.js';
 import { initPrintSheetCron } from './services/print-sheet-cron.js';
@@ -29,6 +30,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(express.json());
 
+if (config.twentyAppCorsOrigin) {
+  app.use('/api/twenty', (req, res, next) => {
+    res.header('Access-Control-Allow-Origin', config.twentyAppCorsOrigin);
+    res.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    next();
+  });
+}
+
+app.use('/api/twenty', twentyRouter);
 app.use('/api/auth', authRouter);
 app.use('/api', appAuthMiddleware);
 app.use('/api/deals', dealsRouter);

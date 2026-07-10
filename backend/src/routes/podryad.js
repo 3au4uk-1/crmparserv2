@@ -5,6 +5,7 @@ import {
   createPodryadEntry,
   deletePodryadEntry,
 } from '../services/podryad.js';
+import { scheduleListChangeResync } from '../services/list-change-resync.js';
 
 const router = Router();
 
@@ -18,6 +19,7 @@ router.post('/', (req, res) => {
   try {
     const db = getDb();
     const item = createPodryadEntry(db, { pattern, matchType, sourceName });
+    scheduleListChangeResync();
     res.status(201).json({ item });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
@@ -28,6 +30,7 @@ router.delete('/:id', (req, res) => {
   try {
     const db = getDb();
     deletePodryadEntry(db, Number(req.params.id));
+    scheduleListChangeResync();
     res.json({ success: true });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });

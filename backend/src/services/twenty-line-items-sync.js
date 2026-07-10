@@ -2,6 +2,7 @@ import {
   buildLineItemCreateInput,
   buildLineItemUpdateInput,
 } from './twenty-line-item.js';
+import { normalizePattern } from './blacklist.js';
 import { isRestorationItem } from './restoration.js';
 import { isPodryadItem } from './podryad.js';
 import { isBannerItem } from './banner.js';
@@ -17,15 +18,17 @@ export function isProtectedLineItemStage(stage) {
 
 export function computeLineItemDiff(existingLineItems, eligibleItems, { ignoreStageProtection = false } = {}) {
   const isProtected = (stage) => !ignoreStageProtection && isProtectedLineItemStage(stage);
-  const eligibleNames = new Set(eligibleItems.map((i) => i.name));
-  const existingByName = new Map(existingLineItems.map((li) => [li.name, li]));
+  const eligibleNames = new Set(eligibleItems.map((i) => normalizePattern(i.name)));
+  const existingByName = new Map(
+    existingLineItems.map((li) => [normalizePattern(li.name), li]),
+  );
 
   const toUpdate = [];
   const toCreate = [];
   const preserved = [];
 
   for (const item of eligibleItems) {
-    const existing = existingByName.get(item.name);
+    const existing = existingByName.get(normalizePattern(item.name));
     if (existing) {
       if (isProtected(existing.stage)) continue;
       toUpdate.push({ twentyId: existing.id, item });
@@ -36,7 +39,7 @@ export function computeLineItemDiff(existingLineItems, eligibleItems, { ignoreSt
 
   const toDelete = [];
   for (const li of existingLineItems) {
-    if (eligibleNames.has(li.name)) continue;
+    if (eligibleNames.has(normalizePattern(li.name))) continue;
     if (isProtected(li.stage)) {
       preserved.push({ id: li.id, name: li.name, stage: li.stage });
       continue;

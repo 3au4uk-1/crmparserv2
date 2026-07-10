@@ -6,6 +6,7 @@ import { loadBlacklist, createBlacklistEntry } from '../services/blacklist.js';
 import { loadRestorationList, createRestorationEntry } from '../services/restoration.js';
 import { loadPodryadList, createPodryadEntry } from '../services/podryad.js';
 import { loadBannerList, createBannerEntry } from '../services/banner.js';
+import { scheduleListChangeResync } from '../services/list-change-resync.js';
 import { importAuthMiddleware } from '../middleware/import-auth.js';
 import { importDealByBooking } from '../services/import-by-booking.js';
 import { attachTonyBooking } from '../services/attach-tony-booking.js';
@@ -457,6 +458,7 @@ router.post('/:dealId/items/:itemId/blacklist', async (req, res, next) => {
       matchType: 'exact',
       sourceName: item.name,
     });
+    scheduleListChangeResync();
     await respondWithOptionalSync(res, Number(req.params.dealId));
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
@@ -477,6 +479,7 @@ router.post('/:dealId/items/:itemId/restoration', async (req, res, next) => {
       matchType: 'exact',
       sourceName: item.name,
     });
+    scheduleListChangeResync();
     await respondWithOptionalSync(res, Number(req.params.dealId));
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
@@ -497,6 +500,7 @@ router.post('/:dealId/items/:itemId/podryad', async (req, res, next) => {
       matchType: 'exact',
       sourceName: item.name,
     });
+    scheduleListChangeResync();
     await respondWithOptionalSync(res, Number(req.params.dealId));
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
@@ -517,6 +521,7 @@ router.post('/:dealId/items/:itemId/banner', async (req, res, next) => {
       matchType: 'exact',
       sourceName: item.name,
     });
+    scheduleListChangeResync();
     await respondWithOptionalSync(res, Number(req.params.dealId));
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });

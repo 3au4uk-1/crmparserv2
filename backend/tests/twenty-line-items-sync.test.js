@@ -103,4 +103,13 @@ describe('computeLineItemDiff', () => {
     expect(diff.toDelete).toEqual(['li-2']);
     expect(diff.preserved).toEqual([]);
   });
+
+  it('matches existing line items by normalized name (case-insensitive)', () => {
+    const existing = [{ id: 'li-1', name: 'Велотележка для мороженого', stage: 'NOVYY' }];
+    const eligible = [{ id: 1, name: 'велотележка для мороженого', price: 100 }];
+    const { toUpdate, toCreate } = computeLineItemDiff(existing, eligible);
+    expect(toUpdate).toHaveLength(1);
+    expect(toUpdate[0].twentyId).toBe('li-1');
+    expect(toCreate).toHaveLength(0);
+  });
 });
