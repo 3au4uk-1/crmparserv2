@@ -56,3 +56,22 @@ export function findDealsMissingFromCalendar(
     return isEventInRange({ start: deal.start_date }, startDate, endDate);
   });
 }
+
+export function findCancelledDealsBackInCalendar(
+  db,
+  calendarEventIds,
+  startDate,
+  endDate,
+  calendarBookingNumbers = new Set(),
+) {
+  const deals = db.prepare(`
+    SELECT * FROM deals
+    WHERE twenty_id IS NOT NULL
+      AND twenty_stage = ?
+  `).all(CANCELLED_OPPORTUNITY_STAGE);
+
+  return deals.filter((deal) => {
+    if (!isDealStillInCalendar(deal, calendarEventIds, calendarBookingNumbers)) return false;
+    return isEventInRange({ start: deal.start_date }, startDate, endDate);
+  });
+}

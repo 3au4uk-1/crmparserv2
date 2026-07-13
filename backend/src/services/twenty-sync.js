@@ -508,6 +508,62 @@ export async function syncDealToTwenty(
   }
 }
 
+export async function restoreDealInTwenty(dealId) {
+  const twenty = requireTwentyConfig();
+  const db = getDb();
+  const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(dealId);
+  if (!deal) throw new Error(`Deal ${dealId} not found`);
+  if (!deal.twenty_id) return null;
+  if (deal.twenty_stage !== CANCELLED_OPPORTUNITY_STAGE) {
+    return { twentyId: deal.twenty_id, action: 'restored', skipped: true };
+  }
+
+  const stage = getOpportunityStage();
+
+  beginTwentySyncContext({
+    dealId,
+    twentyId: deal.twenty_id,
+    mode: 'restore',
+    title: deal.title,
+  });
+
+  logTwentyStep('restore.start', { oppId: deal.twenty_id, stage });
+
+  try {
+    const oppResp = await gql(
+      twenty.apiUrl,
+      twenty.apiToken,
+      `mutation RestoreOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
+        updateOpportunity(id: $id, data: $input) { id }
+      }`,
+      { id: deal.twenty_id, input: { stage } }
+    );
+    assertHttpSuccess(oppResp, twenty.apiUrl);
+    assertGqlSuccess(oppResp, 'Failed to restore opportunity in Twenty');
+
+    db.prepare(`
+      UPDATE deals SET
+        twenty_stage = ?,
+        status = NULL,
+        synced_at = datetime('now'),
+        twenty_error = NULL,
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(stage, dealId);
+
+    logSyncRun(dealId, 'success', deal.twenty_id, null, 'restored');
+    logTwentyStep('restore.done', { oppId: deal.twenty_id, stage });
+    return { twentyId: deal.twenty_id, action: 'restored', stage };
+  } catch (err) {
+    logTwenty('error', 'restore.failed', { error: err.message });
+    db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
+    logSyncRun(dealId, 'failed', deal.twenty_id, err.message, 'restored');
+    throw err;
+  } finally {
+    endTwentySyncContext();
+  }
+}
+
 export async function cancelDealInTwenty(dealId) {
   const twenty = requireTwentyConfig();
   const db = getDb();

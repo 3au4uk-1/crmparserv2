@@ -8,15 +8,15 @@ import { parseDealTitle } from './title-parser.js';
 import { loadCompanyCodes } from './companies.js';
 import { classifyItems } from './classifier.js';
 import { formatCrmDateTime, isEventInRange, parseEventDate } from '../utils/crm-dates.js';
-import { syncDealToTwenty, cancelDealInTwenty } from './twenty-sync.js';
+import { syncDealToTwenty, cancelDealInTwenty, restoreDealInTwenty } from './twenty-sync.js';
 import { processAutoApprovals } from './auto-approve.js';
 import { buildOverrideMap, replaceDealItemsPreservingOverrides } from './deal-items-update.js';
 import {
   collectCalendarEventIds,
   collectCalendarBookingNumbers,
   findDealsMissingFromCalendar,
+  findCancelledDealsBackInCalendar,
 } from './calendar-missing.js';
-import { CANCELLED_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
 import { extractBookingNumbers } from './booking-numbers.js';
 import { tonyLogin, getTonyConfig } from './tony-auth.js';
 import { fetchTonyOrderHtml } from './tony-client.js';
@@ -273,7 +273,6 @@ export async function applyEvent(db, event, eventId, data, ctx) {
       const classifiedItems = await classifyItems(buildTonyItems(order), keywords, llmPrompt);
 
       if (existing) {
-        const wasCancelled = existing.twenty_stage === CANCELLED_OPPORTUNITY_STAGE;
         db.prepare(`
               UPDATE deals SET
                 title = ?, company_code = ?, manager_name = ?,
@@ -283,7 +282,6 @@ export async function applyEvent(db, event, eventId, data, ctx) {
                 load_date = ?, load_time = ?, budget = ?,
                 content_hash = ?, data_source = 'tony', tony_order_id = ?, crm_lead_id = ?,
                 payment_amount = ?, payment_status = ?, payment_count = ?, payment_hash = ?,
-                twenty_stage = CASE WHEN ? THEN NULL ELSE twenty_stage END,
                 updated_at = datetime('now')
               WHERE id = ?
             `).run(
@@ -294,7 +292,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           fields.load_date, fields.load_time, fields.budget,
           hash, target.bookingNumber, event.leadid,
           paymentAggregate.paymentAmount, paymentAggregate.paymentStatus, paymentAggregate.paymentCount, paymentHash,
-          wasCancelled ? 1 : 0, existing.id
+          existing.id
         );
         const existingItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(existing.id);
         replaceDealItemsPreservingOverrides(db, existing.id, classifiedItems, buildOverrideMap(existingItems));
@@ -346,7 +344,6 @@ export async function applyEvent(db, event, eventId, data, ctx) {
       const classifiedItems = await classifyItems(parsed.items, keywords, llmPrompt);
 
       if (existing) {
-        const wasCancelled = existing.twenty_stage === CANCELLED_OPPORTUNITY_STAGE;
         db.prepare(`
               UPDATE deals SET
                 title = ?, company_code = ?, manager_name = ?, start_date = ?, end_date = ?, department = ?,
@@ -355,7 +352,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
                 address = ?, venue_type = ?, arrival_time = ?, ready_time = ?, work_time = ?, dismantle_time = ?,
                 content_hash = ?, raw_description = ?, crm_lead_id = ?, tony_order_id = ?, data_source = 'calendar',
                 payment_amount = ?, payment_status = ?, payment_count = ?, payment_hash = ?,
-                twenty_stage = CASE WHEN ? THEN NULL ELSE twenty_stage END, updated_at = datetime('now')
+                updated_at = datetime('now')
               WHERE id = ?
             `).run(
           event.title, titleInfo.companyCode, titleInfo.managerName, event.start, event.end, event.department,
@@ -365,7 +362,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           parsed.event.workTime || null, parsed.event.dismantleTime || null,
           hash, descHtml, event.leadid, calTonyOrderId,
           paymentAggregate.paymentAmount, paymentAggregate.paymentStatus, paymentAggregate.paymentCount, paymentHash,
-          wasCancelled ? 1 : 0, existing.id
+          existing.id
         );
         const existingItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(existing.id);
         replaceDealItemsPreservingOverrides(db, existing.id, classifiedItems, buildOverrideMap(existingItems));
@@ -446,7 +443,7 @@ export async function runParsing(startDate, endDate) {
     const llmPrompt = getSetting('llm_prompt') || '';
     const knownCodes = loadCompanyCodes(db);
 
-    const counters = { newDeals: 0, updatedDeals: 0, skippedDeals: 0, cancelledDeals: 0 };
+    const counters = { newDeals: 0, updatedDeals: 0, skippedDeals: 0, cancelledDeals: 0, restoredDeals: 0 };
     let outOfRange = 0;
     const dealsToResync = [];
     const ctx = { knownCodes, keywords, llmPrompt, counters, dealsToResync };
@@ -547,6 +544,37 @@ export async function runParsing(startDate, endDate) {
       }
     }
 
+    const restoredDeals = findCancelledDealsBackInCalendar(
+      db,
+      calendarEventIds,
+      startDate,
+      endDate,
+      calendarBookingNumbers,
+    );
+
+    if (restoredDeals.length > 0) {
+      console.log(
+        `[twenty-sync] ${new Date().toISOString()} parse.restore_queue {"count":${restoredDeals.length},"dealIds":${JSON.stringify(restoredDeals.map((d) => d.id))}}`
+      );
+    }
+
+    for (let i = 0; i < restoredDeals.length; i++) {
+      const deal = restoredDeals[i];
+      if (i > 0) await delay(1000);
+      console.log(
+        `[twenty-sync] ${new Date().toISOString()} parse.restore_start {"dealId":${deal.id},"crmEventId":${JSON.stringify(deal.crm_event_id)},"index":${i + 1},"total":${restoredDeals.length}}`
+      );
+      try {
+        const result = await restoreDealInTwenty(deal.id);
+        if (result && !result.skipped) counters.restoredDeals++;
+        console.log(`[twenty-sync] ${new Date().toISOString()} parse.restore_done {"dealId":${deal.id}}`);
+      } catch (err) {
+        console.error(
+          `[twenty-sync] ${new Date().toISOString()} parse.restore_failed {"dealId":${deal.id},"error":${JSON.stringify(err.message)}}`
+        );
+      }
+    }
+
     const autoApprove = await processAutoApprovals();
 
     return {
@@ -556,6 +584,7 @@ export async function runParsing(startDate, endDate) {
       updatedDeals: counters.updatedDeals,
       skippedDeals: counters.skippedDeals,
       cancelledDeals: counters.cancelledDeals,
+      restoredDeals: counters.restoredDeals,
       outOfRange,
       autoApprove,
     };

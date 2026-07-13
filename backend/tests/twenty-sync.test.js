@@ -31,9 +31,19 @@ vi.mock('../src/db/connection.js', () => {
         },
         run(...params) {
           if (sql.includes('INSERT INTO sync_runs')) return { changes: 1 };
-          if (sql.includes('twenty_error')) {
+          if (sql.includes('twenty_error = ?')) {
             const deal = deals.get(params[params.length - 1]);
             if (deal) deal.twenty_error = params[0];
+            return { changes: 1 };
+          }
+          if (sql.includes('status = NULL')) {
+            const deal = deals.get(params[params.length - 1]);
+            if (deal) {
+              deal.twenty_stage = params[0];
+              deal.status = null;
+              deal.synced_at = 'now';
+              deal.twenty_error = null;
+            }
             return { changes: 1 };
           }
           if (sql.includes('synced_at')) {
@@ -116,7 +126,7 @@ vi.mock('../src/services/print-sheet-cycle.js', () => ({
 }));
 
 import * as dbMock from '../src/db/connection.js';
-import { syncDealToTwenty, cancelDealInTwenty } from '../src/services/twenty-sync.js';
+import { syncDealToTwenty, cancelDealInTwenty, restoreDealInTwenty } from '../src/services/twenty-sync.js';
 
 function gqlOk(data) {
   return { status: 200, data: { data } };
@@ -273,6 +283,42 @@ describe('syncDealToTwenty', () => {
     });
 
     const result = await cancelDealInTwenty(dealId);
+
+    expect(result.skipped).toBe(true);
+    expect(axiosPost).not.toHaveBeenCalled();
+  });
+
+  it('restores opportunity stage when deal is cancelled locally', async () => {
+    const dealId = dbMock.__seedDeal({
+      id: 5,
+      twenty_id: 'opp-restore',
+      twenty_stage: 'OTMENA',
+      status: 'отмена',
+      crm_event_id: 'e5',
+    });
+
+    axiosPost.mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-restore' } }));
+
+    const result = await restoreDealInTwenty(dealId);
+
+    expect(result.action).toBe('restored');
+    expect(result.stage).toBe('NOVYY');
+    expect(axiosPost.mock.calls[0][1].variables.input.stage).toBe('NOVYY');
+
+    const deal = dbMock.getDb().prepare('SELECT * FROM deals WHERE id = ?').get(dealId);
+    expect(deal.twenty_stage).toBe('NOVYY');
+    expect(deal.status).toBeNull();
+  });
+
+  it('skips restore when deal is not cancelled', async () => {
+    const dealId = dbMock.__seedDeal({
+      id: 6,
+      twenty_id: 'opp-active',
+      twenty_stage: 'V_RABOTE',
+      crm_event_id: 'e6',
+    });
+
+    const result = await restoreDealInTwenty(dealId);
 
     expect(result.skipped).toBe(true);
     expect(axiosPost).not.toHaveBeenCalled();
