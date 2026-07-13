@@ -12,6 +12,20 @@ describe('twenty-line-item', () => {
       position: 'first',
     });
   });
+
+  it('buildLineItemCreateInput includes istochnik PARSER', () => {
+    const input = buildLineItemCreateInput(
+      { name: 'Наклейка', price: 1000, quantity: '1' },
+      'wh-001',
+      'opp-456',
+    );
+    expect(input.istochnik).toBe('PARSER');
+  });
+
+  it('buildLineItemUpdateInput includes istochnik PARSER', () => {
+    const input = buildLineItemUpdateInput({ name: 'Наклейка', price: 1000, quantity: '1' });
+    expect(input.istochnik).toBe('PARSER');
+  });
 });
 
 describe('Tony line items', () => {
@@ -37,6 +51,7 @@ describe('Tony line items', () => {
       kolichestvo: 9,
       kommentariy: '+ монтаж',
       amount: { amountMicros: 2640000000, currencyCode: 'RUB' },
+      istochnik: 'PARSER',
     });
   });
 
@@ -69,6 +84,7 @@ describe('Tony line items', () => {
       kolichestvo: 9,
       kommentariy: '+ монтаж',
       amount: { amountMicros: 2640000000, currencyCode: 'RUB' },
+      istochnik: 'PARSER',
     });
   });
 });
@@ -94,6 +110,7 @@ describe('calendar line items', () => {
       opportunityId: 'opp-456',
       kolichestvo: 1,
       amount: { amountMicros: 0, currencyCode: 'RUB' },
+      istochnik: 'PARSER',
     });
   });
 
@@ -102,6 +119,7 @@ describe('calendar line items', () => {
     expect(input).toEqual({
       kolichestvo: 5,
       amount: { amountMicros: 30000000000, currencyCode: 'RUB' },
+      istochnik: 'PARSER',
     });
   });
 });
