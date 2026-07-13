@@ -8,6 +8,9 @@ import { isPodryadItem } from './podryad.js';
 import { isBannerItem } from './banner.js';
 import { logTwentyStep } from './twenty-sync-log.js';
 import { DEFAULT_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
+import { MANUAL_TWENTY_CLASSIFICATION } from './manual-twenty-line-item.js';
+
+const DEFAULT_MANUAL_LINE_ITEM_NAME = 'Новая позиция';
 
 /** Line items at this stage (or null) may be deleted/updated on re-sync. */
 export const DELETABLE_LINE_ITEM_STAGE = DEFAULT_OPPORTUNITY_STAGE;
@@ -16,18 +19,53 @@ export function isProtectedLineItemStage(stage) {
   return stage != null && stage !== DELETABLE_LINE_ITEM_STAGE;
 }
 
-export function computeLineItemDiff(existingLineItems, eligibleItems, { ignoreStageProtection = false } = {}) {
+function isManualTwentyItem(item) {
+  return item.classification === MANUAL_TWENTY_CLASSIFICATION && item.twenty_id;
+}
+
+function isManualTwentyDraft(li, manualParserTwentyIds) {
+  return (
+    li.istochnik === 'TWENTY_RUCHNAYA'
+    && !manualParserTwentyIds.has(li.id)
+    && normalizePattern(li.name) === normalizePattern(DEFAULT_MANUAL_LINE_ITEM_NAME)
+  );
+}
+
+function getManualParserTwentyIds(db) {
+  const rows = db.prepare(
+    'SELECT twenty_id FROM deal_items WHERE classification = ? AND twenty_id IS NOT NULL',
+  ).all(MANUAL_TWENTY_CLASSIFICATION);
+  return new Set(rows.map((row) => row.twenty_id));
+}
+
+export function computeLineItemDiff(
+  existingLineItems,
+  eligibleItems,
+  { ignoreStageProtection = false, manualParserTwentyIds = new Set() } = {},
+) {
   const isProtected = (stage) => !ignoreStageProtection && isProtectedLineItemStage(stage);
-  const eligibleNames = new Set(eligibleItems.map((i) => normalizePattern(i.name)));
+  const manualItems = eligibleItems.filter(isManualTwentyItem);
+  const parsedItems = eligibleItems.filter((item) => !isManualTwentyItem(item));
+
+  const existingById = new Map(existingLineItems.map((li) => [li.id, li]));
   const existingByName = new Map(
     existingLineItems.map((li) => [normalizePattern(li.name), li]),
   );
 
   const toUpdate = [];
   const toCreate = [];
-  const preserved = [];
 
-  for (const item of eligibleItems) {
+  for (const item of manualItems) {
+    const existing = existingById.get(item.twenty_id);
+    if (existing) {
+      if (isProtected(existing.stage)) continue;
+      toUpdate.push({ twentyId: item.twenty_id, item });
+    } else {
+      toCreate.push(item);
+    }
+  }
+
+  for (const item of parsedItems) {
     const existing = existingByName.get(normalizePattern(item.name));
     if (existing) {
       if (isProtected(existing.stage)) continue;
@@ -37,13 +75,20 @@ export function computeLineItemDiff(existingLineItems, eligibleItems, { ignoreSt
     }
   }
 
+  const manualTwentyIds = new Set(manualItems.map((item) => item.twenty_id));
+  const parsedEligibleNames = new Set(parsedItems.map((item) => normalizePattern(item.name)));
+
   const toDelete = [];
+  const preserved = [];
+
   for (const li of existingLineItems) {
-    if (eligibleNames.has(normalizePattern(li.name))) continue;
+    if (manualTwentyIds.has(li.id)) continue;
+    if (parsedEligibleNames.has(normalizePattern(li.name))) continue;
     if (isProtected(li.stage)) {
       preserved.push({ id: li.id, name: li.name, stage: li.stage });
       continue;
     }
+    if (isManualTwentyDraft(li, manualParserTwentyIds)) continue;
     toDelete.push(li.id);
   }
 
@@ -56,7 +101,7 @@ export async function listLineItemsForOpportunity(gql, apiUrl, apiToken, oppId) 
     apiToken,
     `query ListLineItems($oppId: ID!) {
       dealLineItems(filter: { opportunityId: { eq: $oppId } }) {
-        edges { node { id name stage } }
+        edges { node { id name stage istochnik } }
       }
     }`,
     { oppId }
@@ -95,7 +140,10 @@ export async function syncLineItemsDiff({
   const { toUpdate, toCreate, toDelete, preserved } = computeLineItemDiff(
     existingLineItems,
     eligibleItems,
-    { ignoreStageProtection },
+    {
+      ignoreStageProtection,
+      manualParserTwentyIds: getManualParserTwentyIds(db),
+    },
   );
 
   const lineItemOptions = { deal, restorationList, podryadList, bannerList };

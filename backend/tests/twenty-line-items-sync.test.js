@@ -112,4 +112,34 @@ describe('computeLineItemDiff', () => {
     expect(toUpdate[0].twentyId).toBe('li-1');
     expect(toCreate).toHaveLength(0);
   });
+
+  it('matches manual_twenty parser items by twenty_id not name', () => {
+    const existing = [
+      { id: 'li-manual', name: 'Баннер', stage: 'NOVYY', istochnik: 'TWENTY_RUCHNAYA' },
+      { id: 'li-parsed', name: 'Баннер', stage: 'NOVYY', istochnik: 'PARSER' },
+    ];
+    const eligible = [
+      { id: 1, name: 'Другое имя', classification: 'manual_twenty', twenty_id: 'li-manual', price: 100 },
+      { id: 2, name: 'Баннер', classification: 'keyword_match', twenty_id: 'li-parsed', price: 200 },
+    ];
+    const diff = computeLineItemDiff(existing, eligible);
+    expect(diff.toUpdate.map((x) => x.twentyId).sort()).toEqual(['li-manual', 'li-parsed']);
+    expect(diff.toDelete).toEqual([]);
+  });
+
+  it('does not delete TWENTY_RUCHNAYA draft without parser row', () => {
+    const existing = [
+      { id: 'li-draft', name: 'Новая позиция', stage: 'NOVYY', istochnik: 'TWENTY_RUCHNAYA' },
+    ];
+    const diff = computeLineItemDiff(existing, []);
+    expect(diff.toDelete).toEqual([]);
+  });
+
+  it('deletes TWENTY_RUCHNAYA row once archived in parser (exclude)', () => {
+    const existing = [
+      { id: 'li-gone', name: 'Баннер', stage: 'NOVYY', istochnik: 'TWENTY_RUCHNAYA' },
+    ];
+    const diff = computeLineItemDiff(existing, []);
+    expect(diff.toDelete).toEqual(['li-gone']);
+  });
 });
