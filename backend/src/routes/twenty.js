@@ -26,8 +26,10 @@ router.post('/line-items/:twentyLineItemId/add-to-list', async (req, res, next) 
     const { list } = req.body ?? {};
     const { deal } = addDealItemToList(db, req.params.twentyLineItemId, list);
     scheduleListChangeResync();
-    const sync = await syncDealToTwenty(deal.id, { ignoreLineItemStageProtection: true });
-    res.json({ success: true, sync });
+    void syncDealToTwenty(deal.id, { ignoreLineItemStageProtection: true }).catch((err) => {
+      console.error('[twenty] add-to-list sync failed:', err.message);
+    });
+    res.json({ success: true });
   } catch (err) {
     next(err);
   }

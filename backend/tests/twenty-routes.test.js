@@ -83,8 +83,10 @@ describe('twenty routes', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(syncDealToTwentyMock).toHaveBeenCalledWith(1, { ignoreLineItemStageProtection: true });
+    expect(res.body.sync).toBeUndefined();
     expect(scheduleListChangeResyncMock).toHaveBeenCalled();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(syncDealToTwentyMock).toHaveBeenCalledWith(1, { ignoreLineItemStageProtection: true });
     const db = getDb();
     expect(db.prepare('SELECT COUNT(*) AS c FROM restoration_items').get().c).toBe(1);
   });
