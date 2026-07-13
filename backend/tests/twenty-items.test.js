@@ -50,6 +50,16 @@ describe('twenty-items', () => {
     ];
     expect(getItemsForTwenty(items).map((i) => i.id)).toEqual([1, 2]);
   });
+
+  it('manual_twenty with include is eligible via sync_override', () => {
+    const items = [{ name: 'X', classification: 'manual_twenty', sync_override: 'include' }];
+    expect(getItemsForTwenty(items)).toHaveLength(1);
+  });
+
+  it('manual_twenty with exclude is not eligible', () => {
+    const items = [{ name: 'X', classification: 'manual_twenty', sync_override: 'exclude' }];
+    expect(getItemsForTwenty(items)).toHaveLength(0);
+  });
 });
 
 describe('blacklist eligibility', () => {
