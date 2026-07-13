@@ -99,4 +99,39 @@ describe('twenty routes', () => {
     expect(res.status).toBe(200);
     expect(syncDealToTwentyMock).toHaveBeenCalledWith(1, { ignoreLineItemStageProtection: true });
   });
+
+  it('POST line-items sync upserts manual row', async () => {
+    const res = await request(createApp())
+      .post('/api/twenty/line-items/li-manual/sync')
+      .set('Authorization', 'Bearer test-secret')
+      .send({
+        opportunityId: 'opp-1',
+        name: 'Баннер',
+        kolichestvo: 2,
+        amountMicros: 1_500_000_000,
+        currencyCode: 'RUB',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ success: true, dealItemId: expect.any(Number) });
+    const db = getDb();
+    const row = db.prepare('SELECT * FROM deal_items WHERE twenty_id = ?').get('li-manual');
+    expect(row.classification).toBe('manual_twenty');
+    expect(row.sync_override).toBe('include');
+    expect(row.name).toBe('Баннер');
+    expect(row.quantity_num).toBe(2);
+    expect(row.sum).toBe(1500);
+  });
+
+  it('POST line-items archive sets exclude', async () => {
+    const res = await request(createApp())
+      .post('/api/twenty/line-items/li-1/archive')
+      .set('Authorization', 'Bearer test-secret');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true });
+    const db = getDb();
+    const row = db.prepare('SELECT sync_override FROM deal_items WHERE twenty_id = ?').get('li-1');
+    expect(row.sync_override).toBe('exclude');
+  });
 });

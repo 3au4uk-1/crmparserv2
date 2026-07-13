@@ -5,6 +5,10 @@ import {
   addDealItemToList,
   getLineItemListStatus,
 } from '../services/twenty-line-item-api.js';
+import {
+  archiveManualTwentyLineItem,
+  upsertManualTwentyLineItem,
+} from '../services/manual-twenty-line-item.js';
 import { scheduleListChangeResync } from '../services/list-change-resync.js';
 import { syncDealToTwenty } from '../services/twenty-sync.js';
 
@@ -29,6 +33,26 @@ router.post('/line-items/:twentyLineItemId/add-to-list', async (req, res, next) 
     void syncDealToTwenty(deal.id, { ignoreLineItemStageProtection: true }).catch((err) => {
       console.error('[twenty] add-to-list sync failed:', err.message);
     });
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/line-items/:twentyLineItemId/sync', (req, res, next) => {
+  try {
+    const db = getDb();
+    const { dealItemId } = upsertManualTwentyLineItem(db, req.params.twentyLineItemId, req.body ?? {});
+    res.json({ success: true, dealItemId });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/line-items/:twentyLineItemId/archive', (req, res, next) => {
+  try {
+    const db = getDb();
+    archiveManualTwentyLineItem(db, req.params.twentyLineItemId);
     res.json({ success: true });
   } catch (err) {
     next(err);
