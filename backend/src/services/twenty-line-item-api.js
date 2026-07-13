@@ -27,8 +27,28 @@ export function findDealItemByTwentyId(db, twentyLineItemId) {
   return { item, deal };
 }
 
+const NEUTRAL_LINE_ITEM_LIST_STATUS = {
+  known: false,
+  blacklisted: false,
+  restorationMatch: false,
+  podryadMatch: false,
+  bannerMatch: false,
+  pattern: null,
+  dealId: null,
+  dealTwentyId: null,
+};
+
 export function getLineItemListStatus(db, twentyLineItemId) {
-  const { item, deal } = findDealItemByTwentyId(db, twentyLineItemId);
+  const item = db.prepare('SELECT * FROM deal_items WHERE twenty_id = ?').get(twentyLineItemId);
+  if (!item) {
+    return NEUTRAL_LINE_ITEM_LIST_STATUS;
+  }
+
+  const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(item.deal_id);
+  if (!deal) {
+    return NEUTRAL_LINE_ITEM_LIST_STATUS;
+  }
+
   const blacklist = loadBlacklist(db);
   const restorationList = loadRestorationList(db);
   const podryadList = loadPodryadList(db);
@@ -42,6 +62,7 @@ export function getLineItemListStatus(db, twentyLineItemId) {
     bannerList,
   );
   return {
+    known: true,
     blacklisted: enriched.blacklisted,
     restorationMatch: enriched.restorationMatch,
     podryadMatch: enriched.podryadMatch,

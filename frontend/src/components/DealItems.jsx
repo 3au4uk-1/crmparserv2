@@ -18,7 +18,7 @@ const classLabels = {
   keyword_match: 'Ключевое слово',
   llm_confirmed: 'LLM: да',
   llm_rejected: 'LLM: нет',
-  unclassified: 'Не определено',
+  manual_twenty: 'Twenty (ручная)',
 };
 
 export default function DealItems({ dealId, items, readOnly = false }) {

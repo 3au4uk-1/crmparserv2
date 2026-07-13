@@ -39,6 +39,20 @@ describe('twenty-line-item-api', () => {
     expect(() => findDealItemByTwentyId(db, 'missing')).toThrow('Line item not found in parser');
   });
 
+  it('getLineItemListStatus returns neutral status when line item is missing', () => {
+    const db = getDb();
+    expect(getLineItemListStatus(db, 'missing')).toEqual({
+      known: false,
+      blacklisted: false,
+      restorationMatch: false,
+      podryadMatch: false,
+      bannerMatch: false,
+      pattern: null,
+      dealId: null,
+      dealTwentyId: null,
+    });
+  });
+
   it('getLineItemListStatus reflects restoration match', () => {
     const db = getDb();
     db.prepare(`

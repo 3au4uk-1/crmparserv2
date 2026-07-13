@@ -68,10 +68,26 @@ describe('twenty routes', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
+      known: true,
       blacklisted: false,
       restorationMatch: false,
       pattern: 'Banner',
       dealTwentyId: 'opp-1',
+    });
+  });
+
+  it('GET list-status returns neutral status for unknown line item', async () => {
+    const res = await request(createApp())
+      .get('/api/twenty/line-items/li-missing/list-status')
+      .set('Authorization', 'Bearer test-secret');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      known: false,
+      blacklisted: false,
+      restorationMatch: false,
+      podryadMatch: false,
+      bannerMatch: false,
     });
   });
 
