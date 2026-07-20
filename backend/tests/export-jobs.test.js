@@ -24,4 +24,25 @@ describe('export-jobs', () => {
     updateExportJob(job.jobId, { status: 'completed' });
     expect(getActiveExportJob()).toBeNull();
   });
+
+  it('scopes active job by kind', () => {
+    const cal = createExportJob({ from: '2025-01-01', to: '2025-01-31', kind: 'calendar' });
+    updateExportJob(cal.jobId, { status: 'running' });
+    const tw = createExportJob({
+      from: '2025-01-01',
+      to: '2025-01-31',
+      kind: 'twenty',
+      includeCancelled: false,
+    });
+    updateExportJob(tw.jobId, { status: 'running' });
+
+    expect(getActiveExportJob('calendar')?.jobId).toBe(cal.jobId);
+    expect(getActiveExportJob('twenty')?.jobId).toBe(tw.jobId);
+  });
+
+  it('defaults kind to calendar', () => {
+    const job = createExportJob({ from: '2025-01-01', to: '2025-01-31' });
+    expect(job.kind).toBe('calendar');
+    expect(getActiveExportJob()?.jobId).toBe(job.jobId);
+  });
 });

@@ -16,15 +16,28 @@ function ensureExportsDir() {
   fs.mkdirSync(EXPORTS_DIR, { recursive: true });
 }
 
-export function createExportJob({ from, to, company = null }) {
+export function createExportJob({
+  from,
+  to,
+  company = null,
+  includeCancelled = false,
+  kind = 'calendar',
+}) {
   const jobId = crypto.randomUUID();
+  const progress =
+    kind === 'twenty'
+      ? { pagesFetched: 0, lineItemsFetched: 0, rowsWritten: 0 }
+      : { eventsTotal: 0, eventsDone: 0, dealsMatched: 0 };
+
   const job = {
     jobId,
+    kind,
     status: 'queued',
     from,
     to,
     company,
-    progress: { eventsTotal: 0, eventsDone: 0, dealsMatched: 0 },
+    includeCancelled: kind === 'twenty' ? Boolean(includeCancelled) : undefined,
+    progress,
     error: null,
     filePath: null,
     createdAt: new Date().toISOString(),
@@ -38,8 +51,9 @@ export function getExportJob(jobId) {
   return jobs.get(jobId) ?? null;
 }
 
-export function getActiveExportJob() {
+export function getActiveExportJob(kind = 'calendar') {
   for (const job of jobs.values()) {
+    if (job.kind !== kind) continue;
     if (job.status === 'queued' || job.status === 'running') return job;
   }
   return null;
