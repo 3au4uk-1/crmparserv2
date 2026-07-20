@@ -538,6 +538,31 @@ export function useActiveExportJob() {
   });
 }
 
+export function useStartTwentyExport() {
+  return useMutation({
+    mutationFn: (body) => api.post('/export/twenty', body).then((r) => r.data),
+  });
+}
+
+export function useTwentyExportJob(jobId, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: ['export-twenty-job', jobId],
+    queryFn: () => api.get(`/export/twenty/${jobId}`).then((r) => r.data),
+    enabled: enabled && !!jobId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === 'queued' || status === 'running' ? 2000 : false;
+    },
+  });
+}
+
+export function useActiveTwentyExportJob() {
+  return useQuery({
+    queryKey: ['export-twenty-active'],
+    queryFn: () => api.get('/export/twenty/active').then((r) => r.data),
+  });
+}
+
 function isExpenseJobRunning(status) {
   return status === 'queued' || status === 'running';
 }
@@ -696,6 +721,16 @@ export async function downloadExportFile(jobId, from, to) {
   const a = document.createElement('a');
   a.href = url;
   a.download = `сделки_${from}_${to}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function downloadTwentyExportFile(jobId, from, to) {
+  const resp = await api.get(`/export/twenty/${jobId}/file`, { responseType: 'blob' });
+  const url = URL.createObjectURL(resp.data);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `twenty_заказы_${from}_${to}.xlsx`;
   a.click();
   URL.revokeObjectURL(url);
 }
