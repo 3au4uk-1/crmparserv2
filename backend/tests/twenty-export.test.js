@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import ExcelJS from 'exceljs';
 import {
   extractLinkUrl,
   amountMicrosToNumber,
@@ -8,6 +9,7 @@ import {
   resolveComment,
   mapLineItemToRow,
   sortExportRows,
+  buildTwentyExportWorkbook,
 } from '../src/services/twenty-export.js';
 
 describe('extractLinkUrl', () => {
@@ -146,5 +148,53 @@ describe('sortExportRows', () => {
       { date: '2026-06-01', opportunityName: 'A', positionName: 'a' },
     ]);
     expect(rows.map((r) => r.positionName)).toEqual(['a', 'b', 'z']);
+  });
+});
+
+describe('buildTwentyExportWorkbook', () => {
+  it('writes Russian headers and one data row with hyperlinks', async () => {
+    const buffer = await buildTwentyExportWorkbook([
+      {
+        dateDisplay: '04.06.2026',
+        opportunityName: 'Заказ',
+        positionName: 'Баннер',
+        layoutUrl: 'https://disk.example/m',
+        comment: 'коммент',
+        unitPrice: 100,
+        lineSum: 200,
+        quantity: 2,
+        statusLabel: 'Новый',
+        tonyUrl: 'https://tony.example/1',
+        bitrixUrl: 'https://bitrix.example/1',
+      },
+    ]);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer);
+    const sheet = wb.getWorksheet('Заказы');
+    expect(sheet.getRow(1).values.slice(1)).toEqual([
+      'Дата',
+      'Название',
+      'Позиция',
+      'Ссылка на макет',
+      'Комментарий',
+      'Цена за ед.',
+      'Сумма позиции',
+      'Количество',
+      'Статус',
+      'Ссылка на тони',
+      'Ссылка на битрикс',
+    ]);
+    expect(sheet.getRow(2).getCell(1).value).toBe('04.06.2026');
+    expect(sheet.getRow(2).getCell(4).value).toEqual({
+      text: 'https://disk.example/m',
+      hyperlink: 'https://disk.example/m',
+    });
+  });
+
+  it('writes headers only when rows empty', async () => {
+    const buffer = await buildTwentyExportWorkbook([]);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer);
+    expect(wb.getWorksheet('Заказы').rowCount).toBe(1);
   });
 });

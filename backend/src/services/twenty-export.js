@@ -1,3 +1,4 @@
+import ExcelJS from 'exceljs';
 import { toInputDate } from '../utils/crm-dates.js';
 import {
   OPPORTUNITY_STAGE_OPTIONS,
@@ -102,4 +103,52 @@ export function sortExportRows(rows) {
     if (byName !== 0) return byName;
     return (a.positionName || '').localeCompare(b.positionName || '', 'ru');
   });
+}
+
+const HEADERS = [
+  'Дата',
+  'Название',
+  'Позиция',
+  'Ссылка на макет',
+  'Комментарий',
+  'Цена за ед.',
+  'Сумма позиции',
+  'Количество',
+  'Статус',
+  'Ссылка на тони',
+  'Ссылка на битрикс',
+];
+
+function cellLink(url) {
+  if (!url) return '';
+  return { text: url, hyperlink: url };
+}
+
+export async function buildTwentyExportWorkbook(rows) {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'CRM Parser';
+  const sheet = wb.addWorksheet('Заказы');
+  sheet.addRow(HEADERS).font = { bold: true };
+
+  for (const row of rows) {
+    sheet.addRow([
+      row.dateDisplay,
+      row.opportunityName,
+      row.positionName,
+      cellLink(row.layoutUrl),
+      row.comment,
+      row.unitPrice,
+      row.lineSum,
+      row.quantity,
+      row.statusLabel,
+      cellLink(row.tonyUrl),
+      cellLink(row.bitrixUrl),
+    ]);
+  }
+
+  sheet.columns.forEach((col) => {
+    col.width = 18;
+  });
+
+  return wb.xlsx.writeBuffer();
 }
