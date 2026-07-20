@@ -218,7 +218,12 @@ export async function fetchAllDealLineItems(
 
     const pageInfo = connection.pageInfo;
     if (pageInfo) {
-      if (!pageInfo.hasNextPage || !pageInfo.endCursor) break;
+      if (!pageInfo.hasNextPage) break;
+      if (!pageInfo.endCursor) {
+        throw new Error(
+          'Twenty GraphQL response has hasNextPage but is missing endCursor for dealLineItems'
+        );
+      }
       after = pageInfo.endCursor;
       continue;
     }

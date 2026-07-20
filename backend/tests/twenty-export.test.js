@@ -275,6 +275,45 @@ describe('fetchAllDealLineItems', () => {
     expect(calls).toHaveLength(2);
     expect(calls[1].after).toBe('c2');
   });
+
+  it('throws when dealLineItems connection is missing', async () => {
+    const fakeGql = async () => ({
+      status: 200,
+      data: { data: {} },
+    });
+
+    await expect(
+      fetchAllDealLineItems(fakeGql, 'http://gql', 'tok')
+    ).rejects.toThrow('Twenty GraphQL response is missing dealLineItems');
+  });
+
+  it('throws on HTTP failure via assertHttpSuccess', async () => {
+    const fakeGql = async () => ({ status: 500, data: {} });
+
+    await expect(
+      fetchAllDealLineItems(fakeGql, 'http://gql', 'tok')
+    ).rejects.toThrow('Twenty API error: HTTP 500');
+  });
+
+  it('throws when hasNextPage is true without endCursor', async () => {
+    const fakeGql = async () => ({
+      status: 200,
+      data: {
+        data: {
+          dealLineItems: {
+            edges: [{ cursor: 'c1', node: { id: '1' } }],
+            pageInfo: { hasNextPage: true, endCursor: null },
+          },
+        },
+      },
+    });
+
+    await expect(
+      fetchAllDealLineItems(fakeGql, 'http://gql', 'tok')
+    ).rejects.toThrow(
+      'Twenty GraphQL response has hasNextPage but is missing endCursor for dealLineItems'
+    );
+  });
 });
 
 describe('buildRowsFromLineItems', () => {

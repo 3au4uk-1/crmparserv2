@@ -33,3 +33,17 @@ The new focused tests initially failed because `fetchAllDealLineItems` and
 
 - `npm test -- twenty-export.test.js` — 1 file, 24 tests passed
 - `npm test` — 71 files, 414 tests passed
+
+## Important Findings Fix
+
+- `fetchAllDealLineItems` now throws when `pageInfo.hasNextPage` is true but
+  `endCursor` is missing/empty (no silent truncation). Edge-cursor fallback
+  remains only when `pageInfo` is entirely absent.
+- Added regression tests: missing `dealLineItems` connection, HTTP >= 400 via
+  `assertHttpSuccess`, and incomplete pagination (`hasNextPage` without
+  `endCursor`).
+
+## Important Findings Verification
+
+- `npm test --prefix backend -- twenty-export` — 1 file, 27 tests passed
+- `npm test --prefix backend` — 71 files, 417 tests passed
