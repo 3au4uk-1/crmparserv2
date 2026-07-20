@@ -14,6 +14,7 @@ import restorationRouter from './routes/restoration.js';
 import podryadRouter from './routes/podryad.js';
 import bannerRouter from './routes/banner.js';
 import exportRouter from './routes/export.js';
+import exportTwentyRouter from './routes/export-twenty.js';
 import expensesRouter from './routes/expenses.js';
 import authRouter from './routes/auth.js';
 import twentyRouter from './routes/twenty.js';
@@ -51,6 +52,7 @@ app.use('/api/blacklist', blacklistRouter);
 app.use('/api/restoration', restorationRouter);
 app.use('/api/podryad', podryadRouter);
 app.use('/api/banner', bannerRouter);
+app.use('/api/export/twenty', exportTwentyRouter);
 app.use('/api/export', exportRouter);
 app.use('/api/expenses', expensesRouter);
 
