@@ -6,7 +6,7 @@ import {
 } from './twenty-opportunity.js';
 import { LAYOUT_LINK_FIELD } from './print-sheet-field-names.js';
 import { PRINT_COMMENT_FIELD } from './print-sheet-field-names.js';
-import { gql } from './twenty-gql.js';
+import { assertGqlSuccess, assertHttpSuccess, gql } from './twenty-gql.js';
 import { requireTwentyConfig } from './twenty-config.js';
 import { setExportJobFile, updateExportJob } from './export-jobs.js';
 
@@ -200,8 +200,15 @@ export async function fetchAllDealLineItems(
       first: pageSize,
       after,
     });
+    assertHttpSuccess(response, apiUrl);
+    assertGqlSuccess(response, 'Twenty GraphQL request failed while fetching deal line items');
+
     const connection = response.data?.data?.dealLineItems;
-    const edges = connection?.edges ?? [];
+    if (!connection) {
+      throw new Error('Twenty GraphQL response is missing dealLineItems');
+    }
+
+    const edges = connection.edges ?? [];
     for (const edge of edges) {
       if (edge?.node) items.push(edge.node);
     }
@@ -209,9 +216,19 @@ export async function fetchAllDealLineItems(
     pagesFetched += 1;
     onPage?.({ pagesFetched, lineItemsFetched: items.length });
 
-    const pageInfo = connection?.pageInfo;
-    if (!pageInfo?.hasNextPage || !pageInfo.endCursor) break;
-    after = pageInfo.endCursor;
+    const pageInfo = connection.pageInfo;
+    if (pageInfo) {
+      if (!pageInfo.hasNextPage || !pageInfo.endCursor) break;
+      after = pageInfo.endCursor;
+      continue;
+    }
+
+    if (edges.length < pageSize) break;
+    const lastCursor = edges.at(-1)?.cursor;
+    if (!lastCursor) {
+      throw new Error('Twenty GraphQL response is missing a cursor for a full dealLineItems page');
+    }
+    after = lastCursor;
   }
 
   return items;
@@ -226,13 +243,17 @@ export function buildRowsFromLineItems(lineItems, options) {
   return sortExportRows(rows);
 }
 
-export async function runTwentyExport(jobId, { from, to, includeCancelled = false }) {
-  normalizeExportRange(from, to);
+export async function runTwentyExport(
+  jobId,
+  { from, to, includeCancelled = false },
+  { gqlFn = gql, requireTwentyConfigFn = requireTwentyConfig } = {}
+) {
   updateExportJob(jobId, { status: 'running' });
 
   try {
-    const twenty = requireTwentyConfig();
-    const lineItems = await fetchAllDealLineItems(gql, twenty.apiUrl, twenty.apiToken, {
+    normalizeExportRange(from, to);
+    const twenty = requireTwentyConfigFn();
+    const lineItems = await fetchAllDealLineItems(gqlFn, twenty.apiUrl, twenty.apiToken, {
       onPage: ({ pagesFetched, lineItemsFetched }) => {
         updateExportJob(jobId, {
           progress: { pagesFetched, lineItemsFetched },

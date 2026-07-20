@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import ExcelJS from 'exceljs';
 import {
   extractLinkUrl,
@@ -12,7 +12,13 @@ import {
   buildTwentyExportWorkbook,
   fetchAllDealLineItems,
   buildRowsFromLineItems,
+  runTwentyExport,
 } from '../src/services/twenty-export.js';
+import {
+  createExportJob,
+  getExportJob,
+  resetExportJobsForTests,
+} from '../src/services/export-jobs.js';
 
 describe('extractLinkUrl', () => {
   it('reads primaryLinkUrl', () => {
@@ -238,6 +244,37 @@ describe('fetchAllDealLineItems', () => {
     expect(calls).toHaveLength(2);
     expect(calls[1].after).toBe('c1');
   });
+
+  it('uses the last edge cursor when pageInfo is absent', async () => {
+    const calls = [];
+    const fakeGql = async (_url, _token, _query, variables) => {
+      calls.push(variables);
+      const firstPage = !variables.after;
+      return {
+        status: 200,
+        data: {
+          data: {
+            dealLineItems: {
+              edges: firstPage
+                ? [
+                    { cursor: 'c1', node: { id: '1' } },
+                    { cursor: 'c2', node: { id: '2' } },
+                  ]
+                : [{ cursor: 'c3', node: { id: '3' } }],
+            },
+          },
+        },
+      };
+    };
+
+    const items = await fetchAllDealLineItems(fakeGql, 'http://gql', 'tok', {
+      pageSize: 2,
+    });
+
+    expect(items.map((item) => item.id)).toEqual(['1', '2', '3']);
+    expect(calls).toHaveLength(2);
+    expect(calls[1].after).toBe('c2');
+  });
 });
 
 describe('buildRowsFromLineItems', () => {
@@ -263,5 +300,51 @@ describe('buildRowsFromLineItems', () => {
     );
 
     expect(rows.map((row) => row.positionName)).toEqual(['A', 'B']);
+  });
+});
+
+describe('runTwentyExport', () => {
+  beforeEach(() => {
+    resetExportJobsForTests();
+  });
+
+  it('marks the job failed when Twenty returns GraphQL errors', async () => {
+    const job = createExportJob({
+      from: '2026-06-01',
+      to: '2026-06-30',
+      kind: 'twenty',
+    });
+
+    await runTwentyExport(
+      job.jobId,
+      { from: job.from, to: job.to },
+      {
+        gqlFn: async () => ({
+          status: 200,
+          data: { errors: [{ message: 'Unknown field "dealLineItems"' }] },
+        }),
+        requireTwentyConfigFn: () => ({ apiUrl: 'http://gql', apiToken: 'tok' }),
+      }
+    );
+
+    expect(getExportJob(job.jobId)).toMatchObject({
+      status: 'failed',
+      error: 'Unknown field "dealLineItems"',
+    });
+  });
+
+  it('marks the job failed when the date range is invalid', async () => {
+    const job = createExportJob({
+      from: '2026-06-30',
+      to: '2026-06-01',
+      kind: 'twenty',
+    });
+
+    await runTwentyExport(job.jobId, { from: job.from, to: job.to });
+
+    expect(getExportJob(job.jobId)).toMatchObject({
+      status: 'failed',
+      error: expect.any(String),
+    });
   });
 });
