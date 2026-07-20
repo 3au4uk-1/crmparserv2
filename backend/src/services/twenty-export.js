@@ -8,7 +8,7 @@ import { LAYOUT_LINK_FIELD } from './print-sheet-field-names.js';
 import { PRINT_COMMENT_FIELD } from './print-sheet-field-names.js';
 import { assertGqlSuccess, assertHttpSuccess, gql } from './twenty-gql.js';
 import { requireTwentyConfig } from './twenty-config.js';
-import { setExportJobFile, updateExportJob } from './export-jobs.js';
+import { getExportJob, setExportJobFile, updateExportJob } from './export-jobs.js';
 
 const STAGE_LABEL_BY_VALUE = Object.fromEntries(
   OPPORTUNITY_STAGE_OPTIONS.map((o) => [o.value, o.label])
@@ -269,11 +269,12 @@ export async function runTwentyExport(
     const buffer = await buildTwentyExportWorkbook(rows);
 
     setExportJobFile(jobId, buffer);
+    const pagesFetched = getExportJob(jobId)?.progress?.pagesFetched ?? 0;
     updateExportJob(jobId, {
       status: 'completed',
       completedAt: new Date().toISOString(),
       progress: {
-        pagesFetched: undefined,
+        pagesFetched,
         lineItemsFetched: lineItems.length,
         rowsWritten: rows.length,
       },

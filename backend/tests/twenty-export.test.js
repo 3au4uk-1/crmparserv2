@@ -386,4 +386,66 @@ describe('runTwentyExport', () => {
       error: expect.any(String),
     });
   });
+
+  it('keeps pagesFetched on completed jobs after multi-page fetch', async () => {
+    const job = createExportJob({
+      from: '2026-06-01',
+      to: '2026-06-30',
+      kind: 'twenty',
+    });
+
+    const lineItem = {
+      name: 'Баннер',
+      stage: 'NOVYY',
+      kolichestvo: 1,
+      amount: { amountMicros: 1_000_000 },
+      opportunity: { name: 'Test', closeDate: '2026-06-04', stage: 'NOVYY' },
+    };
+
+    async function fakeGql(_url, _token, _query, variables) {
+      if (!variables.after) {
+        return {
+          status: 200,
+          data: {
+            data: {
+              dealLineItems: {
+                edges: [{ node: { ...lineItem, id: '1' } }],
+                pageInfo: { hasNextPage: true, endCursor: 'c1' },
+              },
+            },
+          },
+        };
+      }
+      return {
+        status: 200,
+        data: {
+          data: {
+            dealLineItems: {
+              edges: [{ node: { ...lineItem, id: '2' } }],
+              pageInfo: { hasNextPage: false, endCursor: 'c2' },
+            },
+          },
+        },
+      };
+    }
+
+    await runTwentyExport(
+      job.jobId,
+      { from: job.from, to: job.to },
+      {
+        gqlFn: fakeGql,
+        requireTwentyConfigFn: () => ({ apiUrl: 'http://gql', apiToken: 'tok' }),
+      }
+    );
+
+    const completed = getExportJob(job.jobId);
+    expect(completed).toMatchObject({
+      status: 'completed',
+      progress: {
+        pagesFetched: 2,
+        lineItemsFetched: 2,
+        rowsWritten: 2,
+      },
+    });
+  });
 });

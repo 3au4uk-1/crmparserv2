@@ -13,6 +13,13 @@ import { getTwentyConfig } from '../services/twenty-config.js';
 const router = Router();
 
 router.post('/', (req, res) => {
+  const { from, to, includeCancelled = false } = req.body ?? {};
+  try {
+    normalizeExportRange(from, to);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+
   if (getActiveExportJob('twenty')) {
     return res.status(409).json({ error: 'Выгрузка Twenty уже выполняется' });
   }
@@ -20,13 +27,6 @@ router.post('/', (req, res) => {
   const twenty = getTwentyConfig();
   if (!twenty.apiUrl || !twenty.apiToken) {
     return res.status(503).json({ error: 'Twenty CRM не настроен' });
-  }
-
-  const { from, to, includeCancelled = false } = req.body ?? {};
-  try {
-    normalizeExportRange(from, to);
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
   }
 
   const job = createExportJob({
