@@ -1,11 +1,14 @@
 import ExcelJS from 'exceljs';
-import { toInputDate } from '../utils/crm-dates.js';
+import { normalizeExportRange, toInputDate } from '../utils/crm-dates.js';
 import {
   OPPORTUNITY_STAGE_OPTIONS,
   CANCELLED_OPPORTUNITY_STAGE,
 } from './twenty-opportunity.js';
 import { LAYOUT_LINK_FIELD } from './print-sheet-field-names.js';
 import { PRINT_COMMENT_FIELD } from './print-sheet-field-names.js';
+import { gql } from './twenty-gql.js';
+import { requireTwentyConfig } from './twenty-config.js';
+import { setExportJobFile, updateExportJob } from './export-jobs.js';
 
 const STAGE_LABEL_BY_VALUE = Object.fromEntries(
   OPPORTUNITY_STAGE_OPTIONS.map((o) => [o.value, o.label])
@@ -151,4 +154,109 @@ export async function buildTwentyExportWorkbook(rows) {
   });
 
   return wb.xlsx.writeBuffer();
+}
+
+const LINE_ITEM_EXPORT_FIELDS = `
+  id
+  name
+  stage
+  kommentariy
+  ${PRINT_COMMENT_FIELD}
+  kolichestvo
+  amount { amountMicros currencyCode }
+  ${LAYOUT_LINK_FIELD} { primaryLinkUrl }
+  opportunity {
+    id
+    name
+    closeDate
+    loadDate
+    stage
+    tonyLink { primaryLinkUrl }
+    bitrixLink { primaryLinkUrl }
+  }
+`;
+
+const LIST_LINE_ITEMS_PAGE = `
+  query ListDealLineItemsForExport($first: Int!, $after: String) {
+    dealLineItems(first: $first, after: $after) {
+      edges { cursor node { ${LINE_ITEM_EXPORT_FIELDS} } }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+`;
+
+export async function fetchAllDealLineItems(
+  gqlFn,
+  apiUrl,
+  apiToken,
+  { pageSize = 100, onPage } = {}
+) {
+  const items = [];
+  let after = null;
+  let pagesFetched = 0;
+
+  for (;;) {
+    const response = await gqlFn(apiUrl, apiToken, LIST_LINE_ITEMS_PAGE, {
+      first: pageSize,
+      after,
+    });
+    const connection = response.data?.data?.dealLineItems;
+    const edges = connection?.edges ?? [];
+    for (const edge of edges) {
+      if (edge?.node) items.push(edge.node);
+    }
+
+    pagesFetched += 1;
+    onPage?.({ pagesFetched, lineItemsFetched: items.length });
+
+    const pageInfo = connection?.pageInfo;
+    if (!pageInfo?.hasNextPage || !pageInfo.endCursor) break;
+    after = pageInfo.endCursor;
+  }
+
+  return items;
+}
+
+export function buildRowsFromLineItems(lineItems, options) {
+  const rows = [];
+  for (const lineItem of lineItems) {
+    const row = mapLineItemToRow(lineItem, options);
+    if (row) rows.push(row);
+  }
+  return sortExportRows(rows);
+}
+
+export async function runTwentyExport(jobId, { from, to, includeCancelled = false }) {
+  normalizeExportRange(from, to);
+  updateExportJob(jobId, { status: 'running' });
+
+  try {
+    const twenty = requireTwentyConfig();
+    const lineItems = await fetchAllDealLineItems(gql, twenty.apiUrl, twenty.apiToken, {
+      onPage: ({ pagesFetched, lineItemsFetched }) => {
+        updateExportJob(jobId, {
+          progress: { pagesFetched, lineItemsFetched },
+        });
+      },
+    });
+    const rows = buildRowsFromLineItems(lineItems, { from, to, includeCancelled });
+    const buffer = await buildTwentyExportWorkbook(rows);
+
+    setExportJobFile(jobId, buffer);
+    updateExportJob(jobId, {
+      status: 'completed',
+      completedAt: new Date().toISOString(),
+      progress: {
+        pagesFetched: undefined,
+        lineItemsFetched: lineItems.length,
+        rowsWritten: rows.length,
+      },
+    });
+  } catch (err) {
+    updateExportJob(jobId, {
+      status: 'failed',
+      error: err.message || String(err),
+      completedAt: new Date().toISOString(),
+    });
+  }
 }

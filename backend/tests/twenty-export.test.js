@@ -10,6 +10,8 @@ import {
   mapLineItemToRow,
   sortExportRows,
   buildTwentyExportWorkbook,
+  fetchAllDealLineItems,
+  buildRowsFromLineItems,
 } from '../src/services/twenty-export.js';
 
 describe('extractLinkUrl', () => {
@@ -196,5 +198,70 @@ describe('buildTwentyExportWorkbook', () => {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buffer);
     expect(wb.getWorksheet('Заказы').rowCount).toBe(1);
+  });
+});
+
+describe('fetchAllDealLineItems', () => {
+  it('paginates until hasNextPage false', async () => {
+    const calls = [];
+    async function fakeGql(_url, _token, _query, variables) {
+      calls.push(variables);
+      if (!variables.after) {
+        return {
+          data: {
+            data: {
+              dealLineItems: {
+                edges: [{ node: { id: '1' } }, { node: { id: '2' } }],
+                pageInfo: { hasNextPage: true, endCursor: 'c1' },
+              },
+            },
+          },
+        };
+      }
+      return {
+        data: {
+          data: {
+            dealLineItems: {
+              edges: [{ node: { id: '3' } }],
+              pageInfo: { hasNextPage: false, endCursor: 'c2' },
+            },
+          },
+        },
+      };
+    }
+
+    const items = await fetchAllDealLineItems(fakeGql, 'http://gql', 'tok', {
+      pageSize: 2,
+    });
+
+    expect(items.map((item) => item.id)).toEqual(['1', '2', '3']);
+    expect(calls).toHaveLength(2);
+    expect(calls[1].after).toBe('c1');
+  });
+});
+
+describe('buildRowsFromLineItems', () => {
+  it('maps and sorts', () => {
+    const rows = buildRowsFromLineItems(
+      [
+        {
+          name: 'B',
+          stage: 'NOVYY',
+          kolichestvo: 1,
+          amount: { amountMicros: 1_000_000 },
+          opportunity: { name: 'Z', closeDate: '2026-06-02', stage: 'NOVYY' },
+        },
+        {
+          name: 'A',
+          stage: 'NOVYY',
+          kolichestvo: 1,
+          amount: { amountMicros: 1_000_000 },
+          opportunity: { name: 'Z', closeDate: '2026-06-01', stage: 'NOVYY' },
+        },
+      ],
+      { from: '2026-06-01', to: '2026-06-30', includeCancelled: false }
+    );
+
+    expect(rows.map((row) => row.positionName)).toEqual(['A', 'B']);
   });
 });
