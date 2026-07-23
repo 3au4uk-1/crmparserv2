@@ -10,8 +10,6 @@ import { logTwentyStep } from './twenty-sync-log.js';
 import { DEFAULT_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
 import { MANUAL_TWENTY_CLASSIFICATION } from './manual-twenty-line-item.js';
 
-const DEFAULT_MANUAL_LINE_ITEM_NAME = 'Новая позиция';
-
 /** Line items at this stage (or null) may be deleted/updated on re-sync. */
 export const DELETABLE_LINE_ITEM_STAGE = DEFAULT_OPPORTUNITY_STAGE;
 
@@ -23,11 +21,10 @@ function isManualTwentyItem(item) {
   return item.classification === MANUAL_TWENTY_CLASSIFICATION && item.twenty_id;
 }
 
-function isManualTwentyDraft(li, manualParserTwentyIds) {
+function isUnsyncedManualTwenty(li, manualParserTwentyIds) {
   return (
     li.istochnik === 'TWENTY_RUCHNAYA'
     && !manualParserTwentyIds.has(li.id)
-    && normalizePattern(li.name) === normalizePattern(DEFAULT_MANUAL_LINE_ITEM_NAME)
   );
 }
 
@@ -88,7 +85,7 @@ export function computeLineItemDiff(
       preserved.push({ id: li.id, name: li.name, stage: li.stage });
       continue;
     }
-    if (isManualTwentyDraft(li, manualParserTwentyIds)) continue;
+    if (isUnsyncedManualTwenty(li, manualParserTwentyIds)) continue;
     toDelete.push(li.id);
   }
 

@@ -127,6 +127,14 @@ describe('computeLineItemDiff', () => {
     expect(diff.toDelete).toEqual([]);
   });
 
+  it('does not delete unsynced TWENTY_RUCHNAYA with non-default name', () => {
+    const existing = [
+      { id: 'li-draft', name: 'Баннер клиентский', stage: 'NOVYY', istochnik: 'TWENTY_RUCHNAYA' },
+    ];
+    const diff = computeLineItemDiff(existing, []);
+    expect(diff.toDelete).toEqual([]);
+  });
+
   it('does not delete TWENTY_RUCHNAYA draft without parser row', () => {
     const existing = [
       { id: 'li-draft', name: 'Новая позиция', stage: 'NOVYY', istochnik: 'TWENTY_RUCHNAYA' },
@@ -135,11 +143,13 @@ describe('computeLineItemDiff', () => {
     expect(diff.toDelete).toEqual([]);
   });
 
-  it('deletes TWENTY_RUCHNAYA row once archived in parser (exclude)', () => {
+  it('deletes TWENTY_RUCHNAYA when twenty_id exists in parser manuals set (archived)', () => {
     const existing = [
       { id: 'li-gone', name: 'Баннер', stage: 'NOVYY', istochnik: 'TWENTY_RUCHNAYA' },
     ];
-    const diff = computeLineItemDiff(existing, []);
+    const diff = computeLineItemDiff(existing, [], {
+      manualParserTwentyIds: new Set(['li-gone']),
+    });
     expect(diff.toDelete).toEqual(['li-gone']);
   });
 });
