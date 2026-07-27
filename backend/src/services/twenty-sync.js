@@ -3,8 +3,7 @@ import { getDb } from '../db/connection.js';
 import { getTwentyConfig, requireTwentyConfig } from './twenty-config.js';
 import { loadBlacklist } from './blacklist.js';
 import { loadRestorationList, isRestorationItem } from './restoration.js';
-import { loadPodryadList, isPodryadItem } from './podryad.js';
-import { loadBannerList, isBannerItem } from './banner.js';
+import { loadTipRules, findTipRuleMatch } from './tip-rules.js';
 import { buildOpportunityInput, computeDealItemsTotal, computeLineItemTotal, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
 import {
   getItemsForTwenty,
@@ -250,8 +249,7 @@ async function updateDealInTwenty(
   items,
   twenty,
   restorationList,
-  podryadList,
-  bannerList,
+  tipRules,
   { ignoreLineItemStageProtection = false } = {},
 ) {
   const db = getDb();
@@ -315,8 +313,7 @@ async function updateDealInTwenty(
     db,
     deal,
     restorationList,
-    podryadList,
-    bannerList,
+    tipRules,
     ignoreStageProtection: ignoreLineItemStageProtection,
   });
 
@@ -331,7 +328,7 @@ async function updateDealInTwenty(
   return { twentyId: oppId, action, itemCount: items.length };
 }
 
-async function createDealInTwenty(dealId, deal, items, twenty, restorationList, podryadList, bannerList) {
+async function createDealInTwenty(dealId, deal, items, twenty, restorationList, tipRules) {
   const db = getDb();
 
   const { companyTwentyId, personTwentyId } = await resolveCompanyAndPerson(deal, twenty);
@@ -369,8 +366,7 @@ async function createDealInTwenty(dealId, deal, items, twenty, restorationList, 
     db,
     deal,
     restorationList,
-    podryadList,
-    bannerList,
+    tipRules,
   });
 
   db.prepare(`
@@ -396,8 +392,7 @@ export function buildSyncPreview(dealId) {
   const allItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(dealId);
   const blacklist = loadBlacklist(db);
   const restorationList = loadRestorationList(db);
-  const podryadList = loadPodryadList(db);
-  const bannerList = loadBannerList(db);
+  const tipRules = loadTipRules(db);
   const eligibleItems = getItemsForTwenty(allItems, blacklist);
   const eligibleAmount = computeDealItemsTotal(deal, eligibleItems, restorationList);
 
@@ -408,15 +403,19 @@ export function buildSyncPreview(dealId) {
     eligibleCount: eligibleItems.length,
     totalCount: allItems.length,
     eligibleAmount,
-    eligibleItems: eligibleItems.map((item) => ({
-      id: item.id,
-      name: item.name,
-      reason: getItemEligibleReason(item, blacklist),
-      twentyLineAmount: computeLineItemTotal(item, deal, restorationList),
-      restorationMatch: isRestorationItem(item.name, restorationList),
-      podryadMatch: isPodryadItem(item.name, podryadList),
-      bannerMatch: isBannerItem(item.name, bannerList),
-    })),
+    eligibleItems: eligibleItems.map((item) => {
+      const tipHit = findTipRuleMatch(item.name, tipRules);
+      return {
+        id: item.id,
+        name: item.name,
+        reason: getItemEligibleReason(item, blacklist),
+        twentyLineAmount: computeLineItemTotal(item, deal, restorationList),
+        restorationMatch: isRestorationItem(item.name, restorationList),
+        tipRuleMatch: Boolean(tipHit),
+        podryadMatch: tipHit?.tip === 'PODRYAD',
+        bannerMatch: tipHit?.tip === 'BANNERA',
+      };
+    }),
     alreadySynced: Boolean(deal.twenty_id),
     twentyId: deal.twenty_id || null,
     twentyError: deal.twenty_error || null,
@@ -442,8 +441,7 @@ export async function syncDealToTwenty(
   const allItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(dealId);
   const blacklist = loadBlacklist(db);
   const restorationList = loadRestorationList(db);
-  const podryadList = loadPodryadList(db);
-  const bannerList = loadBannerList(db);
+  const tipRules = loadTipRules(db);
   const items = getItemsForTwenty(allItems, blacklist);
   const mode = deal.twenty_id ? 'update' : 'create';
 
@@ -473,8 +471,7 @@ export async function syncDealToTwenty(
         items,
         twenty,
         restorationList,
-        podryadList,
-        bannerList,
+        tipRules,
         { ignoreLineItemStageProtection },
       );
     } else {
@@ -486,7 +483,7 @@ export async function syncDealToTwenty(
         throw new Error(message);
       }
 
-      result = await createDealInTwenty(dealId, deal, items, twenty, restorationList, podryadList, bannerList);
+      result = await createDealInTwenty(dealId, deal, items, twenty, restorationList, tipRules);
     }
 
     if (!skipPrintSheetRefresh) {

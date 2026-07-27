@@ -1,7 +1,6 @@
 import { findBlacklistMatch, isBlacklisted } from './blacklist.js';
 import { findRestorationMatch } from './restoration.js';
-import { findPodryadMatch } from './podryad.js';
-import { findBannerMatch } from './banner.js';
+import { findTipRuleMatch } from './tip-rules.js';
 import { computeLineItemTotal } from './twenty-opportunity.js';
 
 const AUTO_ELIGIBLE = new Set(['keyword_match', 'llm_confirmed']);
@@ -30,15 +29,13 @@ export function enrichDealItems(
   blacklist = [],
   restorationList = [],
   deal = null,
-  podryadList = [],
-  bannerList = []
+  tipRules = []
 ) {
   const dealContext = deal ? { data_source: deal.data_source } : null;
   return items.map((item) => {
     const blacklistHit = findBlacklistMatch(item.name, blacklist);
     const restorationHit = findRestorationMatch(item.name, restorationList);
-    const podryadHit = findPodryadMatch(item.name, podryadList);
-    const bannerHit = findBannerMatch(item.name, bannerList);
+    const tipHit = findTipRuleMatch(item.name, tipRules);
     return {
       ...item,
       blacklisted: Boolean(blacklistHit),
@@ -49,14 +46,18 @@ export function enrichDealItems(
       restorationMatchEntry: restorationHit
         ? { id: restorationHit.id, pattern: restorationHit.pattern, matchType: restorationHit.matchType }
         : null,
-      podryadMatch: Boolean(podryadHit),
-      podryadMatchEntry: podryadHit
-        ? { id: podryadHit.id, pattern: podryadHit.pattern, matchType: podryadHit.matchType }
+      tipRuleMatch: Boolean(tipHit),
+      tipRuleMatchEntry: tipHit
+        ? {
+            id: tipHit.id,
+            pattern: tipHit.pattern,
+            matchType: tipHit.matchType,
+            tip: tipHit.tip,
+            tipDetail: tipHit.tipDetail,
+          }
         : null,
-      bannerMatch: Boolean(bannerHit),
-      bannerMatchEntry: bannerHit
-        ? { id: bannerHit.id, pattern: bannerHit.pattern, matchType: bannerHit.matchType }
-        : null,
+      podryadMatch: tipHit?.tip === 'PODRYAD',
+      bannerMatch: tipHit?.tip === 'BANNERA',
       twentyLineAmount: computeLineItemTotal(item, dealContext, restorationList),
       eligibleForTwenty: isItemEligibleForTwenty(item, blacklist),
       syncMode: item.sync_override ? 'manual' : 'auto',

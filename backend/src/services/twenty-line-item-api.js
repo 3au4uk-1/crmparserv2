@@ -1,7 +1,8 @@
 import { createBlacklistEntry, loadBlacklist } from './blacklist.js';
 import { createRestorationEntry, loadRestorationList } from './restoration.js';
-import { createPodryadEntry, loadPodryadList } from './podryad.js';
-import { createBannerEntry, loadBannerList } from './banner.js';
+import { createPodryadEntry } from './podryad.js';
+import { createBannerEntry } from './banner.js';
+import { loadTipRules } from './tip-rules.js';
 import { enrichDealItems } from './twenty-items.js';
 
 const LIST_CREATORS = {
@@ -51,15 +52,13 @@ export function getLineItemListStatus(db, twentyLineItemId) {
 
   const blacklist = loadBlacklist(db);
   const restorationList = loadRestorationList(db);
-  const podryadList = loadPodryadList(db);
-  const bannerList = loadBannerList(db);
+  const tipRules = loadTipRules(db);
   const [enriched] = enrichDealItems(
     [item],
     blacklist,
     restorationList,
     deal,
-    podryadList,
-    bannerList,
+    tipRules,
   );
   return {
     known: true,

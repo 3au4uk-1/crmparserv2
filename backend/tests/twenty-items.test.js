@@ -132,3 +132,47 @@ describe('enrichDealItems restoration', () => {
     expect(enriched[0].twentyLineAmount).toBe(0);
   });
 });
+
+describe('enrichDealItems tip rules', () => {
+  const items = [{
+    id: 1,
+    name: 'Баннер 3x6',
+    price: 1000,
+    quantity: '1',
+    classification: 'keyword_match',
+    sync_override: null,
+  }];
+
+  it('exposes the unified tip-rule match and derives legacy UI flags', () => {
+    const tipRules = [{
+      id: 7,
+      pattern: 'баннер',
+      matchType: 'substring',
+      tip: 'BANNERA',
+      tipDetail: 'INTERER',
+      priority: 50,
+    }];
+
+    const [enriched] = enrichDealItems(items, [], [], null, tipRules);
+
+    expect(enriched.tipRuleMatch).toBe(true);
+    expect(enriched.tipRuleMatchEntry).toEqual({
+      id: 7,
+      pattern: 'баннер',
+      matchType: 'substring',
+      tip: 'BANNERA',
+      tipDetail: 'INTERER',
+    });
+    expect(enriched.podryadMatch).toBe(false);
+    expect(enriched.bannerMatch).toBe(true);
+  });
+
+  it('returns null match metadata and false legacy flags when unmatched', () => {
+    const [enriched] = enrichDealItems(items, [], [], null, []);
+
+    expect(enriched.tipRuleMatch).toBe(false);
+    expect(enriched.tipRuleMatchEntry).toBeNull();
+    expect(enriched.podryadMatch).toBe(false);
+    expect(enriched.bannerMatch).toBe(false);
+  });
+});
