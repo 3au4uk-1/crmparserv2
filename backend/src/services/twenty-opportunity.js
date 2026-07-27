@@ -39,7 +39,10 @@ export function parseQuantityNum(value) {
   return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
-/** Line total in rubles: Tony uses sum (incl. 0); calendar falls back to price × qty. */
+/** Line total in rubles.
+ * Tony: prefer `sum` (incl. 0); else unit `price` × qty.
+ * Calendar: `price` is already «Итого» (line total), do not multiply by qty.
+ */
 export function computeLineItemTotal(item, deal, restorationList = []) {
   if (isRestorationItem(item.name, restorationList)) return 0;
   const isTony = deal?.data_source === 'tony';
@@ -48,6 +51,9 @@ export function computeLineItemTotal(item, deal, restorationList = []) {
   }
   if (item.sum != null && item.sum > 0) {
     return item.sum;
+  }
+  if (!isTony) {
+    return item.price || 0;
   }
   const qty = item.quantity_num ?? parseQuantityNum(item.quantity);
   return (item.price || 0) * qty;

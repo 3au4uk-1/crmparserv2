@@ -64,14 +64,19 @@ describe('buildOpportunityInput', () => {
     expect(input.closeDate).toBe('2026-06-10T00:00:00+03:00');
   });
 
-  it('computes amount from price * quantity of items', () => {
-    const d = { title: 'T', crm_event_id: 'e1', start_date: '2026-06-16T00:00:00+03:00' };
+  it('computes amount from calendar price as line total (not price × qty)', () => {
+    const d = {
+      title: 'T',
+      crm_event_id: 'e1',
+      start_date: '2026-06-16T00:00:00+03:00',
+      data_source: 'calendar',
+    };
     const qtyItems = [
-      { price: 2640, quantity: '9' },
+      { price: 23760, quantity: '9' },
       { price: 5000, quantity: '1' },
     ];
     const input = buildOpportunityInput(d, qtyItems);
-    expect(input.amount.amountMicros).toBe((2640 * 9 + 5000) * 1_000_000);
+    expect(input.amount.amountMicros).toBe((23760 + 5000) * 1_000_000);
   });
 
   it('includes loadDate when deal has load_date', () => {
@@ -128,13 +133,13 @@ describe('computeDealItemsTotal', () => {
     expect(computeDealItemsTotal(deal, items)).toBe(28760);
   });
 
-  it('uses price * quantity for calendar deals', () => {
+  it('uses calendar price as line total (Итого), not unit × qty', () => {
     const deal = { data_source: 'calendar' };
     const items = [
-      { price: 2640, quantity: '9' },
-      { price: 5000, quantity: '1' },
+      { price: 161364, quantity: '2 шт.' },
+      { price: 82716, quantity: '1 шт.' },
     ];
-    expect(computeDealItemsTotal(deal, items)).toBe(2640 * 9 + 5000);
+    expect(computeDealItemsTotal(deal, items)).toBe(161364 + 82716);
   });
 
   it('buildOpportunityInput uses Tony sum for amount', () => {

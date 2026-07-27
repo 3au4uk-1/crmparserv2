@@ -92,13 +92,14 @@ describe('Tony line items', () => {
 describe('calendar line items', () => {
   const calendarDeal = { data_source: 'calendar' };
 
-  it('uses kolichestvo from parsed quantity text', () => {
+  it('treats calendar price as line total and derives unit amount', () => {
     const input = buildLineItemCreateInput(
       { name: 'Наклейка', price: 15000, quantity: '3 шт.' },
       'wh-001', 'opp-456', 'first', { deal: calendarDeal }
     );
     expect(input.kolichestvo).toBe(3);
-    expect(input.amount.amountMicros).toBe(15000000000);
+    // 15000 итого / 3 = 5000 за единицу
+    expect(input.amount.amountMicros).toBe(5_000_000_000);
   });
 
   it('omits optional fields when missing price and quantity', () => {
@@ -114,11 +115,12 @@ describe('calendar line items', () => {
     });
   });
 
-  it('builds update input with kolichestvo and amount', () => {
+  it('builds update input with kolichestvo and unit amount from line total', () => {
     const input = buildLineItemUpdateInput({ price: 30000, quantity: '5 шт.' }, { deal: calendarDeal });
     expect(input).toEqual({
       kolichestvo: 5,
-      amount: { amountMicros: 30000000000, currencyCode: 'RUB' },
+      // 30000 итого / 5 = 6000 за единицу
+      amount: { amountMicros: 6_000_000_000, currencyCode: 'RUB' },
       istochnik: 'PARSER',
     });
   });
