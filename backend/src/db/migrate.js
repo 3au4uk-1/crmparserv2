@@ -3,6 +3,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { getDb } from './connection.js';
 import { bookingDealKey, resolveBookingNumber } from '../services/deal-keys.js';
+import {
+  migratePodryadBannerToTipRules,
+  seedDefaultTipRules,
+} from '../services/tip-rules.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -163,6 +167,28 @@ export function migrate() {
     );
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tip_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pattern TEXT NOT NULL,
+      match_type TEXT NOT NULL CHECK (match_type IN ('exact', 'substring')),
+      tip TEXT NOT NULL,
+      tip_detail TEXT,
+      priority INTEGER NOT NULL DEFAULT 100,
+      source_name TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS tip_rules_unique_pattern_tip_detail
+    ON tip_rules (
+      pattern,
+      match_type,
+      tip,
+      IFNULL(tip_detail, '')
+    );
+  `);
+
   ensureColumn(db, 'deal_items', 'sync_override', 'TEXT');
   ensureColumn(db, 'deal_items', 'twenty_id', 'TEXT');
   ensureColumn(db, 'deal_items', 'comment', 'TEXT');
@@ -253,6 +279,9 @@ export function migrate() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+
+  migratePodryadBannerToTipRules(db);
+  seedDefaultTipRules(db);
 
   const expenseDefaults = [
     ['expense_sheet_field_team', '1cqOIF0MBJggXdUzJ_ll4GaW9jVcDmFPKyrsbWr3ofwk'],
