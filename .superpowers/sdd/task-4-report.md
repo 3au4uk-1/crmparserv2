@@ -1,49 +1,41 @@
-# Task 4 Report: GraphQL fetch + `runTwentyExport`
+# Task 4 Report: Apply tip rules in line-item fields
 
-## Completed
+## Status
 
-- Added cursor-paginated `fetchAllDealLineItems` using the Twenty GraphQL client.
-- Added `buildRowsFromLineItems` to map, filter, and sort line-item rows.
-- Added `runTwentyExport` to run the job lifecycle, save the XLSX file, and report progress/failures.
-- Added focused tests for pagination and row building/sorting.
+**DONE**
 
-## Verification
+## Summary
 
-- `npm test --prefix backend -- twenty-export` — 21 passed
-- `npm test --prefix backend` — 71 files, 411 tests passed
+Updated `buildLineItemFields` to classify line items with `findTipRuleMatch` and derive optional details with `resolveTipDetail`. The options object now accepts `tipRules = []`; unmatched items omit both `tip` and `tipDetail`.
 
 ## TDD Evidence
 
-The new focused tests initially failed because `fetchAllDealLineItems` and
-`buildRowsFromLineItems` were not exported; they passed after implementation.
+### RED
 
-## Review Fixes
+`npm test -- twenty-line-item.test.js` failed on the two matching cases because `tip` was `undefined` instead of `PODRYAD` or `BANNERA`.
 
-- Each page response is now checked with `assertHttpSuccess` and
-  `assertGqlSuccess`; a successful but malformed response without
-  `dealLineItems` fails the export instead of producing an empty workbook.
-- Cursor pagination now falls back to the last edge cursor when `pageInfo` is
-  absent, continuing until a short page is received.
-- Range validation occurs inside the export job's failure boundary, so invalid
-  dates mark the job as `failed`.
-- Added regression coverage for GraphQL errors, pageInfo-less pagination, and
-  invalid date ranges.
+### GREEN
 
-## Review Verification
+- Focused: 2 test files passed, 20 tests passed.
+- Full backend suite: 74 test files passed, 437 tests passed.
 
-- `npm test -- twenty-export.test.js` — 1 file, 24 tests passed
-- `npm test` — 71 files, 414 tests passed
+## Files Changed
 
-## Important Findings Fix
+- `backend/src/services/twenty-line-item.js`
+- `backend/tests/twenty-line-item.test.js`
+- `.superpowers/sdd/task-4-report.md`
 
-- `fetchAllDealLineItems` now throws when `pageInfo.hasNextPage` is true but
-  `endCursor` is missing/empty (no silent truncation). Edge-cursor fallback
-  remains only when `pageInfo` is entirely absent.
-- Added regression tests: missing `dealLineItems` connection, HTTP >= 400 via
-  `assertHttpSuccess`, and incomplete pagination (`hasNextPage` without
-  `endCursor`).
+## Implementation Notes
 
-## Important Findings Verification
+- Removed `isPodryadItem` and `isBannerItem` imports and usage from the line-item builder.
+- A matching rule always writes `tip`.
+- `tipDetail` is written only when `resolveTipDetail` returns a non-null value.
+- Tests cover explicit PODRYAD detail, the BANNERA default detail, and no-match omission.
 
-- `npm test --prefix backend -- twenty-export` — 1 file, 27 tests passed
-- `npm test --prefix backend` — 71 files, 417 tests passed
+## Commit
+
+`feat(tip-rules): write tip and tipDetail on Twenty line-item sync`
+
+## Concerns
+
+None.
