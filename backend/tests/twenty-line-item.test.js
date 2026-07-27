@@ -195,6 +195,26 @@ describe('tip rule line items', () => {
     expect(input.tipDetail).toBe('KTO_EDET');
   });
 
+  it('sets PODRYAD tipDetail to null when the matching rule has no detail', () => {
+    const input = buildLineItemUpdateInput(
+      { name: 'Подрядная работа', quantity_num: 1, quantity: '1' },
+      {
+        tipRules: [
+          {
+            pattern: 'подрядная',
+            matchType: 'substring',
+            tip: 'PODRYAD',
+            tipDetail: null,
+            priority: 100,
+          },
+        ],
+      }
+    );
+
+    expect(input.tip).toBe('PODRYAD');
+    expect(input).toHaveProperty('tipDetail', null);
+  });
+
   it('omits tip fields when no rule matches', () => {
     const input = buildLineItemCreateInput(
       { name: 'Скотч', quantity_num: 1, quantity: '1' },

@@ -30,7 +30,7 @@ router.post('/', (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     const db = getDb();
-    deleteTipRule(db, Number(req.params.id));
+    deleteTipRule(db, Number(req.params.id), { tip: 'BANNERA' });
     scheduleListChangeResync();
     res.json({ success: true });
   } catch (err) {

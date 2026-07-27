@@ -108,6 +108,26 @@ describe('tip rules routes', () => {
   });
 
   it.each([
+    ['/api/podryad', 'BANNERA'],
+    ['/api/banner', 'PODRYAD'],
+  ])('%s cannot delete a rule belonging to %s', async (path, tip) => {
+    const db = getDb();
+    const rule = db.prepare(`
+      INSERT INTO tip_rules (pattern, match_type, tip, priority)
+      VALUES ('wrong legacy type', 'exact', ?, 100)
+    `).run(tip);
+
+    const res = await request(createApp()).delete(`${path}/${rule.lastInsertRowid}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: 'Tip rule not found' });
+    expect(
+      db.prepare('SELECT id FROM tip_rules WHERE id = ?').get(rule.lastInsertRowid)
+    ).toBeTruthy();
+    expect(scheduleListChangeResyncMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
     ['podryad', 'PODRYAD'],
     ['banner', 'BANNERA'],
   ])('deal item %s shortcut creates a %s tip rule', async (shortcut, tip) => {

@@ -27,8 +27,7 @@ function buildLineItemFields(item, options = {}) {
   const tipRule = findTipRuleMatch(item.name, tipRules);
   if (tipRule) {
     fields.tip = tipRule.tip;
-    const tipDetail = resolveTipDetail(tipRule);
-    if (tipDetail !== null) fields.tipDetail = tipDetail;
+    fields.tipDetail = resolveTipDetail(tipRule);
   }
 
   return fields;

@@ -86,6 +86,8 @@ describe('tip_rules db', () => {
     [{ pattern: ' ', matchType: 'exact', tip: 'PLENKA' }, /pattern is required/],
     [{ pattern: 'x', matchType: 'prefix', tip: 'PLENKA' }, /matchType/],
     [{ pattern: 'x', matchType: 'exact', tip: 'UNKNOWN' }, /invalid tip/],
+    [{ pattern: 'x', matchType: 'exact', tip: 'PLENKA', priority: 1.5 }, /priority/],
+    [{ pattern: 'x', matchType: 'exact', tip: 'PLENKA', priority: Infinity }, /priority/],
     [
       { pattern: 'x', matchType: 'exact', tip: 'PLENKA', tipDetail: 'ROLL_UP' },
       /tipDetail/,

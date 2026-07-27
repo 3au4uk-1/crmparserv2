@@ -67,6 +67,9 @@ export function createTipRule(
   if (tipDetail && !isTipDetailValidForTip(tip, tipDetail)) {
     throw badRequest('tipDetail is not valid for tip');
   }
+  if (!Number.isFinite(priority) || !Number.isInteger(priority)) {
+    throw badRequest('priority must be a finite integer');
+  }
 
   const existing = db
     .prepare(
@@ -90,8 +93,10 @@ export function createTipRule(
   return mapRow(db.prepare('SELECT * FROM tip_rules WHERE id = ?').get(result.lastInsertRowid));
 }
 
-export function deleteTipRule(db, id) {
-  const result = db.prepare('DELETE FROM tip_rules WHERE id = ?').run(id);
+export function deleteTipRule(db, id, { tip } = {}) {
+  const result = tip
+    ? db.prepare('DELETE FROM tip_rules WHERE id = ? AND tip = ?').run(id, tip)
+    : db.prepare('DELETE FROM tip_rules WHERE id = ?').run(id);
   if (result.changes === 0) {
     const error = new Error('Tip rule not found');
     error.status = 404;
