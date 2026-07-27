@@ -472,6 +472,40 @@ export function useAddItemToBanner() {
   });
 }
 
+export function useTipRules(tip) {
+  return useQuery({
+    queryKey: ['tip-rules', tip ?? 'all'],
+    queryFn: () =>
+      api.get('/tip-rules', { params: tip ? { tip } : {} }).then((r) => r.data.items),
+  });
+}
+
+export function useAddTipRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => api.post('/tip-rules', body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tip-rules'] });
+      qc.invalidateQueries({ queryKey: ['podryad'] });
+      qc.invalidateQueries({ queryKey: ['banner'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+    },
+  });
+}
+
+export function useRemoveTipRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => api.delete(`/tip-rules/${id}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tip-rules'] });
+      qc.invalidateQueries({ queryKey: ['podryad'] });
+      qc.invalidateQueries({ queryKey: ['banner'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+    },
+  });
+}
+
 export function useCompanies() {
   return useQuery({
     queryKey: ['companies'],

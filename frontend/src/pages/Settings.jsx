@@ -13,12 +13,9 @@ import {
   useRestorationList,
   useAddRestorationItem,
   useRemoveRestorationItem,
-  usePodryadList,
-  useAddPodryadItem,
-  useRemovePodryadItem,
-  useBannerList,
-  useAddBannerItem,
-  useRemoveBannerItem,
+  useTipRules,
+  useAddTipRule,
+  useRemoveTipRule,
   useStartBulkResync,
   useActiveBulkResyncJob,
   useBulkResyncJob,
@@ -46,6 +43,72 @@ const TABS = [
   { id: 'integrations', label: 'Интеграции' },
   { id: 'directories', label: 'Справочники' },
   { id: 'data', label: 'Данные' },
+];
+
+const TIP_ZONES = [
+  {
+    tip: 'PODRYAD',
+    title: 'Подряд',
+    description: 'Eligible-позиции из списка попадают в Twenty с типом «подряд». Не eligible — не синкаются.',
+    placeholder: 'Флаги односторонние на виндеры, флаги двусторонние',
+    colorClass: 'bg-pastel-blue-bg text-pastel-blue-text',
+    details: [
+      { value: 'GLAV_PRINT', label: 'Глав принт' },
+      { value: 'PASHA_VINDER', label: 'Паша виндер' },
+      { value: 'ZARYA', label: 'Заря' },
+      { value: 'LIZA_SUKNO', label: 'Лиза сукно' },
+      { value: 'KUVALDIN_KLISHE', label: 'Кувалдин клише' },
+      { value: 'SVOE', label: 'Своё' },
+    ],
+  },
+  {
+    tip: 'BANNERA',
+    title: 'Баннера',
+    description: 'Eligible-позиции из списка попадают в Twenty с типом «баннер». Не eligible — не синкаются.',
+    placeholder: 'Баннер 3x6, баннер 2x1',
+    colorClass: 'bg-pastel-green-bg text-pastel-green-text',
+    details: [
+      { value: 'KTO_EDET', label: 'кто едет?' },
+      { value: 'YURA', label: 'Юра' },
+      { value: 'MAGA', label: 'Мага' },
+      { value: 'TOPILSKIY', label: 'Топильский' },
+    ],
+  },
+  {
+    tip: 'PROIZVODSTVO',
+    title: 'Производство',
+    description: 'Правила для позиций собственного производства.',
+    placeholder: 'Ролл-ап, поп-ап, промо-стойка',
+    colorClass: 'bg-pastel-blue-bg text-pastel-blue-text',
+    details: [
+      { value: 'ROLL_UP', label: 'Ролл-ап' },
+      { value: 'POP_UP', label: 'Поп-ап' },
+      { value: 'PROMO_STOYKA', label: 'Промо-стойка' },
+      { value: 'PROIZVODSTVO_DRUGOE', label: 'Другое' },
+    ],
+  },
+  {
+    tip: 'PLENKA',
+    title: 'Плёнка',
+    description: 'Правила для позиций с плёнкой.',
+    placeholder: 'Оклейка, плёнка',
+    colorClass: 'bg-pastel-yellow-bg text-pastel-yellow-text',
+    details: [
+      { value: 'NASHI', label: 'Наши' },
+      { value: 'NE_NASHI', label: 'Не наши' },
+    ],
+  },
+  {
+    tip: 'RESTAVRACIYA',
+    title: 'Рест. плёнка',
+    description: 'Правила для позиций реставрации плёнки.',
+    placeholder: 'Реставрация плёнки',
+    colorClass: 'bg-pastel-red-bg text-pastel-red-text',
+    details: [
+      { value: 'NASHI', label: 'Наши' },
+      { value: 'NE_NASHI', label: 'Не наши' },
+    ],
+  },
 ];
 
 function isBulkResyncRunning(status) {
@@ -297,7 +360,7 @@ function mergeKeywords(existing, incoming) {
   return result;
 }
 
-async function addPatternsFromInput(text, matchType, mutateAsync) {
+async function addPatternsFromInput(text, matchType, mutateAsync, extraPayload = {}) {
   const patterns = parseCommaSeparatedInput(text);
   if (patterns.length === 0) {
     return { added: 0, duplicates: [], failures: [] };
@@ -309,7 +372,7 @@ async function addPatternsFromInput(text, matchType, mutateAsync) {
 
   for (const pattern of patterns) {
     try {
-      await mutateAsync({ pattern, matchType });
+      await mutateAsync({ pattern, matchType, ...extraPayload });
       added += 1;
     } catch (err) {
       if (err.response?.status === 409) {
@@ -343,6 +406,102 @@ function formatPatternAddResult({ added, duplicates, failures }, duplicateLabel)
   return parts.join('. ');
 }
 
+function TipRulesSection({
+  zone,
+  rules,
+  addTipRule,
+  removeTipRule,
+  patternListBusy,
+  handleAddPatterns,
+}) {
+  const [pattern, setPattern] = useState('');
+  const [matchType, setMatchType] = useState('exact');
+  const [tipDetail, setTipDetail] = useState('');
+  const [error, setError] = useState('');
+  const detailLabels = new Map(zone.details.map((detail) => [detail.value, detail.label]));
+  const listKey = `tip-${zone.tip}`;
+
+  return (
+    <Section
+      title={zone.title}
+      description={`${zone.description} Можно добавить одно значение или несколько через запятую.`}
+    >
+      <div className="flex flex-wrap gap-2 mb-4">
+        {rules.map((entry) => (
+          <span
+            key={entry.id}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm ${zone.colorClass}`}
+          >
+            {entry.pattern}
+            <span className="text-xs opacity-70">
+              ({entry.matchType === 'exact' ? 'точное' : 'фрагмент'} ·{' '}
+              {entry.tipDetail ? detailLabels.get(entry.tipDetail) || entry.tipDetail : 'по умолчанию'})
+            </span>
+            <button
+              onClick={() => removeTipRule.mutate(entry.id)}
+              className="opacity-60 hover:opacity-100 transition-opacity"
+              aria-label={`Удалить из списка ${zone.title.toLowerCase()}`}
+            >
+              &times;
+            </button>
+          </span>
+        ))}
+      </div>
+      {error && (
+        <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-3">{error}</p>
+      )}
+      <div className="flex flex-wrap gap-2 items-end max-w-4xl">
+        <textarea
+          value={pattern}
+          onChange={(event) => setPattern(event.target.value)}
+          rows={2}
+          className="input-field flex-1 min-w-[12rem]"
+          placeholder={zone.placeholder}
+        />
+        <select
+          value={matchType}
+          onChange={(event) => setMatchType(event.target.value)}
+          className="select-field"
+        >
+          <option value="exact">Точное</option>
+          <option value="substring">Фрагмент</option>
+        </select>
+        <select
+          value={tipDetail}
+          onChange={(event) => setTipDetail(event.target.value)}
+          className="select-field"
+          aria-label={`Детализация типа ${zone.title}`}
+        >
+          <option value="">По умолчанию</option>
+          {zone.details.map((detail) => (
+            <option key={detail.value} value={detail.value}>
+              {detail.label}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={() =>
+            handleAddPatterns({
+              listKey,
+              text: pattern,
+              matchType,
+              mutateAsync: addTipRule.mutateAsync,
+              extraPayload: { tip: zone.tip, tipDetail: tipDetail || null },
+              setError,
+              clearInput: () => setPattern(''),
+              duplicateLabel: `Уже в списке «${zone.title}»`,
+            })
+          }
+          disabled={!pattern.trim() || patternListBusy === listKey || addTipRule.isPending}
+          className="btn-primary btn-sm"
+        >
+          Добавить
+        </button>
+      </div>
+    </Section>
+  );
+}
+
 export default function Settings() {
   const [activeTab, setActiveTab] = useState('auth');
 
@@ -350,8 +509,7 @@ export default function Settings() {
   const { data: keywords } = useKeywords();
   const { data: blacklist } = useBlacklist();
   const { data: restorationList } = useRestorationList();
-  const { data: podryadList } = usePodryadList();
-  const { data: bannerList } = useBannerList();
+  const { data: tipRules } = useTipRules();
   const { data: companies } = useCompanies();
   const updateSetting = useUpdateSetting();
   const updateKeywords = useUpdateKeywords();
@@ -359,10 +517,8 @@ export default function Settings() {
   const removeBlacklistItem = useRemoveBlacklistItem();
   const addRestorationItem = useAddRestorationItem();
   const removeRestorationItem = useRemoveRestorationItem();
-  const addPodryadItem = useAddPodryadItem();
-  const removePodryadItem = useRemovePodryadItem();
-  const addBannerItem = useAddBannerItem();
-  const removeBannerItem = useRemoveBannerItem();
+  const addTipRule = useAddTipRule();
+  const removeTipRule = useRemoveTipRule();
   const clearParsingData = useClearParsingData();
   const createCompany = useCreateCompany();
 
@@ -375,12 +531,6 @@ export default function Settings() {
   const [newRestorationPattern, setNewRestorationPattern] = useState('');
   const [newRestorationMatchType, setNewRestorationMatchType] = useState('exact');
   const [restorationError, setRestorationError] = useState('');
-  const [newPodryadPattern, setNewPodryadPattern] = useState('');
-  const [newPodryadMatchType, setNewPodryadMatchType] = useState('exact');
-  const [podryadError, setPodryadError] = useState('');
-  const [newBannerPattern, setNewBannerPattern] = useState('');
-  const [newBannerMatchType, setNewBannerMatchType] = useState('exact');
-  const [bannerError, setBannerError] = useState('');
   const [patternListBusy, setPatternListBusy] = useState(null);
   const [cookieValue, setCookieValue] = useState('');
 
@@ -403,11 +553,12 @@ export default function Settings() {
     setError,
     clearInput,
     duplicateLabel,
+    extraPayload,
   }) {
     setPatternListBusy(listKey);
     setError('');
     try {
-      const result = await addPatternsFromInput(text, matchType, mutateAsync);
+      const result = await addPatternsFromInput(text, matchType, mutateAsync, extraPayload);
       if (result.added > 0) clearInput();
       const message = formatPatternAddResult(result, duplicateLabel);
       if (message) setError(message);
@@ -644,127 +795,17 @@ export default function Settings() {
             </div>
           </Section>
 
-          <Section
-            title="Подряд"
-            description="Eligible-позиции из списка попадают в Twenty с типом «подряд». Не eligible — не синкаются. Можно добавить одно значение или несколько через запятую."
-          >
-            <div className="flex flex-wrap gap-2 mb-4">
-              {(podryadList || []).map((entry) => (
-                <span
-                  key={entry.id}
-                  className="inline-flex items-center gap-1.5 bg-pastel-blue-bg text-pastel-blue-text px-2.5 py-1 rounded-md text-sm"
-                >
-                  {entry.sourceName || entry.pattern}
-                  <span className="text-xs opacity-70">
-                    ({entry.matchType === 'exact' ? 'точное' : 'фрагмент'})
-                  </span>
-                  <button
-                    onClick={() => removePodryadItem.mutate(entry.id)}
-                    className="opacity-60 hover:opacity-100 transition-opacity"
-                    aria-label="Удалить из списка подряд"
-                  >
-                    &times;
-                  </button>
-                </span>
-              ))}
-            </div>
-            {podryadError && (
-              <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-3">{podryadError}</p>
-            )}
-            <div className="flex flex-wrap gap-2 items-end max-w-2xl">
-              <textarea
-                value={newPodryadPattern}
-                onChange={(e) => setNewPodryadPattern(e.target.value)}
-                rows={2}
-                className="input-field flex-1 min-w-[12rem]"
-                placeholder="Флаги односторонние на виндеры, флаги двусторонние"
-              />
-              <select
-                value={newPodryadMatchType}
-                onChange={(e) => setNewPodryadMatchType(e.target.value)}
-                className="select-field"
-              >
-                <option value="exact">Точное</option>
-                <option value="substring">Фрагмент</option>
-              </select>
-              <button
-                onClick={() => handleAddPatterns({
-                  listKey: 'podryad',
-                  text: newPodryadPattern,
-                  matchType: newPodryadMatchType,
-                  mutateAsync: addPodryadItem.mutateAsync,
-                  setError: setPodryadError,
-                  clearInput: () => setNewPodryadPattern(''),
-                  duplicateLabel: 'Уже в списке подряд',
-                })}
-                disabled={!newPodryadPattern.trim() || patternListBusy === 'podryad' || addPodryadItem.isPending}
-                className="btn-primary btn-sm"
-              >
-                Добавить
-              </button>
-            </div>
-          </Section>
-
-          <Section
-            title="Баннера"
-            description="Eligible-позиции из списка попадают в Twenty с типом «баннер». Не eligible — не синкаются. Можно добавить одно значение или несколько через запятую."
-          >
-            <div className="flex flex-wrap gap-2 mb-4">
-              {(bannerList || []).map((entry) => (
-                <span
-                  key={entry.id}
-                  className="inline-flex items-center gap-1.5 bg-pastel-green-bg text-pastel-green-text px-2.5 py-1 rounded-md text-sm"
-                >
-                  {entry.sourceName || entry.pattern}
-                  <span className="text-xs opacity-70">
-                    ({entry.matchType === 'exact' ? 'точное' : 'фрагмент'})
-                  </span>
-                  <button
-                    onClick={() => removeBannerItem.mutate(entry.id)}
-                    className="opacity-60 hover:opacity-100 transition-opacity"
-                    aria-label="Удалить из списка баннера"
-                  >
-                    &times;
-                  </button>
-                </span>
-              ))}
-            </div>
-            {bannerError && (
-              <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-3">{bannerError}</p>
-            )}
-            <div className="flex flex-wrap gap-2 items-end max-w-2xl">
-              <textarea
-                value={newBannerPattern}
-                onChange={(e) => setNewBannerPattern(e.target.value)}
-                rows={2}
-                className="input-field flex-1 min-w-[12rem]"
-                placeholder="Баннер 3x6, баннер 2x1"
-              />
-              <select
-                value={newBannerMatchType}
-                onChange={(e) => setNewBannerMatchType(e.target.value)}
-                className="select-field"
-              >
-                <option value="exact">Точное</option>
-                <option value="substring">Фрагмент</option>
-              </select>
-              <button
-                onClick={() => handleAddPatterns({
-                  listKey: 'banner',
-                  text: newBannerPattern,
-                  matchType: newBannerMatchType,
-                  mutateAsync: addBannerItem.mutateAsync,
-                  setError: setBannerError,
-                  clearInput: () => setNewBannerPattern(''),
-                  duplicateLabel: 'Уже в списке баннера',
-                })}
-                disabled={!newBannerPattern.trim() || patternListBusy === 'banner' || addBannerItem.isPending}
-                className="btn-primary btn-sm"
-              >
-                Добавить
-              </button>
-            </div>
-          </Section>
+          {TIP_ZONES.map((zone) => (
+            <TipRulesSection
+              key={zone.tip}
+              zone={zone}
+              rules={(tipRules || []).filter((entry) => entry.tip === zone.tip)}
+              addTipRule={addTipRule}
+              removeTipRule={removeTipRule}
+              patternListBusy={patternListBusy}
+              handleAddPatterns={handleAddPatterns}
+            />
+          ))}
 
           <Section
             title="Расписание парсинга"
