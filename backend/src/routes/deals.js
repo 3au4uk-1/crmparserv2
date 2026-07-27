@@ -4,9 +4,7 @@ import { syncDealToTwenty, buildSyncPreview, resyncDealIfSynced } from '../servi
 import { enrichDealItems } from '../services/twenty-items.js';
 import { loadBlacklist, createBlacklistEntry } from '../services/blacklist.js';
 import { loadRestorationList, createRestorationEntry } from '../services/restoration.js';
-import { createPodryadEntry } from '../services/podryad.js';
-import { createBannerEntry } from '../services/banner.js';
-import { loadTipRules } from '../services/tip-rules.js';
+import { createTipRule, loadTipRules } from '../services/tip-rules.js';
 import { scheduleListChangeResync } from '../services/list-change-resync.js';
 import { importAuthMiddleware } from '../middleware/import-auth.js';
 import { importDealByBooking } from '../services/import-by-booking.js';
@@ -493,9 +491,10 @@ router.post('/:dealId/items/:itemId/podryad', async (req, res, next) => {
       .get(req.params.itemId, req.params.dealId);
     if (!item) return res.status(404).json({ error: 'Item not found' });
 
-    createPodryadEntry(db, {
+    createTipRule(db, {
       pattern: item.name,
       matchType: 'exact',
+      tip: 'PODRYAD',
       sourceName: item.name,
     });
     scheduleListChangeResync();
@@ -514,9 +513,10 @@ router.post('/:dealId/items/:itemId/banner', async (req, res, next) => {
       .get(req.params.itemId, req.params.dealId);
     if (!item) return res.status(404).json({ error: 'Item not found' });
 
-    createBannerEntry(db, {
+    createTipRule(db, {
       pattern: item.name,
       matchType: 'exact',
+      tip: 'BANNERA',
       sourceName: item.name,
     });
     scheduleListChangeResync();
