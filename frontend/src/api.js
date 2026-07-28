@@ -288,36 +288,6 @@ export function useUpdateKeywords() {
   });
 }
 
-export function useDecorKeywords() {
-  return useQuery({
-    queryKey: ['decor-keywords'],
-    queryFn: () => api.get('/settings/decor-keywords').then((r) => r.data),
-  });
-}
-
-export function useUpdateDecorKeywords() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (keywords) => api.put('/settings/decor-keywords', { keywords }).then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['decor-keywords'] }),
-  });
-}
-
-export function useMkKeywords() {
-  return useQuery({
-    queryKey: ['mk-keywords'],
-    queryFn: () => api.get('/settings/mk-keywords').then((r) => r.data),
-  });
-}
-
-export function useUpdateMkKeywords() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (keywords) => api.put('/settings/mk-keywords', { keywords }).then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['mk-keywords'] }),
-  });
-}
-
 export function useBlacklist() {
   return useQuery({
     queryKey: ['blacklist'],
@@ -344,70 +314,6 @@ export function useRemoveBlacklistItem() {
     mutationFn: (id) => api.delete(`/blacklist/${id}`).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['blacklist'] });
-      qc.invalidateQueries({ queryKey: ['deals'] });
-      qc.invalidateQueries({ queryKey: ['deal'] });
-    },
-  });
-}
-
-export function useDecorBlacklist() {
-  return useQuery({
-    queryKey: ['decor-blacklist'],
-    queryFn: () => api.get('/decor-blacklist').then((r) => r.data.items),
-  });
-}
-
-export function useAddDecorBlacklistItem() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ pattern, matchType, sourceName }) =>
-      api.post('/decor-blacklist', { pattern, matchType, sourceName }).then((r) => r.data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['decor-blacklist'] });
-      qc.invalidateQueries({ queryKey: ['deals'] });
-      qc.invalidateQueries({ queryKey: ['deal'] });
-    },
-  });
-}
-
-export function useRemoveDecorBlacklistItem() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id) => api.delete(`/decor-blacklist/${id}`).then((r) => r.data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['decor-blacklist'] });
-      qc.invalidateQueries({ queryKey: ['deals'] });
-      qc.invalidateQueries({ queryKey: ['deal'] });
-    },
-  });
-}
-
-export function useMkBlacklist() {
-  return useQuery({
-    queryKey: ['mk-blacklist'],
-    queryFn: () => api.get('/mk-blacklist').then((r) => r.data.items),
-  });
-}
-
-export function useAddMkBlacklistItem() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ pattern, matchType, sourceName }) =>
-      api.post('/mk-blacklist', { pattern, matchType, sourceName }).then((r) => r.data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['mk-blacklist'] });
-      qc.invalidateQueries({ queryKey: ['deals'] });
-      qc.invalidateQueries({ queryKey: ['deal'] });
-    },
-  });
-}
-
-export function useRemoveMkBlacklistItem() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id) => api.delete(`/mk-blacklist/${id}`).then((r) => r.data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['mk-blacklist'] });
       qc.invalidateQueries({ queryKey: ['deals'] });
       qc.invalidateQueries({ queryKey: ['deal'] });
     },

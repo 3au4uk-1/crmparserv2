@@ -138,24 +138,6 @@ CREATE TABLE IF NOT EXISTS banner_items (
   UNIQUE (pattern, match_type)
 );
 
-CREATE TABLE IF NOT EXISTS decor_blacklist_items (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  pattern TEXT NOT NULL,
-  match_type TEXT NOT NULL CHECK (match_type IN ('exact', 'substring')),
-  source_name TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE (pattern, match_type)
-);
-
-CREATE TABLE IF NOT EXISTS mk_blacklist_items (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  pattern TEXT NOT NULL,
-  match_type TEXT NOT NULL CHECK (match_type IN ('exact', 'substring')),
-  source_name TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE (pattern, match_type)
-);
-
 CREATE TABLE IF NOT EXISTS expense_sync_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   status TEXT NOT NULL DEFAULT 'queued',
@@ -216,8 +198,6 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('opportunity_stage', 'NOVYY'
 INSERT OR IGNORE INTO settings (key, value) VALUES ('parse_schedule', '0 18 * * *');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('auth_mode', 'auto');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('keywords', '["брендинг","баннер","печать","плёнка","пленка","наклейка","логотип","вывеска","табличка","ролл-ап","rollup","стенд","press-wall","пресс-волл"]');
-INSERT OR IGNORE INTO settings (key, value) VALUES ('decor_keywords', '[]');
-INSERT OR IGNORE INTO settings (key, value) VALUES ('mk_keywords', '[]');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('crm_cookies', '');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('llm_prompt', 'Ты помощник отдела брендинга. Определи, относится ли позиция к брендингу (печать, баннеры, наклейки, вывески, оформление и т.д.). Ответь JSON: {"items": [{"name": "...", "is_branding": true/false, "confidence": 0.0-1.0}]}');
 

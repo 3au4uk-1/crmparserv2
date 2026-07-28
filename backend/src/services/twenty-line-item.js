@@ -30,10 +30,6 @@ function buildLineItemFields(item, options = {}) {
     fields.tip = BANNER_TIP;
   }
 
-  if (item.productStream) {
-    fields.productStream = item.productStream;
-  }
-
   return fields;
 }
 

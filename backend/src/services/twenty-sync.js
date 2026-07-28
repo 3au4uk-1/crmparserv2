@@ -1,7 +1,7 @@
 import { config } from '../config.js';
 import { getDb } from '../db/connection.js';
 import { getTwentyConfig, requireTwentyConfig } from './twenty-config.js';
-import { loadProductStreamContext } from './twenty-items.js';
+import { loadBlacklist } from './blacklist.js';
 import { loadRestorationList, isRestorationItem } from './restoration.js';
 import { loadPodryadList, isPodryadItem } from './podryad.js';
 import { loadBannerList, isBannerItem } from './banner.js';
@@ -394,11 +394,11 @@ export function buildSyncPreview(dealId) {
   if (!deal) throw new Error(`Deal ${dealId} not found`);
 
   const allItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(dealId);
-  const streamContext = loadProductStreamContext(db);
+  const blacklist = loadBlacklist(db);
   const restorationList = loadRestorationList(db);
   const podryadList = loadPodryadList(db);
   const bannerList = loadBannerList(db);
-  const eligibleItems = getItemsForTwenty(allItems, streamContext);
+  const eligibleItems = getItemsForTwenty(allItems, blacklist);
   const eligibleAmount = computeDealItemsTotal(deal, eligibleItems, restorationList);
 
   return {
@@ -411,8 +411,7 @@ export function buildSyncPreview(dealId) {
     eligibleItems: eligibleItems.map((item) => ({
       id: item.id,
       name: item.name,
-      reason: getItemEligibleReason(item, streamContext),
-      productStream: item.productStream || null,
+      reason: getItemEligibleReason(item, blacklist),
       twentyLineAmount: computeLineItemTotal(item, deal, restorationList),
       restorationMatch: isRestorationItem(item.name, restorationList),
       podryadMatch: isPodryadItem(item.name, podryadList),
@@ -441,9 +440,11 @@ export async function syncDealToTwenty(
   if (!deal) throw new Error(`Deal ${dealId} not found`);
 
   const allItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(dealId);
-  const streamContext = loadProductStreamContext(db);
+  const blacklist = loadBlacklist(db);
   const restorationList = loadRestorationList(db);
-  const items = getItemsForTwenty(allItems, streamContext);
+  const podryadList = loadPodryadList(db);
+  const bannerList = loadBannerList(db);
+  const items = getItemsForTwenty(allItems, blacklist);
   const mode = deal.twenty_id ? 'update' : 'create';
 
   beginTwentySyncContext({
