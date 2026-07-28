@@ -1,9 +1,11 @@
 import { createBulkResyncJob, executeBulkResyncJob, getActiveBulkResyncJob } from './bulk-resync-jobs.js';
+import { invalidatePatternListsCache } from './pattern-lists-cache.js';
 
 const DEBOUNCE_MS = 5000;
 let timer = null;
 
 export function scheduleListChangeResync() {
+  invalidatePatternListsCache();
   if (timer) clearTimeout(timer);
   timer = setTimeout(() => {
     timer = null;

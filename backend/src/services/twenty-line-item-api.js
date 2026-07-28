@@ -1,8 +1,9 @@
-import { createBlacklistEntry, loadBlacklist } from './blacklist.js';
-import { createRestorationEntry, loadRestorationList } from './restoration.js';
-import { createPodryadEntry, loadPodryadList } from './podryad.js';
-import { createBannerEntry, loadBannerList } from './banner.js';
+import { createBlacklistEntry } from './blacklist.js';
+import { createRestorationEntry } from './restoration.js';
+import { createPodryadEntry } from './podryad.js';
+import { createBannerEntry } from './banner.js';
 import { enrichDealItems } from './twenty-items.js';
+import { getCachedPatternLists, invalidatePatternListsCache } from './pattern-lists-cache.js';
 
 const LIST_CREATORS = {
   blacklist: createBlacklistEntry,
@@ -10,6 +11,8 @@ const LIST_CREATORS = {
   podryad: createPodryadEntry,
   banner: createBannerEntry,
 };
+
+const MAX_BATCH_IDS = 500;
 
 export function findDealItemByTwentyId(db, twentyLineItemId) {
   const item = db.prepare('SELECT * FROM deal_items WHERE twenty_id = ?').get(twentyLineItemId);
@@ -38,29 +41,7 @@ const NEUTRAL_LINE_ITEM_LIST_STATUS = {
   dealTwentyId: null,
 };
 
-export function getLineItemListStatus(db, twentyLineItemId) {
-  const item = db.prepare('SELECT * FROM deal_items WHERE twenty_id = ?').get(twentyLineItemId);
-  if (!item) {
-    return NEUTRAL_LINE_ITEM_LIST_STATUS;
-  }
-
-  const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(item.deal_id);
-  if (!deal) {
-    return NEUTRAL_LINE_ITEM_LIST_STATUS;
-  }
-
-  const blacklist = loadBlacklist(db);
-  const restorationList = loadRestorationList(db);
-  const podryadList = loadPodryadList(db);
-  const bannerList = loadBannerList(db);
-  const [enriched] = enrichDealItems(
-    [item],
-    blacklist,
-    restorationList,
-    deal,
-    podryadList,
-    bannerList,
-  );
+function statusFromEnriched(item, deal, enriched) {
   return {
     known: true,
     blacklisted: enriched.blacklisted,
@@ -71,6 +52,93 @@ export function getLineItemListStatus(db, twentyLineItemId) {
     dealId: deal.id,
     dealTwentyId: deal.twenty_id ?? null,
   };
+}
+
+export function getLineItemListStatus(db, twentyLineItemId) {
+  const item = db.prepare('SELECT * FROM deal_items WHERE twenty_id = ?').get(twentyLineItemId);
+  if (!item) {
+    return { ...NEUTRAL_LINE_ITEM_LIST_STATUS };
+  }
+
+  const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(item.deal_id);
+  if (!deal) {
+    return { ...NEUTRAL_LINE_ITEM_LIST_STATUS };
+  }
+
+  const { blacklist, restorationList, podryadList, bannerList } = getCachedPatternLists(db);
+  const [enriched] = enrichDealItems(
+    [item],
+    blacklist,
+    restorationList,
+    deal,
+    podryadList,
+    bannerList,
+  );
+  return statusFromEnriched(item, deal, enriched);
+}
+
+/**
+ * @param {import('better-sqlite3').Database} db
+ * @param {string[]} twentyLineItemIds
+ * @returns {Record<string, ReturnType<typeof getLineItemListStatus>>}
+ */
+export function getLineItemsListStatusBatch(db, twentyLineItemIds) {
+  const ids = [
+    ...new Set(
+      (Array.isArray(twentyLineItemIds) ? twentyLineItemIds : [])
+        .map((id) => (typeof id === 'string' ? id.trim() : ''))
+        .filter(Boolean),
+    ),
+  ].slice(0, MAX_BATCH_IDS);
+
+  const result = Object.create(null);
+  for (const id of ids) {
+    result[id] = { ...NEUTRAL_LINE_ITEM_LIST_STATUS };
+  }
+  if (ids.length === 0) return result;
+
+  const placeholders = ids.map(() => '?').join(',');
+  const items = db
+    .prepare(`SELECT * FROM deal_items WHERE twenty_id IN (${placeholders})`)
+    .all(...ids);
+  if (items.length === 0) return result;
+
+  const dealIds = [...new Set(items.map((item) => item.deal_id))];
+  const dealPlaceholders = dealIds.map(() => '?').join(',');
+  const deals = db
+    .prepare(`SELECT * FROM deals WHERE id IN (${dealPlaceholders})`)
+    .all(...dealIds);
+  const dealById = new Map(deals.map((deal) => [deal.id, deal]));
+
+  const { blacklist, restorationList, podryadList, bannerList } = getCachedPatternLists(db);
+
+  // Group by deal so enrichDealItems gets correct deal context once per group.
+  const itemsByDealId = new Map();
+  for (const item of items) {
+    if (!itemsByDealId.has(item.deal_id)) itemsByDealId.set(item.deal_id, []);
+    itemsByDealId.get(item.deal_id).push(item);
+  }
+
+  for (const [dealId, dealItems] of itemsByDealId) {
+    const deal = dealById.get(dealId);
+    if (!deal) continue;
+    const enrichedItems = enrichDealItems(
+      dealItems,
+      blacklist,
+      restorationList,
+      deal,
+      podryadList,
+      bannerList,
+    );
+    for (let i = 0; i < dealItems.length; i += 1) {
+      const item = dealItems[i];
+      const enriched = enrichedItems[i];
+      if (!item.twenty_id) continue;
+      result[item.twenty_id] = statusFromEnriched(item, deal, enriched);
+    }
+  }
+
+  return result;
 }
 
 export function addDealItemToList(db, twentyLineItemId, list) {
@@ -86,5 +154,6 @@ export function addDealItemToList(db, twentyLineItemId, list) {
   } catch (err) {
     if (err.status !== 409) throw err;
   }
+  invalidatePatternListsCache();
   return { item, deal };
 }
