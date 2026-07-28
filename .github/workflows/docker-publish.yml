@@ -44,3 +44,22 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Redeploy on Dokploy
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.ref }}" = "refs/heads/staging" ]; then
+            COMPOSE_ID="wjfA-wPgjI2FH8wW4ypcx"
+            ENV_NAME=staging
+          else
+            COMPOSE_ID="JWIhULvt6slzDxT8AQXyWz"
+            ENV_NAME=production
+          fi
+          echo "Redeploying ${ENV_NAME} compose ${COMPOSE_ID}"
+          curl -fsS -X POST "${DOKPLOY_URL%/}/api/compose.deploy" \
+            -H "x-api-key: ${DOKPLOY_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"composeId\":\"${COMPOSE_ID}\",\"title\":\"CI ${ENV_NAME} ${GITHUB_SHA::7}\",\"description\":\"Auto redeploy after image push\"}"
