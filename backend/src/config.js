@@ -55,4 +55,8 @@ export const config = {
   googleServiceAccountPrivateKey: (process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
   printSheetCacheTtlMs: parseInt(process.env.PRINT_SHEET_CACHE_TTL_MS || '60000', 10),
   printSheetDepartmentMap: loadPrintSheetDepartmentMap(),
+  /** When true, hourly auto-parse cron is not started (use on staging). */
+  disableAutoParse: ['1', 'true', 'yes'].includes(
+    String(process.env.DISABLE_AUTO_PARSE || '').trim().toLowerCase()
+  ),
 };

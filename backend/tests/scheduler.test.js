@@ -72,6 +72,17 @@ describe('scheduler', () => {
     expect(options).toEqual({ timezone: CRM_TIMEZONE });
   });
 
+  it('skips cron registration when DISABLE_AUTO_PARSE is set', async () => {
+    vi.resetModules();
+    vi.doMock('../src/config.js', () => ({
+      config: { disableAutoParse: true },
+    }));
+    const { initScheduler: initDisabled } = await import('../src/services/scheduler.js');
+    scheduleMock.mockClear();
+    initDisabled();
+    expect(scheduleMock).not.toHaveBeenCalled();
+  });
+
   it('runs parsing when tier resolves and lock acquired', async () => {
     resolveParseTierMock.mockReturnValue('weekday-fast');
     await tickScheduler(new Date('2026-06-19T10:00:00+03:00'));
