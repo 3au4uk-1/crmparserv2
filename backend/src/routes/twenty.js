@@ -4,6 +4,7 @@ import { twentyAppAuthMiddleware } from '../middleware/twenty-app-auth.js';
 import {
   addDealItemToList,
   getLineItemListStatus,
+  getLineItemsListStatusBatch,
 } from '../services/twenty-line-item-api.js';
 import {
   archiveManualTwentyLineItem,
@@ -14,6 +15,19 @@ import { syncDealToTwenty } from '../services/twenty-sync.js';
 
 const router = Router();
 router.use(twentyAppAuthMiddleware);
+
+router.post('/line-items/list-status', (req, res, next) => {
+  try {
+    const db = getDb();
+    const ids = req.body?.ids;
+    if (!Array.isArray(ids)) {
+      return res.status(400).json({ error: 'ids must be an array' });
+    }
+    res.json({ statuses: getLineItemsListStatusBatch(db, ids) });
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.get('/line-items/:twentyLineItemId/list-status', (req, res, next) => {
   try {

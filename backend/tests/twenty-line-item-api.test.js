@@ -5,10 +5,13 @@ import {
   addDealItemToList,
   findDealItemByTwentyId,
   getLineItemListStatus,
+  getLineItemsListStatusBatch,
 } from '../src/services/twenty-line-item-api.js';
+import { resetPatternListsCacheForTests } from '../src/services/pattern-lists-cache.js';
 
 describe('twenty-line-item-api', () => {
   beforeEach(() => {
+    resetPatternListsCacheForTests();
     initDb();
     migrate();
     const db = getDb();
@@ -63,6 +66,41 @@ describe('twenty-line-item-api', () => {
     const status = getLineItemListStatus(db, 'li-twenty-1');
     expect(status.restorationMatch).toBe(true);
     expect(status.dealTwentyId).toBe('opp-twenty-1');
+  });
+
+  it('getLineItemsListStatusBatch returns statuses keyed by twenty id', () => {
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO deal_items (deal_id, name, price, quantity, classification, twenty_id)
+      VALUES (
+        (SELECT id FROM deals WHERE twenty_id = 'opp-twenty-1'),
+        'Баннер 3x6',
+        1000,
+        '1',
+        'keyword_match',
+        'li-twenty-2'
+      )
+    `).run();
+    db.prepare(`
+      INSERT INTO restoration_items (pattern, match_type, source_name)
+      VALUES ('велотележка для мороженого', 'exact', 'Велотележка для мороженого')
+    `).run();
+
+    const statuses = getLineItemsListStatusBatch(db, ['li-twenty-1', 'li-twenty-2', 'missing']);
+    expect(statuses['li-twenty-1'].restorationMatch).toBe(true);
+    expect(statuses['li-twenty-1'].known).toBe(true);
+    expect(statuses['li-twenty-2'].known).toBe(true);
+    expect(statuses['li-twenty-2'].restorationMatch).toBe(false);
+    expect(statuses.missing).toEqual({
+      known: false,
+      blacklisted: false,
+      restorationMatch: false,
+      podryadMatch: false,
+      bannerMatch: false,
+      pattern: null,
+      dealId: null,
+      dealTwentyId: null,
+    });
   });
 
   it('addDealItemToList creates restoration entry', () => {

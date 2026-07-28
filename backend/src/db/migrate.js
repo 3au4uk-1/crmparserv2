@@ -64,6 +64,7 @@ export function migrateDealIdentity(db) {
 
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_deals_deal_key ON deals(deal_key);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_deals_crm_event_id ON deals(crm_event_id);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_deal_items_twenty_id ON deal_items(twenty_id);`);
 }
 
 function pickDealToKeep(deals) {
@@ -166,6 +167,7 @@ export function migrate() {
   ensureColumn(db, 'deal_items', 'sync_override', 'TEXT');
   ensureColumn(db, 'deal_items', 'twenty_id', 'TEXT');
   ensureColumn(db, 'deal_items', 'comment', 'TEXT');
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_deal_items_twenty_id ON deal_items(twenty_id);`);
   ensureColumn(db, 'deal_items', 'sum', 'REAL');
   ensureColumn(db, 'deal_items', 'quantity_num', 'REAL');
   ensureColumn(db, 'deals', 'twenty_error', 'TEXT');
