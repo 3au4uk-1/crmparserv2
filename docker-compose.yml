@@ -35,6 +35,7 @@ services:
       - IMPORT_API_SECRET=${IMPORT_API_SECRET}
       - TWENTY_APP_API_SECRET=${TWENTY_APP_API_SECRET}
       - TWENTY_APP_CORS_ORIGIN=${TWENTY_APP_CORS_ORIGIN}
+      - DISABLE_AUTO_PARSE=${DISABLE_AUTO_PARSE:-false}
     networks:
       - twenty
     restart: unless-stopped

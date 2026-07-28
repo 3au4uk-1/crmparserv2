@@ -1,4 +1,5 @@
 import cron from 'node-cron';
+import { config } from '../config.js';
 import { runParsing } from './parser.js';
 import { resolveParseTier, markParseSlotExecuted } from './parse-schedule.js';
 import {
@@ -37,6 +38,12 @@ export async function tickScheduler(now = new Date()) {
 export function initScheduler() {
   if (scheduledTask) {
     scheduledTask.stop();
+    scheduledTask = null;
+  }
+
+  if (config.disableAutoParse) {
+    console.log('Scheduler disabled (DISABLE_AUTO_PARSE)');
+    return;
   }
 
   scheduledTask = cron.schedule(
