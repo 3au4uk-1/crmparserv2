@@ -164,6 +164,28 @@ export function migrate() {
     );
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS decor_blacklist_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pattern TEXT NOT NULL,
+      match_type TEXT NOT NULL CHECK (match_type IN ('exact', 'substring')),
+      source_name TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (pattern, match_type)
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS mk_blacklist_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pattern TEXT NOT NULL,
+      match_type TEXT NOT NULL CHECK (match_type IN ('exact', 'substring')),
+      source_name TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (pattern, match_type)
+    );
+  `);
+
   ensureColumn(db, 'deal_items', 'sync_override', 'TEXT');
   ensureColumn(db, 'deal_items', 'twenty_id', 'TEXT');
   ensureColumn(db, 'deal_items', 'comment', 'TEXT');
@@ -267,6 +289,9 @@ export function migrate() {
   for (const [key, value] of expenseDefaults) {
     db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run(key, value);
   }
+
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('decor_keywords', '[]')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('mk_keywords', '[]')").run();
 
   console.log('Database migrated successfully');
 }

@@ -4,12 +4,22 @@ import {
   useUpdateSetting,
   useKeywords,
   useUpdateKeywords,
+  useDecorKeywords,
+  useUpdateDecorKeywords,
+  useMkKeywords,
+  useUpdateMkKeywords,
   useCompanies,
   useCreateCompany,
   useClearParsingData,
   useBlacklist,
   useAddBlacklistItem,
   useRemoveBlacklistItem,
+  useDecorBlacklist,
+  useAddDecorBlacklistItem,
+  useRemoveDecorBlacklistItem,
+  useMkBlacklist,
+  useAddMkBlacklistItem,
+  useRemoveMkBlacklistItem,
   useRestorationList,
   useAddRestorationItem,
   useRemoveRestorationItem,
@@ -348,15 +358,25 @@ export default function Settings() {
 
   const { data: settings } = useSettings();
   const { data: keywords } = useKeywords();
+  const { data: decorKeywords } = useDecorKeywords();
+  const { data: mkKeywords } = useMkKeywords();
   const { data: blacklist } = useBlacklist();
+  const { data: decorBlacklist } = useDecorBlacklist();
+  const { data: mkBlacklist } = useMkBlacklist();
   const { data: restorationList } = useRestorationList();
   const { data: podryadList } = usePodryadList();
   const { data: bannerList } = useBannerList();
   const { data: companies } = useCompanies();
   const updateSetting = useUpdateSetting();
   const updateKeywords = useUpdateKeywords();
+  const updateDecorKeywords = useUpdateDecorKeywords();
+  const updateMkKeywords = useUpdateMkKeywords();
   const addBlacklistItem = useAddBlacklistItem();
   const removeBlacklistItem = useRemoveBlacklistItem();
+  const addDecorBlacklistItem = useAddDecorBlacklistItem();
+  const removeDecorBlacklistItem = useRemoveDecorBlacklistItem();
+  const addMkBlacklistItem = useAddMkBlacklistItem();
+  const removeMkBlacklistItem = useRemoveMkBlacklistItem();
   const addRestorationItem = useAddRestorationItem();
   const removeRestorationItem = useRemoveRestorationItem();
   const addPodryadItem = useAddPodryadItem();
@@ -367,11 +387,19 @@ export default function Settings() {
   const createCompany = useCreateCompany();
 
   const [newKeyword, setNewKeyword] = useState('');
+  const [newDecorKeyword, setNewDecorKeyword] = useState('');
+  const [newMkKeyword, setNewMkKeyword] = useState('');
   const [newCompanyCode, setNewCompanyCode] = useState('');
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newBlacklistPattern, setNewBlacklistPattern] = useState('');
   const [newBlacklistMatchType, setNewBlacklistMatchType] = useState('exact');
   const [blacklistError, setBlacklistError] = useState('');
+  const [newDecorBlacklistPattern, setNewDecorBlacklistPattern] = useState('');
+  const [newDecorBlacklistMatchType, setNewDecorBlacklistMatchType] = useState('exact');
+  const [decorBlacklistError, setDecorBlacklistError] = useState('');
+  const [newMkBlacklistPattern, setNewMkBlacklistPattern] = useState('');
+  const [newMkBlacklistMatchType, setNewMkBlacklistMatchType] = useState('exact');
+  const [mkBlacklistError, setMkBlacklistError] = useState('');
   const [newRestorationPattern, setNewRestorationPattern] = useState('');
   const [newRestorationMatchType, setNewRestorationMatchType] = useState('exact');
   const [restorationError, setRestorationError] = useState('');
@@ -393,6 +421,20 @@ export default function Settings() {
     if (parsed.length === 0) return;
     updateKeywords.mutate(mergeKeywords(keywords, parsed));
     setNewKeyword('');
+  }
+
+  function addDecorKeyword() {
+    const parsed = parseCommaSeparatedInput(newDecorKeyword);
+    if (parsed.length === 0) return;
+    updateDecorKeywords.mutate(mergeKeywords(decorKeywords, parsed));
+    setNewDecorKeyword('');
+  }
+
+  function addMkKeyword() {
+    const parsed = parseCommaSeparatedInput(newMkKeyword);
+    if (parsed.length === 0) return;
+    updateMkKeywords.mutate(mergeKeywords(mkKeywords, parsed));
+    setNewMkKeyword('');
   }
 
   async function handleAddPatterns({
@@ -418,6 +460,14 @@ export default function Settings() {
 
   function removeKeyword(kw) {
     updateKeywords.mutate((keywords || []).filter(k => k !== kw));
+  }
+
+  function removeDecorKeyword(kw) {
+    updateDecorKeywords.mutate((decorKeywords || []).filter((k) => k !== kw));
+  }
+
+  function removeMkKeyword(kw) {
+    updateMkKeywords.mutate((mkKeywords || []).filter((k) => k !== kw));
   }
 
   function addCompany() {
@@ -523,6 +573,78 @@ export default function Settings() {
           </Section>
 
           <Section
+            title="Ключевые слова декора"
+            description="Позиции с совпадением попадают в поток «Декор» на доске «МК и Декор». Можно добавить одно слово или несколько через запятую."
+          >
+            <div className="flex flex-wrap gap-2 mb-4">
+              {(decorKeywords || []).map((kw) => (
+                <span key={kw} className="inline-flex items-center gap-1.5 bg-pastel-green-bg text-pastel-green-text px-2.5 py-1 rounded-md text-sm">
+                  {kw}
+                  <button
+                    onClick={() => removeDecorKeyword(kw)}
+                    className="opacity-60 hover:opacity-100 hover:text-pastel-red-text transition-opacity"
+                    aria-label={`Удалить ${kw}`}
+                  >
+                    &times;
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-2 items-start max-w-xl">
+              <textarea
+                value={newDecorKeyword}
+                onChange={(e) => setNewDecorKeyword(e.target.value)}
+                rows={2}
+                className="input-field flex-1"
+                placeholder="декор, оформление, витрина"
+              />
+              <button
+                onClick={addDecorKeyword}
+                disabled={!newDecorKeyword.trim()}
+                className="btn-primary btn-sm shrink-0"
+              >
+                Добавить
+              </button>
+            </div>
+          </Section>
+
+          <Section
+            title="Ключевые слова МК"
+            description="Позиции с совпадением попадают в поток «МК» на доске «МК и Декор». Можно добавить одно слово или несколько через запятую."
+          >
+            <div className="flex flex-wrap gap-2 mb-4">
+              {(mkKeywords || []).map((kw) => (
+                <span key={kw} className="inline-flex items-center gap-1.5 bg-pastel-yellow-bg text-pastel-yellow-text px-2.5 py-1 rounded-md text-sm">
+                  {kw}
+                  <button
+                    onClick={() => removeMkKeyword(kw)}
+                    className="opacity-60 hover:opacity-100 hover:text-pastel-red-text transition-opacity"
+                    aria-label={`Удалить ${kw}`}
+                  >
+                    &times;
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-2 items-start max-w-xl">
+              <textarea
+                value={newMkKeyword}
+                onChange={(e) => setNewMkKeyword(e.target.value)}
+                rows={2}
+                className="input-field flex-1"
+                placeholder="мк, монтажная конструкция"
+              />
+              <button
+                onClick={addMkKeyword}
+                disabled={!newMkKeyword.trim()}
+                className="btn-primary btn-sm shrink-0"
+              >
+                Добавить
+              </button>
+            </div>
+          </Section>
+
+          <Section
             title="Блеклист позиций"
             description="Позиции в блеклисте не попадают в Twenty автоматически. Ручная галочка в сделке перебивает блеклист. Можно добавить одно значение или несколько через запятую."
           >
@@ -576,6 +698,128 @@ export default function Settings() {
                   duplicateLabel: 'Уже в блеклисте',
                 })}
                 disabled={!newBlacklistPattern.trim() || patternListBusy === 'blacklist' || addBlacklistItem.isPending}
+                className="btn-danger btn-sm"
+              >
+                Добавить
+              </button>
+            </div>
+          </Section>
+
+          <Section
+            title="Блеклист декора"
+            description="Позиции в блеклисте не попадают в поток «Декор». Можно добавить одно значение или несколько через запятую."
+          >
+            <div className="flex flex-wrap gap-2 mb-4">
+              {(decorBlacklist || []).map((entry) => (
+                <span
+                  key={entry.id}
+                  className="inline-flex items-center gap-1.5 bg-pastel-red-bg text-pastel-red-text px-2.5 py-1 rounded-md text-sm"
+                >
+                  {entry.sourceName || entry.pattern}
+                  <span className="text-xs opacity-70">
+                    ({entry.matchType === 'exact' ? 'точное' : 'фрагмент'})
+                  </span>
+                  <button
+                    onClick={() => removeDecorBlacklistItem.mutate(entry.id)}
+                    className="opacity-60 hover:opacity-100 transition-opacity"
+                    aria-label="Удалить из блеклиста декора"
+                  >
+                    &times;
+                  </button>
+                </span>
+              ))}
+            </div>
+            {decorBlacklistError && (
+              <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-3">{decorBlacklistError}</p>
+            )}
+            <div className="flex flex-wrap gap-2 items-end max-w-2xl">
+              <textarea
+                value={newDecorBlacklistPattern}
+                onChange={(e) => setNewDecorBlacklistPattern(e.target.value)}
+                rows={2}
+                className="input-field flex-1 min-w-[12rem]"
+                placeholder="Пример позиции декора"
+              />
+              <select
+                value={newDecorBlacklistMatchType}
+                onChange={(e) => setNewDecorBlacklistMatchType(e.target.value)}
+                className="select-field"
+              >
+                <option value="exact">Точное</option>
+                <option value="substring">Фрагмент</option>
+              </select>
+              <button
+                onClick={() => handleAddPatterns({
+                  listKey: 'decor-blacklist',
+                  text: newDecorBlacklistPattern,
+                  matchType: newDecorBlacklistMatchType,
+                  mutateAsync: addDecorBlacklistItem.mutateAsync,
+                  setError: setDecorBlacklistError,
+                  clearInput: () => setNewDecorBlacklistPattern(''),
+                  duplicateLabel: 'Уже в блеклисте декора',
+                })}
+                disabled={!newDecorBlacklistPattern.trim() || patternListBusy === 'decor-blacklist' || addDecorBlacklistItem.isPending}
+                className="btn-danger btn-sm"
+              >
+                Добавить
+              </button>
+            </div>
+          </Section>
+
+          <Section
+            title="Блеклист МК"
+            description="Позиции в блеклисте не попадают в поток «МК». Можно добавить одно значение или несколько через запятую."
+          >
+            <div className="flex flex-wrap gap-2 mb-4">
+              {(mkBlacklist || []).map((entry) => (
+                <span
+                  key={entry.id}
+                  className="inline-flex items-center gap-1.5 bg-pastel-red-bg text-pastel-red-text px-2.5 py-1 rounded-md text-sm"
+                >
+                  {entry.sourceName || entry.pattern}
+                  <span className="text-xs opacity-70">
+                    ({entry.matchType === 'exact' ? 'точное' : 'фрагмент'})
+                  </span>
+                  <button
+                    onClick={() => removeMkBlacklistItem.mutate(entry.id)}
+                    className="opacity-60 hover:opacity-100 transition-opacity"
+                    aria-label="Удалить из блеклиста МК"
+                  >
+                    &times;
+                  </button>
+                </span>
+              ))}
+            </div>
+            {mkBlacklistError && (
+              <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-3">{mkBlacklistError}</p>
+            )}
+            <div className="flex flex-wrap gap-2 items-end max-w-2xl">
+              <textarea
+                value={newMkBlacklistPattern}
+                onChange={(e) => setNewMkBlacklistPattern(e.target.value)}
+                rows={2}
+                className="input-field flex-1 min-w-[12rem]"
+                placeholder="Пример позиции МК"
+              />
+              <select
+                value={newMkBlacklistMatchType}
+                onChange={(e) => setNewMkBlacklistMatchType(e.target.value)}
+                className="select-field"
+              >
+                <option value="exact">Точное</option>
+                <option value="substring">Фрагмент</option>
+              </select>
+              <button
+                onClick={() => handleAddPatterns({
+                  listKey: 'mk-blacklist',
+                  text: newMkBlacklistPattern,
+                  matchType: newMkBlacklistMatchType,
+                  mutateAsync: addMkBlacklistItem.mutateAsync,
+                  setError: setMkBlacklistError,
+                  clearInput: () => setNewMkBlacklistPattern(''),
+                  duplicateLabel: 'Уже в блеклисте МК',
+                })}
+                disabled={!newMkBlacklistPattern.trim() || patternListBusy === 'mk-blacklist' || addMkBlacklistItem.isPending}
                 className="btn-danger btn-sm"
               >
                 Добавить
