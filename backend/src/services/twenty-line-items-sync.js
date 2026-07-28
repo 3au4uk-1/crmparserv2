@@ -4,8 +4,7 @@ import {
 } from './twenty-line-item.js';
 import { normalizePattern } from './blacklist.js';
 import { isRestorationItem } from './restoration.js';
-import { isPodryadItem } from './podryad.js';
-import { isBannerItem } from './banner.js';
+import { findTipRuleMatch } from './tip-rules.js';
 import { logTwentyStep } from './twenty-sync-log.js';
 import { DEFAULT_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
 import { MANUAL_TWENTY_CLASSIFICATION } from './manual-twenty-line-item.js';
@@ -130,8 +129,7 @@ export async function syncLineItemsDiff({
   db,
   deal = null,
   restorationList = [],
-  podryadList = [],
-  bannerList = [],
+  tipRules = [],
   ignoreStageProtection = false,
 }) {
   const { toUpdate, toCreate, toDelete, preserved } = computeLineItemDiff(
@@ -143,7 +141,7 @@ export async function syncLineItemsDiff({
     },
   );
 
-  const lineItemOptions = { deal, restorationList, podryadList, bannerList };
+  const lineItemOptions = { deal, restorationList, tipRules };
 
   logTwentyStep('line_items.diff', {
     toUpdate: toUpdate.length,
@@ -164,12 +162,14 @@ export async function syncLineItemsDiff({
     logTwentyStep('line_items.restoration_zero', { names: zeroed.map((i) => i.name) });
   }
 
-  const podryadItems = eligibleItems.filter((i) => isPodryadItem(i.name, podryadList));
+  const tipMatched = (tip) =>
+    eligibleItems.filter((i) => findTipRuleMatch(i.name, tipRules)?.tip === tip);
+  const podryadItems = tipMatched('PODRYAD');
   if (podryadItems.length) {
     logTwentyStep('line_items.podryad_tip', { names: podryadItems.map((i) => i.name) });
   }
 
-  const bannerItems = eligibleItems.filter((i) => isBannerItem(i.name, bannerList));
+  const bannerItems = tipMatched('BANNERA');
   if (bannerItems.length) {
     logTwentyStep('line_items.banner_tip', { names: bannerItems.map((i) => i.name) });
   }
@@ -212,7 +212,7 @@ export async function syncLineItemsDiff({
           warehouseItemId,
           oppId,
           position === 0 ? 'first' : position,
-          { deal, restorationList, podryadList, bannerList }
+          lineItemOptions
         ),
       }
     );

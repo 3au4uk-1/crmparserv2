@@ -65,14 +65,13 @@ export function getLineItemListStatus(db, twentyLineItemId) {
     return { ...NEUTRAL_LINE_ITEM_LIST_STATUS };
   }
 
-  const { blacklist, restorationList, podryadList, bannerList } = getCachedPatternLists(db);
+  const { blacklist, restorationList, tipRules } = getCachedPatternLists(db);
   const [enriched] = enrichDealItems(
     [item],
     blacklist,
     restorationList,
     deal,
-    podryadList,
-    bannerList,
+    tipRules,
   );
   return statusFromEnriched(item, deal, enriched);
 }
@@ -110,7 +109,7 @@ export function getLineItemsListStatusBatch(db, twentyLineItemIds) {
     .all(...dealIds);
   const dealById = new Map(deals.map((deal) => [deal.id, deal]));
 
-  const { blacklist, restorationList, podryadList, bannerList } = getCachedPatternLists(db);
+  const { blacklist, restorationList, tipRules } = getCachedPatternLists(db);
 
   // Group by deal so enrichDealItems gets correct deal context once per group.
   const itemsByDealId = new Map();
@@ -127,8 +126,7 @@ export function getLineItemsListStatusBatch(db, twentyLineItemIds) {
       blacklist,
       restorationList,
       deal,
-      podryadList,
-      bannerList,
+      tipRules,
     );
     for (let i = 0; i < dealItems.length; i += 1) {
       const item = dealItems[i];
