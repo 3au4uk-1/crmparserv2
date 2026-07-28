@@ -1,7 +1,7 @@
 import { config } from '../config.js';
 import { getDb } from '../db/connection.js';
 import { getTwentyConfig, requireTwentyConfig } from './twenty-config.js';
-import { loadBlacklist } from './blacklist.js';
+import { loadProductStreamContext } from './twenty-items.js';
 import { loadRestorationList, isRestorationItem } from './restoration.js';
 import { loadTipRules, findTipRuleMatch } from './tip-rules.js';
 import { buildOpportunityInput, computeDealItemsTotal, computeLineItemTotal, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
@@ -390,10 +390,10 @@ export function buildSyncPreview(dealId) {
   if (!deal) throw new Error(`Deal ${dealId} not found`);
 
   const allItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(dealId);
-  const blacklist = loadBlacklist(db);
+  const streamContext = loadProductStreamContext(db);
   const restorationList = loadRestorationList(db);
   const tipRules = loadTipRules(db);
-  const eligibleItems = getItemsForTwenty(allItems, blacklist);
+  const eligibleItems = getItemsForTwenty(allItems, streamContext);
   const eligibleAmount = computeDealItemsTotal(deal, eligibleItems, restorationList);
 
   return {
@@ -408,7 +408,8 @@ export function buildSyncPreview(dealId) {
       return {
         id: item.id,
         name: item.name,
-        reason: getItemEligibleReason(item, blacklist),
+        reason: getItemEligibleReason(item, streamContext),
+        productStream: item.productStream || null,
         twentyLineAmount: computeLineItemTotal(item, deal, restorationList),
         restorationMatch: isRestorationItem(item.name, restorationList),
         tipRuleMatch: Boolean(tipHit),
@@ -439,10 +440,10 @@ export async function syncDealToTwenty(
   if (!deal) throw new Error(`Deal ${dealId} not found`);
 
   const allItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(dealId);
-  const blacklist = loadBlacklist(db);
+  const streamContext = loadProductStreamContext(db);
   const restorationList = loadRestorationList(db);
   const tipRules = loadTipRules(db);
-  const items = getItemsForTwenty(allItems, blacklist);
+  const items = getItemsForTwenty(allItems, streamContext);
   const mode = deal.twenty_id ? 'update' : 'create';
 
   beginTwentySyncContext({

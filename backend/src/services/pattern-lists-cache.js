@@ -1,6 +1,6 @@
-import { loadBlacklist } from './blacklist.js';
 import { loadRestorationList } from './restoration.js';
 import { loadTipRules } from './tip-rules.js';
+import { loadProductStreamContext } from './twenty-items.js';
 
 const TTL_MS = 30_000;
 
@@ -12,8 +12,11 @@ export function getCachedPatternLists(db) {
     return cache;
   }
 
+  const streamContext = loadProductStreamContext(db);
   cache = {
-    blacklist: loadBlacklist(db),
+    streamContext,
+    // Keep legacy key for callers that still expect `blacklist`.
+    blacklist: streamContext.brandingBlacklist,
     restorationList: loadRestorationList(db),
     tipRules: loadTipRules(db),
   };

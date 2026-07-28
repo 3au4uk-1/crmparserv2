@@ -18,6 +18,8 @@ describe('twenty-line-item-api', () => {
     db.prepare('DELETE FROM deal_items').run();
     db.prepare('DELETE FROM deals').run();
     db.prepare('DELETE FROM restoration_items').run();
+    db.prepare('DELETE FROM decor_blacklist_items').run();
+    db.prepare('DELETE FROM mk_blacklist_items').run();
 
     const dealResult = db.prepare(`
       INSERT INTO deals (crm_event_id, deal_key, data_source, title, twenty_id, approval_status)
@@ -47,6 +49,8 @@ describe('twenty-line-item-api', () => {
     expect(getLineItemListStatus(db, 'missing')).toEqual({
       known: false,
       blacklisted: false,
+      decorBlacklisted: false,
+      mkBlacklisted: false,
       restorationMatch: false,
       podryadMatch: false,
       bannerMatch: false,
@@ -94,6 +98,8 @@ describe('twenty-line-item-api', () => {
     expect(statuses.missing).toEqual({
       known: false,
       blacklisted: false,
+      decorBlacklisted: false,
+      mkBlacklisted: false,
       restorationMatch: false,
       podryadMatch: false,
       bannerMatch: false,
@@ -118,5 +124,33 @@ describe('twenty-line-item-api', () => {
     expect(() => addDealItemToList(db, 'li-twenty-1', 'restoration')).not.toThrow();
     const rows = db.prepare('SELECT * FROM restoration_items').all();
     expect(rows).toHaveLength(1);
+  });
+
+  it('addDealItemToList creates decor blacklist entry', () => {
+    const db = getDb();
+    addDealItemToList(db, 'li-twenty-1', 'decor_blacklist');
+    const rows = db.prepare('SELECT * FROM decor_blacklist_items').all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].pattern).toBe('велотележка для мороженого');
+  });
+
+  it('addDealItemToList creates mk blacklist entry', () => {
+    const db = getDb();
+    addDealItemToList(db, 'li-twenty-1', 'mk_blacklist');
+    const rows = db.prepare('SELECT * FROM mk_blacklist_items').all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].pattern).toBe('велотележка для мороженого');
+  });
+
+  it('getLineItemListStatus reflects decor blacklist match', () => {
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO decor_blacklist_items (pattern, match_type, source_name)
+      VALUES ('велотележка для мороженого', 'exact', 'Велотележка для мороженого')
+    `).run();
+
+    const status = getLineItemListStatus(db, 'li-twenty-1');
+    expect(status.decorBlacklisted).toBe(true);
+    expect(status.mkBlacklisted).toBe(false);
   });
 });
