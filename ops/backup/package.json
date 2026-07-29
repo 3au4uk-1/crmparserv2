@@ -1,0 +1,12 @@
+{
+  "name": "crmparser-ops-backup",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:pg-format": "bash tests/pg-restore-format.test.sh"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.8"
+  }
+}
