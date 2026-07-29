@@ -31,42 +31,6 @@ router.put('/keywords', (req, res) => {
   res.json({ success: true, count: keywords.length });
 });
 
-router.get('/decor-keywords', (req, res) => {
-  const db = getDb();
-  const row = db.prepare("SELECT value FROM settings WHERE key = 'decor_keywords'").get();
-  res.json(JSON.parse(row?.value || '[]'));
-});
-
-router.put('/decor-keywords', (req, res) => {
-  const { keywords } = req.body;
-  if (!Array.isArray(keywords)) {
-    return res.status(400).json({ error: 'keywords array required' });
-  }
-  const db = getDb();
-  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('decor_keywords', ?)").run(
-    JSON.stringify(keywords)
-  );
-  res.json({ success: true, count: keywords.length });
-});
-
-router.get('/mk-keywords', (req, res) => {
-  const db = getDb();
-  const row = db.prepare("SELECT value FROM settings WHERE key = 'mk_keywords'").get();
-  res.json(JSON.parse(row?.value || '[]'));
-});
-
-router.put('/mk-keywords', (req, res) => {
-  const { keywords } = req.body;
-  if (!Array.isArray(keywords)) {
-    return res.status(400).json({ error: 'keywords array required' });
-  }
-  const db = getDb();
-  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('mk_keywords', ?)").run(
-    JSON.stringify(keywords)
-  );
-  res.json({ success: true, count: keywords.length });
-});
-
 router.get('/companies', (req, res) => {
   const db = getDb();
   const companies = db.prepare('SELECT * FROM companies ORDER BY code').all();
@@ -103,7 +67,7 @@ router.post('/clear-parsing-data', (req, res) => {
 
 /** Generic setting update — must be after specific /keywords, /companies/* routes */
 router.put('/:key', (req, res) => {
-  const reserved = new Set(['keywords', 'decor_keywords', 'mk_keywords', 'companies']);
+  const reserved = new Set(['keywords', 'companies']);
   if (reserved.has(req.params.key)) {
     return res.status(400).json({ error: 'Use dedicated endpoint for this setting' });
   }

@@ -228,21 +228,4 @@ describe('tip rule line items', () => {
     expect(input.tip).toBeUndefined();
     expect(input.tipDetail).toBeUndefined();
   });
-
-  it('buildLineItemCreateInput includes productStream DECOR', () => {
-    const input = buildLineItemCreateInput(
-      { name: 'Оформление шары', quantity_num: 1, quantity: '1', productStream: 'DECOR' },
-      'wh',
-      'opp',
-      'first',
-    );
-    expect(input.productStream).toBe('DECOR');
-  });
-
-  it('buildLineItemUpdateInput includes productStream MK', () => {
-    const input = buildLineItemUpdateInput(
-      { name: 'МК лепка', quantity_num: 1, quantity: '1', productStream: 'MK' },
-    );
-    expect(input.productStream).toBe('MK');
-  });
 });

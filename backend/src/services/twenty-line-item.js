@@ -37,10 +37,6 @@ function buildLineItemFields(item, options = {}) {
     fields.tipDetail = resolveTipDetail(tipRule);
   }
 
-  if (item.productStream) {
-    fields.productStream = item.productStream;
-  }
-
   return fields;
 }
 
