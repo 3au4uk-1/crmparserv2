@@ -345,5 +345,8 @@ export function migrate() {
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('decor_keywords', '[]')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('mk_keywords', '[]')").run();
 
+  // Production freza queue spreadsheet — empty until cycle is wired; fill in Settings UI.
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('freza_sheet_id', '')").run();
+
   console.log('Database migrated successfully');
 }

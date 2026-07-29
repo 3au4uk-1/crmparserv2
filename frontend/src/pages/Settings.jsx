@@ -1382,6 +1382,25 @@ export default function Settings() {
             </div>
           </Section>
 
+          <Section
+            title="Производство — фреза"
+            description="ID Google-таблицы очереди фрезы. Пока пусто — цикл экспорта/readback не активен (номинально)."
+          >
+            <div className="space-y-4 max-w-2xl">
+              <div>
+                <FieldLabel>freza_sheet_id</FieldLabel>
+                <input
+                  defaultValue={settings?.freza_sheet_id || ''}
+                  onBlur={(e) =>
+                    updateSetting.mutate({ key: 'freza_sheet_id', value: e.target.value })
+                  }
+                  className="input-field font-mono"
+                  placeholder="оставьте пустым или вставьте spreadsheet id / URL"
+                />
+              </div>
+            </div>
+          </Section>
+
           <Section title="Расходы">
             <div className="space-y-4 max-w-2xl">
               <div>

@@ -51,6 +51,8 @@ export const config = {
   twentyAppCorsOrigin: process.env.TWENTY_APP_CORS_ORIGIN || '',
   dbPath: process.env.DB_PATH || './data/crmparser.db',
   printSheetId: process.env.PRINT_SHEET_ID || '',
+  /** Env fallback only; prefer DB setting `freza_sheet_id` (Settings UI). Empty = freza cycle off. */
+  frezaSheetId: process.env.FREZA_SHEET_ID || '',
   googleServiceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '',
   googleServiceAccountPrivateKey: (process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
   printSheetCacheTtlMs: parseInt(process.env.PRINT_SHEET_CACHE_TTL_MS || '60000', 10),
