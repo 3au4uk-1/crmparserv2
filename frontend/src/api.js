@@ -474,6 +474,70 @@ export function useAddItemToRestoration() {
   });
 }
 
+export function useNeNasheBrandingList() {
+  return useQuery({
+    queryKey: ['ne-nashe-branding'],
+    queryFn: () => api.get('/ne-nashe-branding').then((r) => r.data.items),
+  });
+}
+
+export function useAddNeNasheBrandingItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ pattern, matchType, sourceName }) =>
+      api.post('/ne-nashe-branding', { pattern, matchType, sourceName }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ne-nashe-branding'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal'] });
+    },
+  });
+}
+
+export function useRemoveNeNasheBrandingItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => api.delete(`/ne-nashe-branding/${id}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ne-nashe-branding'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal'] });
+    },
+  });
+}
+
+export function useNeNasheDecorMkList() {
+  return useQuery({
+    queryKey: ['ne-nashe-decor-mk'],
+    queryFn: () => api.get('/ne-nashe-decor-mk').then((r) => r.data.items),
+  });
+}
+
+export function useAddNeNasheDecorMkItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ pattern, matchType, sourceName }) =>
+      api.post('/ne-nashe-decor-mk', { pattern, matchType, sourceName }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ne-nashe-decor-mk'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal'] });
+    },
+  });
+}
+
+export function useRemoveNeNasheDecorMkItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => api.delete(`/ne-nashe-decor-mk/${id}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ne-nashe-decor-mk'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal'] });
+    },
+  });
+}
+
 export function usePodryadList() {
   return useQuery({
     queryKey: ['podryad'],
