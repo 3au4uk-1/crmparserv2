@@ -346,6 +346,20 @@ function Section({ title, description, children }) {
   );
 }
 
+function DirectionGroup({ title, description, children }) {
+  return (
+    <div className="mb-8 last:mb-4">
+      <header className="mb-4 pb-3 border-b border-border">
+        <h2 className="text-lg font-semibold text-ink">{title}</h2>
+        {description && (
+          <p className="text-sm text-ink-muted mt-1 max-w-3xl leading-relaxed">{description}</p>
+        )}
+      </header>
+      {children}
+    </div>
+  );
+}
+
 function FieldLabel({ children }) {
   return <label className="block text-sm font-medium text-ink-muted mb-1.5">{children}</label>;
 }
@@ -687,6 +701,10 @@ export default function Settings() {
 
       {activeTab === 'parsing' && (
         <>
+          <DirectionGroup
+            title="Брендинг и производство"
+            description="Ключевые слова, блеклист, реставрация и правила типов для основного потока и печати."
+          >
           <Section
             title="Ключевые слова брендинга"
             description="Можно добавить одно слово или несколько через запятую"
@@ -723,6 +741,145 @@ export default function Settings() {
             </div>
           </Section>
 
+          <Section
+            title="Блеклист позиций"
+            description="Позиции в блеклисте не попадают в Twenty автоматически. Ручная галочка в сделке перебивает блеклист. Можно добавить одно значение или несколько через запятую."
+          >
+            <div className="flex flex-wrap gap-2 mb-4">
+              {(blacklist || []).map((entry) => (
+                <span
+                  key={entry.id}
+                  className="inline-flex items-center gap-1.5 bg-pastel-red-bg text-pastel-red-text px-2.5 py-1 rounded-md text-sm"
+                >
+                  {entry.sourceName || entry.pattern}
+                  <span className="text-xs opacity-70">
+                    ({entry.matchType === 'exact' ? 'точное' : 'фрагмент'})
+                  </span>
+                  <button
+                    onClick={() => removeBlacklistItem.mutate(entry.id)}
+                    className="opacity-60 hover:opacity-100 transition-opacity"
+                    aria-label="Удалить из блеклиста"
+                  >
+                    &times;
+                  </button>
+                </span>
+              ))}
+            </div>
+            {blacklistError && (
+              <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-3">{blacklistError}</p>
+            )}
+            <div className="flex flex-wrap gap-2 items-end max-w-2xl">
+              <textarea
+                value={newBlacklistPattern}
+                onChange={(e) => setNewBlacklistPattern(e.target.value)}
+                rows={2}
+                className="input-field flex-1 min-w-[12rem]"
+                placeholder="Стойка указатель напольная А4, стойка ролл-ап"
+              />
+              <select
+                value={newBlacklistMatchType}
+                onChange={(e) => setNewBlacklistMatchType(e.target.value)}
+                className="select-field"
+              >
+                <option value="exact">Точное</option>
+                <option value="substring">Фрагмент</option>
+              </select>
+              <button
+                onClick={() => handleAddPatterns({
+                  listKey: 'blacklist',
+                  text: newBlacklistPattern,
+                  matchType: newBlacklistMatchType,
+                  mutateAsync: addBlacklistItem.mutateAsync,
+                  setError: setBlacklistError,
+                  clearInput: () => setNewBlacklistPattern(''),
+                  duplicateLabel: 'Уже в блеклисте',
+                })}
+                disabled={!newBlacklistPattern.trim() || patternListBusy === 'blacklist' || addBlacklistItem.isPending}
+                className="btn-danger btn-sm"
+              >
+                Добавить
+              </button>
+            </div>
+          </Section>
+
+          <Section
+            title="Реставрация"
+            description="Eligible-позиции из списка попадают в Twenty с суммой 0 ₽. Не eligible — не синкаются. Стадия не меняется. Можно добавить одно значение или несколько через запятую."
+          >
+            <div className="flex flex-wrap gap-2 mb-4">
+              {(restorationList || []).map((entry) => (
+                <span
+                  key={entry.id}
+                  className="inline-flex items-center gap-1.5 bg-pastel-yellow-bg text-pastel-yellow-text px-2.5 py-1 rounded-md text-sm"
+                >
+                  {entry.sourceName || entry.pattern}
+                  <span className="text-xs opacity-70">
+                    ({entry.matchType === 'exact' ? 'точное' : 'фрагмент'})
+                  </span>
+                  <button
+                    onClick={() => removeRestorationItem.mutate(entry.id)}
+                    className="opacity-60 hover:opacity-100 transition-opacity"
+                    aria-label="Удалить из списка реставрации"
+                  >
+                    &times;
+                  </button>
+                </span>
+              ))}
+            </div>
+            {restorationError && (
+              <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-3">{restorationError}</p>
+            )}
+            <div className="flex flex-wrap gap-2 items-end max-w-2xl">
+              <textarea
+                value={newRestorationPattern}
+                onChange={(e) => setNewRestorationPattern(e.target.value)}
+                rows={2}
+                className="input-field flex-1 min-w-[12rem]"
+                placeholder="Колесо фортуны, колесо удачи"
+              />
+              <select
+                value={newRestorationMatchType}
+                onChange={(e) => setNewRestorationMatchType(e.target.value)}
+                className="select-field"
+              >
+                <option value="exact">Точное</option>
+                <option value="substring">Фрагмент</option>
+              </select>
+              <button
+                onClick={() => handleAddPatterns({
+                  listKey: 'restoration',
+                  text: newRestorationPattern,
+                  matchType: newRestorationMatchType,
+                  mutateAsync: addRestorationItem.mutateAsync,
+                  setError: setRestorationError,
+                  clearInput: () => setNewRestorationPattern(''),
+                  duplicateLabel: 'Уже в списке реставрации',
+                })}
+                disabled={!newRestorationPattern.trim() || patternListBusy === 'restoration' || addRestorationItem.isPending}
+                className="btn-primary btn-sm"
+              >
+                Добавить
+              </button>
+            </div>
+          </Section>
+
+          {TIP_ZONES.map((zone) => (
+            <TipRulesSection
+              key={zone.tip}
+              zone={zone}
+              rules={(tipRules || []).filter((entry) => entry.tip === zone.tip)}
+              addTipRule={addTipRule}
+              removeTipRule={removeTipRule}
+              patternListBusy={patternListBusy}
+              handleAddPatterns={handleAddPatterns}
+            />
+          ))}
+          </DirectionGroup>
+
+          <DirectionGroup
+            title="Декор и МК"
+            description="Ключевые слова и блеклисты для доски «МК и Декор»."
+          >
           <Section
             title="Ключевые слова декора"
             description="Позиции с совпадением попадают в поток «Декор» на доске «МК и Декор». Можно добавить одно слово или несколько через запятую."
@@ -789,67 +946,6 @@ export default function Settings() {
                 onClick={addMkKeyword}
                 disabled={!newMkKeyword.trim()}
                 className="btn-primary btn-sm shrink-0"
-              >
-                Добавить
-              </button>
-            </div>
-          </Section>
-
-          <Section
-            title="Блеклист позиций"
-            description="Позиции в блеклисте не попадают в Twenty автоматически. Ручная галочка в сделке перебивает блеклист. Можно добавить одно значение или несколько через запятую."
-          >
-            <div className="flex flex-wrap gap-2 mb-4">
-              {(blacklist || []).map((entry) => (
-                <span
-                  key={entry.id}
-                  className="inline-flex items-center gap-1.5 bg-pastel-red-bg text-pastel-red-text px-2.5 py-1 rounded-md text-sm"
-                >
-                  {entry.sourceName || entry.pattern}
-                  <span className="text-xs opacity-70">
-                    ({entry.matchType === 'exact' ? 'точное' : 'фрагмент'})
-                  </span>
-                  <button
-                    onClick={() => removeBlacklistItem.mutate(entry.id)}
-                    className="opacity-60 hover:opacity-100 transition-opacity"
-                    aria-label="Удалить из блеклиста"
-                  >
-                    &times;
-                  </button>
-                </span>
-              ))}
-            </div>
-            {blacklistError && (
-              <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-3">{blacklistError}</p>
-            )}
-            <div className="flex flex-wrap gap-2 items-end max-w-2xl">
-              <textarea
-                value={newBlacklistPattern}
-                onChange={(e) => setNewBlacklistPattern(e.target.value)}
-                rows={2}
-                className="input-field flex-1 min-w-[12rem]"
-                placeholder="Стойка указатель напольная А4, стойка ролл-ап"
-              />
-              <select
-                value={newBlacklistMatchType}
-                onChange={(e) => setNewBlacklistMatchType(e.target.value)}
-                className="select-field"
-              >
-                <option value="exact">Точное</option>
-                <option value="substring">Фрагмент</option>
-              </select>
-              <button
-                onClick={() => handleAddPatterns({
-                  listKey: 'blacklist',
-                  text: newBlacklistPattern,
-                  matchType: newBlacklistMatchType,
-                  mutateAsync: addBlacklistItem.mutateAsync,
-                  setError: setBlacklistError,
-                  clearInput: () => setNewBlacklistPattern(''),
-                  duplicateLabel: 'Уже в блеклисте',
-                })}
-                disabled={!newBlacklistPattern.trim() || patternListBusy === 'blacklist' || addBlacklistItem.isPending}
-                className="btn-danger btn-sm"
               >
                 Добавить
               </button>
@@ -977,79 +1073,7 @@ export default function Settings() {
               </button>
             </div>
           </Section>
-
-          <Section
-            title="Реставрация"
-            description="Eligible-позиции из списка попадают в Twenty с суммой 0 ₽. Не eligible — не синкаются. Стадия не меняется. Можно добавить одно значение или несколько через запятую."
-          >
-            <div className="flex flex-wrap gap-2 mb-4">
-              {(restorationList || []).map((entry) => (
-                <span
-                  key={entry.id}
-                  className="inline-flex items-center gap-1.5 bg-pastel-yellow-bg text-pastel-yellow-text px-2.5 py-1 rounded-md text-sm"
-                >
-                  {entry.sourceName || entry.pattern}
-                  <span className="text-xs opacity-70">
-                    ({entry.matchType === 'exact' ? 'точное' : 'фрагмент'})
-                  </span>
-                  <button
-                    onClick={() => removeRestorationItem.mutate(entry.id)}
-                    className="opacity-60 hover:opacity-100 transition-opacity"
-                    aria-label="Удалить из списка реставрации"
-                  >
-                    &times;
-                  </button>
-                </span>
-              ))}
-            </div>
-            {restorationError && (
-              <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-3">{restorationError}</p>
-            )}
-            <div className="flex flex-wrap gap-2 items-end max-w-2xl">
-              <textarea
-                value={newRestorationPattern}
-                onChange={(e) => setNewRestorationPattern(e.target.value)}
-                rows={2}
-                className="input-field flex-1 min-w-[12rem]"
-                placeholder="Колесо фортуны, колесо удачи"
-              />
-              <select
-                value={newRestorationMatchType}
-                onChange={(e) => setNewRestorationMatchType(e.target.value)}
-                className="select-field"
-              >
-                <option value="exact">Точное</option>
-                <option value="substring">Фрагмент</option>
-              </select>
-              <button
-                onClick={() => handleAddPatterns({
-                  listKey: 'restoration',
-                  text: newRestorationPattern,
-                  matchType: newRestorationMatchType,
-                  mutateAsync: addRestorationItem.mutateAsync,
-                  setError: setRestorationError,
-                  clearInput: () => setNewRestorationPattern(''),
-                  duplicateLabel: 'Уже в списке реставрации',
-                })}
-                disabled={!newRestorationPattern.trim() || patternListBusy === 'restoration' || addRestorationItem.isPending}
-                className="btn-primary btn-sm"
-              >
-                Добавить
-              </button>
-            </div>
-          </Section>
-
-          {TIP_ZONES.map((zone) => (
-            <TipRulesSection
-              key={zone.tip}
-              zone={zone}
-              rules={(tipRules || []).filter((entry) => entry.tip === zone.tip)}
-              addTipRule={addTipRule}
-              removeTipRule={removeTipRule}
-              patternListBusy={patternListBusy}
-              handleAddPatterns={handleAddPatterns}
-            />
-          ))}
+          </DirectionGroup>
 
           <Section
             title="Расписание парсинга"
