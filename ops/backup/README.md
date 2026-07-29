@@ -50,6 +50,7 @@ Tick in PR description when ops completes each drill. Items marked **operator fo
 - [ ] **Operator follow-up:** Prune lists prefixes older than 7 days — run `node prune.mjs` locally or download `expired-snapshot-prefixes-<snapshotId>` artifact; expect `{ "expiredPrefixes": ["full-snapshots/YYYYMMDDTHHMMSSZ/", ...] }`
 - [ ] **Operator follow-up:** Staging refresh leaves env intact — workflow asserts `DISABLE_AUTO_PARSE=true` on `crmparser-staging`; URLs/tokens unchanged
 - [ ] **Operator follow-up:** Staging smoke OK after refresh (Twenty, Реализация, parser UI, optional attachment)
+- [ ] **Operator follow-up:** Dokploy schedule vars set via `ensure-schedules.mjs`; staging refresh `dry_run=true` green with `[remote-ok]` in Actions log
 - [ ] **Operator follow-up:** Rollback-data confirmation gate rejects without `RESTORE_PROD` (dry-run: dispatch with wrong/missing confirm → workflow fails)
 - [ ] **Operator follow-up:** Dokploy PG `keepLatestCount` is **7** (verify in Dokploy UI; see [PG backup retention](#pg-backup-retention))
 
@@ -73,15 +74,33 @@ Settings → Secrets and variables → Actions → **Variables**:
 | `DOKPLOY_DESTINATION_ID` | `TfR-Va14SJniAB91hlgbt` | MinIO destination `minio-home` |
 | `DOKPLOY_TWENTY_COMPOSE_ID` | `oI7-NCBTpfyrxJBitrJrd0` | Prod Twenty compose |
 | `DOKPLOY_CRMPARSER_COMPOSE_ID` | `JWIhULvt6slzDxT8AQXyWz` | Prod crmparser compose |
+| `DOKPLOY_SCHEDULE_OPS_SYNC` | *(from `ensure-schedules.mjs`)* | Disabled server schedule id — syncs `ops/backup/` to `/etc/dokploy/ops-backup/` |
+| `DOKPLOY_SCHEDULE_OPS_RUN` | *(from `ensure-schedules.mjs`)* | Disabled server schedule id — remote `bash` / `mc` / `docker` on host |
+| `DOKPLOY_SERVER_ID` | `U9UZM_1xUvc-Uw_0YXMSmA` | Docker host server id (capture `listBackupFiles` + one-time schedule setup) |
 
-Optional SSH/MinIO (defaults in workflows when unset):
+Optional MinIO (defaults in workflows when unset):
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `DOCKER_HOST` | `10.50.50.132` | Docker host reachable from GitHub runners |
-| `DOCKER_HOST_USER` | `root` | SSH user on docker host |
-| `MINIO_MC_ALIAS` | `minio-home` | `mc` alias on docker host |
+| `MINIO_MC_ALIAS` | `minio-home` | `mc` alias configured on docker host |
 | `MINIO_BUCKET` | `dokploy` | Verify with `mc ls minio-home/` on host |
+
+### Dokploy schedule setup (one-time)
+
+Host ops (staging refresh, prod rollback, MinIO manifest upload/prune) run through **disabled** Dokploy server schedules — GitHub runners never SSH to the docker host.
+
+```bash
+cd ops/backup
+export DOKPLOY_URL=... DOKPLOY_API_KEY=... DOKPLOY_SERVER_ID=...
+node ensure-schedules.mjs
+# copy printed DOKPLOY_SCHEDULE_OPS_* lines into GitHub Actions variables
+```
+
+Creates (or reuses) schedules `ops-backup-sync` and `ops-backup-run`, both **disabled** and manual-only. Workflows call `remote-run.mjs sync|run`; successful remote steps log `[remote-ok]` in Dokploy deployment logs.
+
+**Cutover:** After merge and a green staging refresh dry-run, delete repository secret **`DOCKER_HOST_SSH_KEY`** — it is no longer used.
+
+**Hard vs soft requirements:** **Staging refresh** and **prod rollback** workflows fail immediately if `DOKPLOY_SCHEDULE_OPS_SYNC` or `DOKPLOY_SCHEDULE_OPS_RUN` is missing. **Release-prepare** MinIO manifest upload and expired-prefix deletion soft-skip when schedule vars are unset (GitHub artifact still available).
 
 ### GitHub repository secrets
 
@@ -89,9 +108,8 @@ Settings → Secrets and variables → Actions → **Secrets**:
 
 | Secret | Required by | Notes |
 |--------|-------------|-------|
-| `DOKPLOY_URL` | `release-prepare`, rollback pin, `docker-publish` | Dokploy API base URL |
+| `DOKPLOY_URL` | `release-prepare`, rollback pin, `docker-publish`, remote host ops | Dokploy API base URL |
 | `DOKPLOY_API_KEY` | same | Dokploy API key |
-| `DOCKER_HOST_SSH_KEY` | staging refresh, rollback, optional MinIO upload/prune | Private key for docker host (CT 103) |
 | `BRANDING_TWENTYVIEW_DISPATCH_TOKEN` | `rollback-release` only | PAT with `repo` scope on BrandingTwentyView |
 
 Twenty deploy credentials stay in BrandingTwentyView (`TWENTY_DEPLOY_URL`, `TWENTY_DEPLOY_API_KEY`).
@@ -99,9 +117,11 @@ Twenty deploy credentials stay in BrandingTwentyView (`TWENTY_DEPLOY_URL`, `TWEN
 ### Required GitHub configuration checklist
 
 - [ ] Secrets: `DOKPLOY_URL`, `DOKPLOY_API_KEY`
-- [ ] Variables: `DOKPLOY_TWENTY_PG_BACKUP_ID`, `DOKPLOY_TWENTY_FILES_VOLUME_BACKUP_ID`, `DOKPLOY_CRMPARSER_VOLUME_BACKUP_ID`, `DOKPLOY_DESTINATION_ID`
-- [ ] Optional: `DOCKER_HOST_SSH_KEY` + `MINIO_*` / `DOCKER_HOST*` for MinIO manifest copy and prune deletion
+- [ ] Variables: `DOKPLOY_TWENTY_PG_BACKUP_ID`, `DOKPLOY_TWENTY_FILES_VOLUME_BACKUP_ID`, `DOKPLOY_CRMPARSER_VOLUME_BACKUP_ID`, `DOKPLOY_DESTINATION_ID`, `DOKPLOY_SCHEDULE_OPS_SYNC`, `DOKPLOY_SCHEDULE_OPS_RUN`
+- [ ] One-time: run `ensure-schedules.mjs` (see [Dokploy schedule setup](#dokploy-schedule-setup-one-time))
+- [ ] Optional: `MINIO_MC_ALIAS` / `MINIO_BUCKET` (defaults `minio-home` / `dokploy`)
 - [ ] Rollback release: `BRANDING_TWENTYVIEW_DISPATCH_TOKEN`
+- [ ] Cutover: delete legacy secret `DOCKER_HOST_SSH_KEY` after schedule vars verified
 
 ## Volume names
 
@@ -169,10 +189,10 @@ Optional env at capture time: `TWENTY_APP_GIT_SHA` — BrandingTwentyView commit
 1. Confirm prod Twenty version and crmparser image/digest you are about to replace.
 2. Run workflow; wait for green (~20 min: PG poll 10 min + volume polls 20 min).
 3. Download artifact **`release-manifest-<snapshotId>`**; spot-check `manifest.json`: keys `twentyPg`, `twentyFiles`, `crmparserSqlite`, versions match prod.
-4. Optional: confirm `full-snapshots/<snapshotId>/manifest.json` in MinIO when SSH configured.
+4. Optional: confirm `full-snapshots/<snapshotId>/manifest.json` in MinIO when schedule vars are configured (skipped otherwise; artifact still available).
 5. Proceed with merge only after success.
 
-**Nightly cron:** uses `TWENTY_APP_VERSION=nightly` and `CRMPARSER_IMAGE=ghcr.io/3au4uk-1/crmparserv2:latest`. Artifacts retained 14 days. Expired prefixes (>7 days) in **`expired-snapshot-prefixes-<snapshotId>`** artifact.
+**Nightly cron:** uses `TWENTY_APP_VERSION=nightly` and `CRMPARSER_IMAGE=ghcr.io/3au4uk-1/crmparserv2:latest`. Artifacts retained 14 days. Expired prefixes (>7 days) in **`expired-snapshot-prefixes-<snapshotId>`** artifact. MinIO upload/prune deletion runs only when schedule vars are set; otherwise prefixes are listed in the artifact for manual cleanup.
 
 **On failure:** do not promote. Fix wiring or retry outside `02:00` UTC nightly window (see [Concurrency](#concurrency) under capture).
 
@@ -185,9 +205,9 @@ Optional env at capture time: `TWENTY_APP_GIT_SHA` — BrandingTwentyView commit
 | Input | Default | Notes |
 |-------|---------|-------|
 | `snapshot_id` | latest under `full-snapshots/` | Explicit `YYYYMMDDTHHMMSSZ` recommended |
-| `dry_run` | `false` | SSH + `restore-host.sh --dry-run` |
+| `dry_run` | `false` | Dokploy schedule dry-run: remote `restore-host.sh --dry-run` on docker host |
 
-**Requires:** `DOCKER_HOST_SSH_KEY` (live refresh and meaningful dry-run both fail without it).
+**Requires:** `DOKPLOY_SCHEDULE_OPS_SYNC`, `DOKPLOY_SCHEDULE_OPS_RUN` (hard fail if either is missing — live refresh and dry-run both need schedule remote exec). Confirm `[remote-ok]` in Actions log after sync/restore steps.
 
 **Behavior:** stops `twenty-staging` + `crmparser-staging`, restores PG + files + sqlite from manifest, starts services, verifies `DISABLE_AUTO_PARSE=true`. Never rewrites env files.
 
@@ -210,11 +230,13 @@ Optional env at capture time: `TWENTY_APP_GIT_SHA` — BrandingTwentyView commit
 | `snapshot_id` | yes | `YYYYMMDDTHHMMSSZ` from release-prepare manifest |
 | `confirm` | yes | Must be exactly `RESTORE_PROD` |
 
+**Requires:** `DOKPLOY_SCHEDULE_OPS_SYNC`, `DOKPLOY_SCHEDULE_OPS_RUN` (sync ops tree → remote `restore-host.sh --target prod`).
+
 **Steps:**
 
 1. Identify snapshot from last good `release-prepare` artifact or MinIO `full-snapshots/<id>/manifest.json`.
 2. Run workflow with `snapshot_id` and `confirm=RESTORE_PROD`.
-3. Monitor; on failure services stay stopped.
+3. Monitor; on failure services stay stopped. Confirm `[remote-ok]` in Dokploy deployment logs.
 4. Prod smoke: Twenty login, **Реализация**, crmparser UI.
 
 **Do not run without explicit operator approval.**
@@ -224,6 +246,8 @@ Optional env at capture time: `TWENTY_APP_GIT_SHA` — BrandingTwentyView commit
 **When:** Full revert to pre-release state (data + crmparser image + Twenty app version).
 
 **Trigger:** Actions → **Rollback prod release (data + code)** on `staging`. Same inputs as data-only (`snapshot_id` + `RESTORE_PROD`).
+
+**Requires:** `DOKPLOY_SCHEDULE_OPS_SYNC`, `DOKPLOY_SCHEDULE_OPS_RUN` (same remote restore path as data-only rollback).
 
 **Runs in order:**
 
@@ -256,7 +280,7 @@ Twenty file attachments are encrypted at rest. Staging **must** use the same `EN
 
 ### Incomplete restore
 
-If restore fails mid-way, workflows fail closed — services stay stopped. Do not start stacks manually in a half-restored state. Retry with the same `snapshot_id` after fixing MinIO/SSH/host issues.
+If restore fails mid-way, workflows fail closed — services stay stopped. Do not start stacks manually in a half-restored state. Retry with the same `snapshot_id` after fixing MinIO, Dokploy schedule config, or host-side `mc`/`docker` issues.
 
 ### Lost manifest
 
@@ -308,12 +332,30 @@ node prune.mjs > expired.json
 
 Component volume prefixes are managed by Dokploy `keepLatestCount`, not this prune pass.
 
-### Host restore (`restore-host.sh`)
+### Remote exec (`remote-run.mjs`, `ensure-schedules.mjs`)
 
-On docker host (CT 103):
+Workflows sync `ops/backup/` to the host, then run bash via Dokploy server schedules:
 
 ```bash
 cd ops/backup
+export DOKPLOY_URL=... DOKPLOY_API_KEY=...
+export DOKPLOY_SCHEDULE_OPS_SYNC=... DOKPLOY_SCHEDULE_OPS_RUN=...
+
+node remote-run.mjs sync          # writes /etc/dokploy/ops-backup/
+node remote-run.mjs run <<'EOF' # arbitrary host script; must exit 0
+set -euo pipefail
+mc ls minio-home/dokploy/full-snapshots/
+EOF
+```
+
+One-time schedule creation: `node ensure-schedules.mjs` (requires `DOKPLOY_SERVER_ID`). Remote jobs must print `[remote-ok]` or the workflow fails.
+
+### Host restore (`restore-host.sh`)
+
+Workflows sync the ops tree to **`/etc/dokploy/ops-backup/`** on the docker host before each restore. Manual runs (SSH or console on host) can use the same path:
+
+```bash
+cd /etc/dokploy/ops-backup
 ./restore-host.sh \
   --target staging \
   --snapshot-id 20260729T153045Z \
