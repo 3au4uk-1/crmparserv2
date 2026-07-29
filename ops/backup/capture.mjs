@@ -7,9 +7,10 @@ import { normalizeBackupFileEntries, pollForNewBackupKey } from './lib/backup-fi
 import { validateCaptureVersions } from './lib/versions.js';
 
 const DEFAULT_SERVER_ID = 'U9UZM_1xUvc-Uw_0YXMSmA';
-const PG_SEARCH = 'twenty_db/twenty-pg';
-const TWENTY_FILES_SEARCH = 'twenty_server/full-snapshots/twenty-files';
-const CRMPARSER_SEARCH = 'crmparser_crmparser/full-snapshots/crmparser-sqlite';
+// Trailing slash required: Dokploy listBackupFiles lists *inside* that directory.
+const PG_SEARCH = 'twenty_db/twenty-pg/';
+const TWENTY_FILES_SEARCH = 'twenty_server/full-snapshots/twenty-files/';
+const CRMPARSER_SEARCH = 'crmparser_crmparser/full-snapshots/crmparser-sqlite/';
 const PG_TIMEOUT_MS = 10 * 60 * 1000;
 const VOLUME_TIMEOUT_MS = 20 * 60 * 1000;
 const POLL_INTERVAL_MS = 15_000;
