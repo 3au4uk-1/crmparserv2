@@ -138,4 +138,37 @@ describe('createDokployClient', () => {
     const paths = fetchImpl.mock.calls.map(([url]) => url.pathname);
     expect(paths).toEqual(['/api/compose.one', '/api/compose.update']);
   });
+
+  it('schedule and deployment methods hit expected paths', async () => {
+    const client = createDokployClient({
+      baseUrl: 'https://dokploy.example',
+      apiKey: 'secret-key',
+      fetchImpl,
+    });
+
+    await client.scheduleCreate({
+      name: 'ops-backup-sync',
+      cronExpression: '0 0 1 1 *',
+      command: 'true',
+      scheduleType: 'server',
+      serverId: 'srv-1',
+      enabled: false,
+      shellType: 'bash',
+    });
+    await client.scheduleUpdate({ scheduleId: 'sch-1', command: 'echo hi' });
+    await client.scheduleRunManually('sch-1');
+    await client.scheduleList('srv-1', 'server');
+    await client.deploymentAllByType('sch-1', 'schedule');
+    await client.deploymentReadLogs('dep-1', 200);
+
+    const paths = fetchImpl.mock.calls.map(([url]) => url.pathname);
+    expect(paths).toEqual([
+      '/api/schedule.create',
+      '/api/schedule.update',
+      '/api/schedule.runManually',
+      '/api/schedule.list',
+      '/api/deployment.allByType',
+      '/api/deployment.readLogs',
+    ]);
+  });
 });

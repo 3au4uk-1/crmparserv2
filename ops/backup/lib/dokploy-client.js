@@ -49,5 +49,15 @@ export function createDokployClient({ baseUrl, apiKey, fetchImpl = fetch }) {
       request('POST', '/compose.deploy', { body: { composeId, title, description } }),
     composeOne: (composeId) => request('GET', '/compose.one', { query: { composeId } }),
     composeUpdate: (body) => request('POST', '/compose.update', { body }),
+    scheduleCreate: (body) => request('POST', '/schedule.create', { body }),
+    scheduleUpdate: (body) => request('POST', '/schedule.update', { body }),
+    scheduleRunManually: (scheduleId) =>
+      request('POST', '/schedule.runManually', { body: { scheduleId } }),
+    scheduleList: (id, scheduleType) =>
+      request('GET', '/schedule.list', { query: { id, scheduleType } }),
+    deploymentAllByType: (id, type) =>
+      request('GET', '/deployment.allByType', { query: { id, type } }),
+    deploymentReadLogs: (deploymentId, tail = 500) =>
+      request('GET', '/deployment.readLogs', { query: { deploymentId, tail } }),
   };
 }
