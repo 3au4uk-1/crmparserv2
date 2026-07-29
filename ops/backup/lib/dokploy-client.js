@@ -51,6 +51,8 @@ export function createDokployClient({ baseUrl, apiKey, fetchImpl = fetch }) {
     composeUpdate: (body) => request('POST', '/compose.update', { body }),
     scheduleCreate: (body) => request('POST', '/schedule.create', { body }),
     scheduleUpdate: (body) => request('POST', '/schedule.update', { body }),
+    scheduleOne: (scheduleId) =>
+      request('GET', '/schedule.one', { query: { scheduleId } }),
     scheduleRunManually: (scheduleId) =>
       request('POST', '/schedule.runManually', { body: { scheduleId } }),
     scheduleList: (id, scheduleType) =>

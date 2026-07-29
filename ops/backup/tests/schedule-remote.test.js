@@ -90,6 +90,16 @@ describe('deployments helpers', () => {
 describe('runScheduleJob', () => {
   it('updates, runs, polls until done with remote-ok', async () => {
     const client = {
+      scheduleOne: vi.fn(async () => ({
+        scheduleId: 'sch-1',
+        name: 'ops-backup-sync',
+        cronExpression: '0 0 1 1 *',
+        scheduleType: 'server',
+        serverId: 'srv-1',
+        enabled: false,
+        shellType: 'bash',
+        timezone: 'UTC',
+      })),
       scheduleUpdate: vi.fn(async () => ({})),
       scheduleRunManually: vi.fn(async () => ({})),
       deploymentAllByType: vi
@@ -120,6 +130,13 @@ describe('runScheduleJob', () => {
 
   it('throws when done without remote-ok', async () => {
     const client = {
+      scheduleOne: vi.fn(async () => ({
+        name: 'ops-backup-run',
+        cronExpression: '0 0 1 1 *',
+        scheduleType: 'server',
+        serverId: 'srv-1',
+        enabled: false,
+      })),
       scheduleUpdate: vi.fn(async () => ({})),
       scheduleRunManually: vi.fn(async () => ({})),
       deploymentAllByType: vi.fn(async () => [
@@ -141,6 +158,13 @@ describe('runScheduleJob', () => {
 
   it('throws when deployment status is error even with remote-ok', async () => {
     const client = {
+      scheduleOne: vi.fn(async () => ({
+        name: 'ops-backup-run',
+        cronExpression: '0 0 1 1 *',
+        scheduleType: 'server',
+        serverId: 'srv-1',
+        enabled: false,
+      })),
       scheduleUpdate: vi.fn(async () => ({})),
       scheduleRunManually: vi.fn(async () => ({})),
       deploymentAllByType: vi.fn(async () => [

@@ -155,6 +155,7 @@ describe('createDokployClient', () => {
       enabled: false,
       shellType: 'bash',
     });
+    await client.scheduleOne('sch-1');
     await client.scheduleUpdate({ scheduleId: 'sch-1', command: 'echo hi' });
     await client.scheduleRunManually('sch-1');
     await client.scheduleList('srv-1', 'server');
@@ -164,6 +165,7 @@ describe('createDokployClient', () => {
     const paths = fetchImpl.mock.calls.map(([url]) => url.pathname);
     expect(paths).toEqual([
       '/api/schedule.create',
+      '/api/schedule.one',
       '/api/schedule.update',
       '/api/schedule.runManually',
       '/api/schedule.list',

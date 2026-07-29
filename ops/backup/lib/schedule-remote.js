@@ -120,11 +120,22 @@ export async function runScheduleJob({
   timeoutMs = 300000,
   now = () => new Date(),
 }) {
+  // Dokploy schedule.update requires name + cronExpression (full schema).
+  const existing = await client.scheduleOne(scheduleId);
   await client.scheduleUpdate({
     scheduleId,
+    name: existing.name,
+    cronExpression: existing.cronExpression,
+    scheduleType: existing.scheduleType,
+    serverId: existing.serverId,
+    applicationId: existing.applicationId,
+    composeId: existing.composeId,
+    serviceName: existing.serviceName,
+    enabled: existing.enabled ?? false,
+    timezone: existing.timezone ?? 'UTC',
+    shellType: existing.shellType ?? 'bash',
     script,
     command: command ?? 'bash',
-    shellType: 'bash',
   });
 
   const startedAt = now();
