@@ -218,3 +218,86 @@ Deletion of expired objects is best-effort when `DOCKER_HOST_SSH_KEY` is set (ru
 ## Dry-run without Dokploy
 
 Unit tests cover `normalizeBackupFileList`, `findNewBackupKey`, `pollForNewBackupKey`, `extractSnapshotPrefixesFromKeys`, and `resolveVersions`. Live Dokploy smoke requires secrets above; defer to low-traffic window after GitHub vars are set.
+
+## Host restore (`restore-host.sh`)
+
+On the docker host (CT 103), restores a prod snapshot manifest into **staging** or **prod** data volumes only. Never rewrites env files or Dokploy compose environment.
+
+```bash
+cd ops/backup
+./restore-host.sh \
+  --target staging \
+  --snapshot-id 20260729T153045Z \
+  --manifest ./manifest.json
+
+# Plan only:
+./restore-host.sh --target staging --snapshot-id 20260729T153045Z --manifest ./manifest.json --dry-run
+```
+
+| Flag | Required | Notes |
+|------|----------|-------|
+| `--target` | yes | `staging` or `prod` |
+| `--snapshot-id` | yes | Canonical id from capture manifest |
+| `--manifest` | yes | Local path to manifest JSON (component keys) |
+| `--dry-run` | no | Print actions; no stop/restore/start |
+| `--workdir` | no | Temp download dir (default `/tmp/restore-<id>-<pid>`) |
+
+**Target volume names:**
+
+| Target | Postgres volume | Twenty files | crmparser data |
+|--------|-----------------|--------------|----------------|
+| staging | `twenty-staging_db-data` | `twenty-staging_server-local-data` | `crmparser-staging_crmparser-data` |
+| prod | `twenty_db-data` | `twenty_server-local-data` | `crmparser_crmparser-data` |
+
+**Behavior (fail-closed):**
+
+1. Stop containers in compose projects `twenty-staging` + `crmparser-staging` (or prod equivalents) only.
+2. Download `twentyPg`, `twentyFiles`, `crmparserSqlite` objects from MinIO via `mc` (`MINIO_MC_ALIAS` / `MINIO_BUCKET`).
+3. Restore Postgres (detect `.sql` vs custom → `psql` / `pg_restore`).
+4. Extract volume tar archives into target Docker volumes.
+5. On **any** failure: exit 1, services stay stopped.
+6. On success: start stopped containers, wait for `pg_isready` + Twenty server `/healthz`.
+
+Requires on host: `docker`, `mc`, `node` (optional manifest validation), network to MinIO alias.
+
+## Staging data refresh workflow (`staging-refresh-data.yml`)
+
+Manual **Actions → Staging data refresh** on `staging` branch. Overwrites staging Postgres + file volumes from a prod snapshot; staging env (`DISABLE_AUTO_PARSE=true`, URLs, tokens) unchanged.
+
+### Inputs
+
+| Input | Default | Notes |
+|-------|---------|-------|
+| `snapshot_id` | latest folder under `full-snapshots/` in MinIO | Explicit `YYYYMMDDTHHMMSSZ` recommended for repeatability |
+| `dry_run` | `false` | SSH to host and run `restore-host.sh --dry-run` |
+
+### Required GitHub configuration
+
+| Name | Type | Notes |
+|------|------|-------|
+| `DOCKER_HOST_SSH_KEY` | Secret | Private key for docker host — **required for live refresh** |
+| `DOCKER_HOST` | Variable | Default `10.50.50.132` |
+| `DOCKER_HOST_USER` | Variable | Default `root` |
+| `MINIO_MC_ALIAS` | Variable | Default `minio-home` (must exist on host) |
+| `MINIO_BUCKET` | Variable | Default `dokploy` |
+
+Without `DOCKER_HOST_SSH_KEY`: use `dry_run=true`, or pass `snapshot_id` only after configuring SSH. Live refresh fails closed with a clear error.
+
+After live restore, workflow verifies `DISABLE_AUTO_PARSE=true` on the `crmparser-staging` container.
+
+### Operator smoke (post-refresh)
+
+1. Log in to staging Twenty; open **Реализация** (deals board).
+2. Open crmparser staging UI; confirm SQLite-backed data.
+3. Spot-check an attachment if present (requires matching `ENCRYPTION_KEY` with prod).
+
+**Precondition:** staging `ENCRYPTION_KEY` must match prod for attachment decryption.
+
+## Dokploy compose IDs (restore targets)
+
+| Stack | Compose id | Compose project |
+|-------|------------|-----------------|
+| Twenty prod | `oI7-NCBTpfyrxJBitrJrd0` | `twenty` |
+| Twenty staging | `eMjWv7p-ovnfQ7XnpFKTe` | `twenty-staging` |
+| crmparser prod | `JWIhULvt6slzDxT8AQXyWz` | `crmparser` |
+| crmparser staging | `wjfA-wPgjI2FH8wW4ypcx` | `crmparser-staging` |

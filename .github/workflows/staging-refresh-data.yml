@@ -1,0 +1,223 @@
+name: Staging data refresh
+
+on:
+  workflow_dispatch:
+    inputs:
+      snapshot_id:
+        description: Snapshot id (YYYYMMDDTHHMMSSZ). Empty = latest manifest in MinIO full-snapshots/
+        required: false
+        type: string
+      dry_run:
+        description: Print restore actions only (SSH dry-run on docker host)
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: staging-refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve snapshot and manifest
+        id: resolve
+        env:
+          SNAPSHOT_INPUT: ${{ github.event.inputs.snapshot_id }}
+          DOCKER_HOST_SSH_KEY: ${{ secrets.DOCKER_HOST_SSH_KEY }}
+          DOCKER_HOST: ${{ vars.DOCKER_HOST }}
+          DOCKER_HOST_USER: ${{ vars.DOCKER_HOST_USER }}
+          MINIO_MC_ALIAS: ${{ vars.MINIO_MC_ALIAS }}
+          MINIO_BUCKET: ${{ vars.MINIO_BUCKET }}
+        run: |
+          set -euo pipefail
+          SNAPSHOT_ID="${SNAPSHOT_INPUT:-}"
+          MANIFEST_LOCAL="ops/backup/restore-manifest.json"
+
+          if [ -n "${SNAPSHOT_ID}" ]; then
+            echo "Using snapshot_id from workflow input: ${SNAPSHOT_ID}"
+          elif [ -n "${DOCKER_HOST_SSH_KEY:-}" ]; then
+            HOST="${DOCKER_HOST:-10.50.50.132}"
+            USER="${DOCKER_HOST_USER:-root}"
+            MC_ALIAS="${MINIO_MC_ALIAS:-minio-home}"
+            BUCKET="${MINIO_BUCKET:-dokploy}"
+
+            install -m 700 -d ~/.ssh
+            echo "${DOCKER_HOST_SSH_KEY}" > ~/.ssh/deploy_key
+            chmod 600 ~/.ssh/deploy_key
+            ssh-keyscan -H "${HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+            SNAPSHOT_ID=$(ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" bash -s "${MC_ALIAS}" "${BUCKET}" <<'REMOTE'
+          set -euo pipefail
+          MC_ALIAS="$1"
+          BUCKET="$2"
+          mc ls "${MC_ALIAS}/${BUCKET}/full-snapshots/" 2>/dev/null \
+            | awk '{print $NF}' \
+            | sed 's:/$::' \
+            | grep -E '^[0-9]{8}T[0-9]{6}Z$' \
+            | sort -r \
+            | head -n1
+          REMOTE
+            )
+            [ -n "${SNAPSHOT_ID}" ] || { echo "Could not resolve latest snapshot id from MinIO"; exit 1; }
+            echo "Resolved latest snapshot_id from MinIO: ${SNAPSHOT_ID}"
+          else
+            echo "No snapshot_id input and DOCKER_HOST_SSH_KEY not set — cannot resolve latest snapshot."
+            echo "Provide snapshot_id input or configure DOCKER_HOST_SSH_KEY."
+            exit 1
+          fi
+
+          echo "id=${SNAPSHOT_ID}" >> "$GITHUB_OUTPUT"
+
+          if [ -n "${DOCKER_HOST_SSH_KEY:-}" ]; then
+            HOST="${DOCKER_HOST:-10.50.50.132}"
+            USER="${DOCKER_HOST_USER:-root}"
+            MC_ALIAS="${MINIO_MC_ALIAS:-minio-home}"
+            BUCKET="${MINIO_BUCKET:-dokploy}"
+            REMOTE_MANIFEST="/tmp/manifest-${SNAPSHOT_ID}.json"
+            OBJECT="${MC_ALIAS}/${BUCKET}/full-snapshots/${SNAPSHOT_ID}/manifest.json"
+
+            ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" \
+              "mc cp '${OBJECT}' '${REMOTE_MANIFEST}'"
+            scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+              "${USER}@${HOST}:${REMOTE_MANIFEST}" "${MANIFEST_LOCAL}"
+            ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" \
+              "rm -f '${REMOTE_MANIFEST}'"
+          else
+            echo "DOCKER_HOST_SSH_KEY not set — expecting manifest at full-snapshots/${SNAPSHOT_ID}/manifest.json on host during restore step."
+            printf '{"snapshotId":"%s","note":"manifest will be fetched on host"}\n' "${SNAPSHOT_ID}" > "${MANIFEST_LOCAL}"
+          fi
+
+      - name: Dry-run restore on docker host
+        if: github.event.inputs.dry_run == 'true'
+        env:
+          DOCKER_HOST_SSH_KEY: ${{ secrets.DOCKER_HOST_SSH_KEY }}
+          DOCKER_HOST: ${{ vars.DOCKER_HOST }}
+          DOCKER_HOST_USER: ${{ vars.DOCKER_HOST_USER }}
+          MINIO_MC_ALIAS: ${{ vars.MINIO_MC_ALIAS }}
+          MINIO_BUCKET: ${{ vars.MINIO_BUCKET }}
+          SNAPSHOT_ID: ${{ steps.resolve.outputs.id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DOCKER_HOST_SSH_KEY:-}" ]; then
+            echo "DOCKER_HOST_SSH_KEY not set — dry-run requires SSH to the docker host."
+            echo "Configure DOCKER_HOST_SSH_KEY, then re-run with dry_run=true."
+            bash ops/backup/restore-host.sh --help
+            exit 0
+          fi
+
+          HOST="${DOCKER_HOST:-10.50.50.132}"
+          USER="${DOCKER_HOST_USER:-root}"
+          REMOTE_DIR="/tmp/staging-refresh-${SNAPSHOT_ID}"
+
+          install -m 700 -d ~/.ssh
+          echo "${DOCKER_HOST_SSH_KEY}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" "mkdir -p '${REMOTE_DIR}'"
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            ops/backup/restore-host.sh \
+            ops/backup/restore-manifest.json \
+            "${USER}@${HOST}:${REMOTE_DIR}/"
+
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" bash -s <<REMOTE
+          set -euo pipefail
+          cd '${REMOTE_DIR}'
+          chmod +x restore-host.sh
+          MINIO_MC_ALIAS='${MINIO_MC_ALIAS:-minio-home}' MINIO_BUCKET='${MINIO_BUCKET:-dokploy}' \
+            ./restore-host.sh \
+              --target staging \
+              --snapshot-id '${SNAPSHOT_ID}' \
+              --manifest restore-manifest.json \
+              --dry-run
+          REMOTE
+
+      - name: Restore staging data on docker host
+        if: github.event.inputs.dry_run != 'true'
+        env:
+          DOCKER_HOST_SSH_KEY: ${{ secrets.DOCKER_HOST_SSH_KEY }}
+          DOCKER_HOST: ${{ vars.DOCKER_HOST }}
+          DOCKER_HOST_USER: ${{ vars.DOCKER_HOST_USER }}
+          MINIO_MC_ALIAS: ${{ vars.MINIO_MC_ALIAS }}
+          MINIO_BUCKET: ${{ vars.MINIO_BUCKET }}
+          SNAPSHOT_ID: ${{ steps.resolve.outputs.id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DOCKER_HOST_SSH_KEY:-}" ]; then
+            echo "::error::DOCKER_HOST_SSH_KEY is required for live staging refresh."
+            echo "Configure secret DOCKER_HOST_SSH_KEY (private key for docker host CT 103)."
+            echo "Optional vars: DOCKER_HOST (default 10.50.50.132), DOCKER_HOST_USER (default root),"
+            echo "MINIO_MC_ALIAS (default minio-home), MINIO_BUCKET (default dokploy)."
+            echo "Use dry_run=true to print planned actions without SSH restore."
+            exit 1
+          fi
+
+          HOST="${DOCKER_HOST:-10.50.50.132}"
+          USER="${DOCKER_HOST_USER:-root}"
+          REMOTE_DIR="/tmp/staging-refresh-${SNAPSHOT_ID}"
+
+          install -m 700 -d ~/.ssh
+          echo "${DOCKER_HOST_SSH_KEY}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" "mkdir -p '${REMOTE_DIR}'"
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            ops/backup/restore-host.sh \
+            ops/backup/restore-manifest.json \
+            "${USER}@${HOST}:${REMOTE_DIR}/"
+
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" bash -s <<REMOTE
+          set -euo pipefail
+          cd '${REMOTE_DIR}'
+          chmod +x restore-host.sh
+          MINIO_MC_ALIAS='${MINIO_MC_ALIAS:-minio-home}' MINIO_BUCKET='${MINIO_BUCKET:-dokploy}' \
+            ./restore-host.sh \
+              --target staging \
+              --snapshot-id '${SNAPSHOT_ID}' \
+              --manifest restore-manifest.json
+          REMOTE
+
+      - name: Verify DISABLE_AUTO_PARSE on staging crmparser
+        if: github.event.inputs.dry_run != 'true'
+        env:
+          DOCKER_HOST_SSH_KEY: ${{ secrets.DOCKER_HOST_SSH_KEY }}
+          DOCKER_HOST: ${{ vars.DOCKER_HOST }}
+          DOCKER_HOST_USER: ${{ vars.DOCKER_HOST_USER }}
+        run: |
+          set -euo pipefail
+          HOST="${DOCKER_HOST:-10.50.50.132}"
+          USER="${DOCKER_HOST_USER:-root}"
+
+          install -m 700 -d ~/.ssh
+          echo "${DOCKER_HOST_SSH_KEY}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          VALUE=$(ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          CID=$(docker ps -q --filter "label=com.docker.compose.project=crmparser-staging" --filter "label=com.docker.compose.service=crmparser" | head -n1)
+          if [ -z "${CID}" ]; then
+            CID=$(docker ps -q --filter "name=crmparser-staging" | head -n1)
+          fi
+          [ -n "${CID}" ] || { echo "MISSING_CONTAINER"; exit 1; }
+          docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "${CID}" \
+            | awk -F= '$1=="DISABLE_AUTO_PARSE"{print tolower($2); exit}'
+          REMOTE
+          )
+
+          echo "DISABLE_AUTO_PARSE=${VALUE}"
+          case "${VALUE}" in
+            true|1|yes)
+              echo "OK: staging auto-parse remains disabled"
+              ;;
+            *)
+              echo "::error::DISABLE_AUTO_PARSE is not true after refresh (got: ${VALUE:-unset})"
+              exit 1
+              ;;
+          esac
