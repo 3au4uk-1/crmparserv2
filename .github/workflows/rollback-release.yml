@@ -41,52 +41,95 @@ jobs:
         working-directory: ops/backup
         run: npm ci || npm install
 
-      - name: Fetch manifest from MinIO
-        id: resolve
+      - name: Require Dokploy schedule configuration
         env:
-          SNAPSHOT_ID: ${{ github.event.inputs.snapshot_id }}
-          DOCKER_HOST_SSH_KEY: ${{ secrets.DOCKER_HOST_SSH_KEY }}
-          DOCKER_HOST: ${{ vars.DOCKER_HOST }}
-          DOCKER_HOST_USER: ${{ vars.DOCKER_HOST_USER }}
-          MINIO_MC_ALIAS: ${{ vars.MINIO_MC_ALIAS }}
-          MINIO_BUCKET: ${{ vars.MINIO_BUCKET }}
+          DOKPLOY_SCHEDULE_OPS_SYNC: ${{ vars.DOKPLOY_SCHEDULE_OPS_SYNC }}
+          DOKPLOY_SCHEDULE_OPS_RUN: ${{ vars.DOKPLOY_SCHEDULE_OPS_RUN }}
         run: |
           set -euo pipefail
-          SNAPSHOT_ID="${SNAPSHOT_ID}"
-          MANIFEST_LOCAL="ops/backup/manifest.json"
-
-          if [ -z "${DOCKER_HOST_SSH_KEY:-}" ]; then
-            echo "::error::DOCKER_HOST_SSH_KEY is required for prod release rollback."
+          missing=""
+          [ -z "${DOKPLOY_SCHEDULE_OPS_SYNC:-}" ] && missing="${missing} DOKPLOY_SCHEDULE_OPS_SYNC"
+          [ -z "${DOKPLOY_SCHEDULE_OPS_RUN:-}" ] && missing="${missing} DOKPLOY_SCHEDULE_OPS_RUN"
+          if [ -n "${missing}" ]; then
+            echo "::error::Missing required GitHub vars:${missing}"
+            echo "Create disabled Dokploy schedules with ops/backup/ensure-schedules.mjs, then set DOKPLOY_SCHEDULE_OPS_SYNC and DOKPLOY_SCHEDULE_OPS_RUN in repository variables."
             exit 1
           fi
 
-          HOST="${DOCKER_HOST:-10.50.50.132}"
-          USER="${DOCKER_HOST_USER:-root}"
+      - name: Sync ops tree to docker host
+        working-directory: ops/backup
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          DOKPLOY_SCHEDULE_OPS_SYNC: ${{ vars.DOKPLOY_SCHEDULE_OPS_SYNC }}
+        run: node remote-run.mjs sync
+
+      - name: Restore prod data on docker host
+        working-directory: ops/backup
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          DOKPLOY_SCHEDULE_OPS_RUN: ${{ vars.DOKPLOY_SCHEDULE_OPS_RUN }}
+          MINIO_MC_ALIAS: ${{ vars.MINIO_MC_ALIAS }}
+          MINIO_BUCKET: ${{ vars.MINIO_BUCKET }}
+          SNAPSHOT_ID: ${{ github.event.inputs.snapshot_id }}
+        run: |
+          set -euo pipefail
+          HOST_ROOT=/etc/dokploy/ops-backup
+          SNAP='${SNAPSHOT_ID}'
           MC_ALIAS="${MINIO_MC_ALIAS:-minio-home}"
           BUCKET="${MINIO_BUCKET:-dokploy}"
-          REMOTE_MANIFEST="/tmp/manifest-${SNAPSHOT_ID}.json"
-          OBJECT="${MC_ALIAS}/${BUCKET}/full-snapshots/${SNAPSHOT_ID}/manifest.json"
+          WORKDIR="${HOST_ROOT}/work/${SNAP}"
+          cat <<EOF | REMOTE_TIMEOUT_MS=2700000 node remote-run.mjs run
+          set -euo pipefail
+          MC_ALIAS='${MC_ALIAS}'
+          BUCKET='${BUCKET}'
+          SNAP='${SNAP}'
+          HOST_ROOT='${HOST_ROOT}'
+          WORKDIR='${WORKDIR}'
+          mkdir -p "\$WORKDIR"
+          mc cp "\${MC_ALIAS}/\${BUCKET}/full-snapshots/\${SNAP}/manifest.json" "\$WORKDIR/manifest.json"
+          cd "\$HOST_ROOT" && node --input-type=module -e "
+            import { readFileSync } from 'node:fs';
+            import { assertManifest } from './lib/manifest.js';
+            const m = JSON.parse(readFileSync(process.argv[1],'utf8'));
+            assertManifest(m);
+            if (m.snapshotId !== process.argv[2]) process.exit(3);
+          " "\$WORKDIR/manifest.json" "\$SNAP"
+          MINIO_MC_ALIAS="\$MC_ALIAS" MINIO_BUCKET="\$BUCKET" \\
+            "\$HOST_ROOT/restore-host.sh" \\
+              --target prod \\
+              --snapshot-id "\$SNAP" \\
+              --manifest "\$WORKDIR/manifest.json" \\
+              --workdir "\$WORKDIR"
+          EOF
 
-          install -m 700 -d ~/.ssh
-          echo "${DOCKER_HOST_SSH_KEY}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "${HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
-
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" \
-            "mc cp '${OBJECT}' '${REMOTE_MANIFEST}'"
-          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
-            "${USER}@${HOST}:${REMOTE_MANIFEST}" "${MANIFEST_LOCAL}"
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" \
-            "rm -f '${REMOTE_MANIFEST}'"
-
-          echo "id=${SNAPSHOT_ID}" >> "$GITHUB_OUTPUT"
-
-      - name: Validate manifest
+      - name: Fetch manifest for release pin
         id: validate
         working-directory: ops/backup
         env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          DOKPLOY_SCHEDULE_OPS_RUN: ${{ vars.DOKPLOY_SCHEDULE_OPS_RUN }}
+          MINIO_MC_ALIAS: ${{ vars.MINIO_MC_ALIAS }}
+          MINIO_BUCKET: ${{ vars.MINIO_BUCKET }}
           SNAPSHOT_ID: ${{ github.event.inputs.snapshot_id }}
         run: |
+          set -euo pipefail
+          MC_ALIAS="${MINIO_MC_ALIAS:-minio-home}"
+          BUCKET="${MINIO_BUCKET:-dokploy}"
+          SNAP='${SNAPSHOT_ID}'
+          LOGS=$(cat <<EOF | node remote-run.mjs run
+          set -euo pipefail
+          MC_ALIAS='${MC_ALIAS}'
+          BUCKET='${BUCKET}'
+          SNAP='${SNAP}'
+          echo "MANIFEST_B64=$(mc cat "\${MC_ALIAS}/\${BUCKET}/full-snapshots/\${SNAP}/manifest.json" | base64 -w0)"
+          EOF
+          )
+          MANIFEST_B64=$(echo "${LOGS}" | tr -d '\r' | grep '^MANIFEST_B64=' | tail -n1 | cut -d= -f2-)
+          [ -n "${MANIFEST_B64}" ] || { echo "::error::Could not parse manifest base64 from remote logs"; exit 1; }
+          echo "${MANIFEST_B64}" | base64 -d > manifest.json
           node --input-type=module -e "
           import { readFileSync, appendFileSync } from 'node:fs';
           import { assertManifest } from './lib/manifest.js';
@@ -98,45 +141,6 @@ jobs:
           appendFileSync(process.env.GITHUB_OUTPUT, 'twenty_version=' + manifest.versions.twentyAppVersion + '\n');
           appendFileSync(process.env.GITHUB_OUTPUT, 'twenty_ref=' + (manifest.versions.twentyAppGitSha || '') + '\n');
           "
-
-      - name: Restore prod data on docker host
-        env:
-          DOCKER_HOST_SSH_KEY: ${{ secrets.DOCKER_HOST_SSH_KEY }}
-          DOCKER_HOST: ${{ vars.DOCKER_HOST }}
-          DOCKER_HOST_USER: ${{ vars.DOCKER_HOST_USER }}
-          MINIO_MC_ALIAS: ${{ vars.MINIO_MC_ALIAS }}
-          MINIO_BUCKET: ${{ vars.MINIO_BUCKET }}
-          SNAPSHOT_ID: ${{ steps.resolve.outputs.id }}
-        run: |
-          set -euo pipefail
-          HOST="${DOCKER_HOST:-10.50.50.132}"
-          USER="${DOCKER_HOST_USER:-root}"
-          REMOTE_DIR="/tmp/prod-release-rollback-${SNAPSHOT_ID}"
-
-          install -m 700 -d ~/.ssh
-          echo "${DOCKER_HOST_SSH_KEY}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "${HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
-
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" "mkdir -p '${REMOTE_DIR}'"
-          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
-            ops/backup/restore-host.sh \
-            ops/backup/manifest.json \
-            "${USER}@${HOST}:${REMOTE_DIR}/"
-          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new -r \
-            ops/backup/lib \
-            "${USER}@${HOST}:${REMOTE_DIR}/"
-
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" bash -s <<REMOTE
-          set -euo pipefail
-          cd '${REMOTE_DIR}'
-          chmod +x restore-host.sh
-          MINIO_MC_ALIAS='${MINIO_MC_ALIAS:-minio-home}' MINIO_BUCKET='${MINIO_BUCKET:-dokploy}' \
-            ./restore-host.sh \
-              --target prod \
-              --snapshot-id '${SNAPSHOT_ID}' \
-              --manifest manifest.json
-          REMOTE
 
       - name: Pin crmparser image and redeploy
         working-directory: ops/backup
@@ -151,7 +155,7 @@ jobs:
           DISPATCH_TOKEN: ${{ secrets.BRANDING_TWENTYVIEW_DISPATCH_TOKEN }}
           TWENTY_VERSION: ${{ steps.validate.outputs.twenty_version }}
           TWENTY_REF: ${{ steps.validate.outputs.twenty_ref }}
-          SNAPSHOT_ID: ${{ steps.resolve.outputs.id }}
+          SNAPSHOT_ID: ${{ github.event.inputs.snapshot_id }}
         run: |
           set -euo pipefail
           if [ -z "${DISPATCH_TOKEN:-}" ]; then

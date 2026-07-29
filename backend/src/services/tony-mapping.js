@@ -3,6 +3,18 @@ import { crmOffsetSuffix } from '../utils/crm-dates.js';
 import { parseQuantityNum } from './twenty-opportunity.js';
 
 const DMY_RE = /^(\d{2})\.(\d{2})\.(\d{4})$/;
+const FREE_ENTRY_RE = /свободная запись/i;
+
+export function normalizeFreeEntryItem(item) {
+  if (!FREE_ENTRY_RE.test(item.name ?? '')) {
+    return item;
+  }
+  const trimmedComment = (item.comment ?? '').trim();
+  if (trimmedComment) {
+    return { ...item, name: trimmedComment, comment: '' };
+  }
+  return { ...item, comment: '' };
+}
 
 /** "16.06.2026" -> "2026-06-16" (or '' when not parseable). */
 export function dmyToIsoDate(value) {
@@ -36,15 +48,17 @@ export function buildTonyDealFields(parsed) {
 }
 
 export function buildTonyItems(parsed) {
-  return parsed.items.map((i) => ({
-    name: i.name,
-    price: i.price,
-    quantity: i.quantity,
-    discount: i.discount ?? 0,
-    sum: i.sum,
-    comment: i.comment ?? '',
-    quantity_num: parseQuantityNum(i.quantity),
-  }));
+  return parsed.items.map((i) =>
+    normalizeFreeEntryItem({
+      name: i.name,
+      price: i.price,
+      quantity: i.quantity,
+      discount: i.discount ?? 0,
+      sum: i.sum,
+      comment: i.comment ?? '',
+      quantity_num: parseQuantityNum(i.quantity),
+    }),
+  );
 }
 
 export function tonyContentHash(parsed) {

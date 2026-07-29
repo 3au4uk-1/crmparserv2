@@ -3,11 +3,10 @@ import {
   buildLineItemUpdateInput,
 } from './twenty-line-item.js';
 import { normalizePattern } from './blacklist.js';
-import { isRestorationItem } from './restoration.js';
-import { isPodryadItem } from './podryad.js';
-import { isBannerItem } from './banner.js';
+import { shouldZeroLineItemAmount } from './twenty-opportunity.js';
+import { findTipRuleMatch } from './tip-rules.js';
 import { logTwentyStep } from './twenty-sync-log.js';
-import { DEFAULT_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
+import { CANCELLED_OPPORTUNITY_STAGE, DEFAULT_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
 import { MANUAL_TWENTY_CLASSIFICATION } from './manual-twenty-line-item.js';
 
 /** Line items at this stage (or null) may be deleted/updated on re-sync. */
@@ -117,6 +116,45 @@ export async function deleteLineItem(gql, apiUrl, apiToken, lineItemId) {
   );
 }
 
+export async function cancelLineItemsForOpportunity(
+  gql,
+  apiUrl,
+  apiToken,
+  oppId,
+  {
+    cancelledStage = CANCELLED_OPPORTUNITY_STAGE,
+    assertHttpSuccess = null,
+    assertGqlSuccess = null,
+  } = {},
+) {
+  const existingLineItems = await listLineItemsForOpportunity(gql, apiUrl, apiToken, oppId);
+  let cancelled = 0;
+
+  for (const li of existingLineItems) {
+    if (li.stage === cancelledStage) continue;
+
+    logTwentyStep('line_items.cancel', { lineItemId: li.id, name: li.name, fromStage: li.stage });
+
+    const resp = await gql(
+      apiUrl,
+      apiToken,
+      `mutation UpdateDealLineItem($id: ID!, $input: DealLineItemUpdateInput!) {
+        updateDealLineItem(id: $id, data: $input) { id }
+      }`,
+      { id: li.id, input: { stage: cancelledStage } }
+    );
+
+    if (assertHttpSuccess) assertHttpSuccess(resp, apiUrl);
+    if (assertGqlSuccess) {
+      assertGqlSuccess(resp, `Failed to cancel line item "${li.name}" in Twenty`);
+    }
+
+    cancelled += 1;
+  }
+
+  return { cancelled, total: existingLineItems.length };
+}
+
 export async function syncLineItemsDiff({
   gql,
   assertHttpSuccess,
@@ -130,8 +168,9 @@ export async function syncLineItemsDiff({
   db,
   deal = null,
   restorationList = [],
-  podryadList = [],
-  bannerList = [],
+  neNasheBrandingList = [],
+  neNasheDecorMkList = [],
+  tipRules = [],
   ignoreStageProtection = false,
 }) {
   const { toUpdate, toCreate, toDelete, preserved } = computeLineItemDiff(
@@ -143,7 +182,13 @@ export async function syncLineItemsDiff({
     },
   );
 
-  const lineItemOptions = { deal, restorationList, podryadList, bannerList };
+  const lineItemOptions = {
+    deal,
+    restorationList,
+    neNasheBrandingList,
+    neNasheDecorMkList,
+    tipRules,
+  };
 
   logTwentyStep('line_items.diff', {
     toUpdate: toUpdate.length,
@@ -159,17 +204,23 @@ export async function syncLineItemsDiff({
     logTwentyStep('line_items.preserved', { items: preserved });
   }
 
-  const zeroed = eligibleItems.filter((i) => isRestorationItem(i.name, restorationList));
+  const zeroed = eligibleItems.filter((i) => shouldZeroLineItemAmount(i.name, {
+    restorationList,
+    neNasheBrandingList,
+    neNasheDecorMkList,
+  }));
   if (zeroed.length) {
     logTwentyStep('line_items.restoration_zero', { names: zeroed.map((i) => i.name) });
   }
 
-  const podryadItems = eligibleItems.filter((i) => isPodryadItem(i.name, podryadList));
+  const tipMatched = (tip) =>
+    eligibleItems.filter((i) => findTipRuleMatch(i.name, tipRules)?.tip === tip);
+  const podryadItems = tipMatched('PODRYAD');
   if (podryadItems.length) {
     logTwentyStep('line_items.podryad_tip', { names: podryadItems.map((i) => i.name) });
   }
 
-  const bannerItems = eligibleItems.filter((i) => isBannerItem(i.name, bannerList));
+  const bannerItems = tipMatched('BANNERA');
   if (bannerItems.length) {
     logTwentyStep('line_items.banner_tip', { names: bannerItems.map((i) => i.name) });
   }
@@ -212,7 +263,7 @@ export async function syncLineItemsDiff({
           warehouseItemId,
           oppId,
           position === 0 ? 'first' : position,
-          { deal, restorationList, podryadList, bannerList }
+          lineItemOptions
         ),
       }
     );

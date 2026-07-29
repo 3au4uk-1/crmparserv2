@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { buildTonyDealFields, buildTonyItems, tonyContentHash } from '../src/services/tony-mapping.js';
+import {
+  buildTonyDealFields,
+  buildTonyItems,
+  normalizeFreeEntryItem,
+  tonyContentHash,
+} from '../src/services/tony-mapping.js';
 
 const parsed = {
   items: [
@@ -80,5 +85,83 @@ describe('tony-mapping', () => {
       items: parsed.items.map((i, idx) => (idx === 0 ? { ...i, sum: 1 } : i)),
     };
     expect(tonyContentHash(sumChanged)).not.toBe(base);
+  });
+
+  const FREE_ENTRY_NAME =
+    'БРЕНДИНГ свободная запись ( КОМЕНТАРИЙ ОБЯЗАТЕЛЕН )';
+
+  describe('normalizeFreeEntryItem / free-entry in buildTonyItems', () => {
+    it('uses comment as name and clears comment when free-entry has comment', () => {
+      expect(
+        normalizeFreeEntryItem({
+          name: FREE_ENTRY_NAME,
+          comment: 'Наклейка на зеркало',
+          price: 5950,
+        }),
+      ).toEqual({
+        name: 'Наклейка на зеркало',
+        comment: '',
+        price: 5950,
+      });
+    });
+
+    it('keeps template name when free-entry comment is empty or whitespace', () => {
+      expect(
+        normalizeFreeEntryItem({
+          name: FREE_ENTRY_NAME,
+          comment: '   ',
+          price: 0,
+        }),
+      ).toMatchObject({ name: FREE_ENTRY_NAME, comment: '' });
+    });
+
+    it('leaves ordinary items unchanged', () => {
+      const item = {
+        name: 'Навигационные наклейки',
+        comment: '+ монтаж',
+        price: 2640,
+      };
+      expect(normalizeFreeEntryItem(item)).toEqual(item);
+    });
+
+    it('buildTonyItems yields distinct names for two free-entry rows', () => {
+      const items = buildTonyItems({
+        items: [
+          {
+            name: FREE_ENTRY_NAME,
+            price: 5950,
+            quantity: '1',
+            discount: 0,
+            sum: 5950,
+            category: 'products',
+            comment: 'ПВХ',
+          },
+          {
+            name: FREE_ENTRY_NAME,
+            price: 5950,
+            quantity: '1',
+            discount: 0,
+            sum: 5950,
+            category: 'products',
+            comment: 'Наклейка на зеркало',
+          },
+        ],
+        dates: parsed.dates,
+        address: '',
+        budget: 11900,
+      });
+
+      expect(items.map((i) => i.name)).toEqual(['ПВХ', 'Наклейка на зеркало']);
+      expect(items.every((i) => i.comment === '')).toBe(true);
+    });
+
+    it('detects free-entry case-insensitively', () => {
+      expect(
+        normalizeFreeEntryItem({
+          name: 'Брендинг СВОБОДНАЯ ЗАПИСЬ (тест)',
+          comment: 'Ролл-ап',
+        }),
+      ).toMatchObject({ name: 'Ролл-ап', comment: '' });
+    });
   });
 });

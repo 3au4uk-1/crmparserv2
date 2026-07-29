@@ -1,10 +1,11 @@
 import { config } from '../config.js';
 import { getDb } from '../db/connection.js';
 import { getTwentyConfig, requireTwentyConfig } from './twenty-config.js';
-import { loadBlacklist } from './blacklist.js';
+import { loadProductStreamContext } from './twenty-items.js';
 import { loadRestorationList, isRestorationItem } from './restoration.js';
-import { loadPodryadList, isPodryadItem } from './podryad.js';
-import { loadBannerList, isBannerItem } from './banner.js';
+import { loadNeNasheBrandingList, isNeNasheBrandingItem } from './ne-nashe-branding.js';
+import { loadNeNasheDecorMkList, isNeNasheDecorMkItem } from './ne-nashe-decor-mk.js';
+import { loadTipRules, findTipRuleMatch } from './tip-rules.js';
 import { buildOpportunityInput, computeDealItemsTotal, computeLineItemTotal, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
 import {
   getItemsForTwenty,
@@ -12,6 +13,7 @@ import {
 } from './twenty-items.js';
 import { buildWarehouseItemCreateInput } from './twenty-line-item.js';
 import {
+  cancelLineItemsForOpportunity,
   listLineItemsForOpportunity,
   syncLineItemsDiff,
 } from './twenty-line-items-sync.js';
@@ -250,8 +252,9 @@ async function updateDealInTwenty(
   items,
   twenty,
   restorationList,
-  podryadList,
-  bannerList,
+  neNasheBrandingList,
+  neNasheDecorMkList,
+  tipRules,
   { ignoreLineItemStageProtection = false } = {},
 ) {
   const db = getDb();
@@ -274,6 +277,8 @@ async function updateDealInTwenty(
     companyTwentyId,
     personTwentyId,
     restorationList,
+    neNasheBrandingList,
+    neNasheDecorMkList,
   });
 
   logTwentyStep('update.opportunity', {
@@ -315,8 +320,9 @@ async function updateDealInTwenty(
     db,
     deal,
     restorationList,
-    podryadList,
-    bannerList,
+    neNasheBrandingList,
+    neNasheDecorMkList,
+    tipRules,
     ignoreStageProtection: ignoreLineItemStageProtection,
   });
 
@@ -331,7 +337,16 @@ async function updateDealInTwenty(
   return { twentyId: oppId, action, itemCount: items.length };
 }
 
-async function createDealInTwenty(dealId, deal, items, twenty, restorationList, podryadList, bannerList) {
+async function createDealInTwenty(
+  dealId,
+  deal,
+  items,
+  twenty,
+  restorationList,
+  neNasheBrandingList,
+  neNasheDecorMkList,
+  tipRules,
+) {
   const db = getDb();
 
   const { companyTwentyId, personTwentyId } = await resolveCompanyAndPerson(deal, twenty);
@@ -342,6 +357,8 @@ async function createDealInTwenty(dealId, deal, items, twenty, restorationList, 
     companyTwentyId,
     personTwentyId,
     restorationList,
+    neNasheBrandingList,
+    neNasheDecorMkList,
   });
 
   const oppResp = await gql(
@@ -369,8 +386,9 @@ async function createDealInTwenty(dealId, deal, items, twenty, restorationList, 
     db,
     deal,
     restorationList,
-    podryadList,
-    bannerList,
+    neNasheBrandingList,
+    neNasheDecorMkList,
+    tipRules,
   });
 
   db.prepare(`
@@ -394,12 +412,14 @@ export function buildSyncPreview(dealId) {
   if (!deal) throw new Error(`Deal ${dealId} not found`);
 
   const allItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(dealId);
-  const blacklist = loadBlacklist(db);
+  const streamContext = loadProductStreamContext(db);
   const restorationList = loadRestorationList(db);
-  const podryadList = loadPodryadList(db);
-  const bannerList = loadBannerList(db);
-  const eligibleItems = getItemsForTwenty(allItems, blacklist);
-  const eligibleAmount = computeDealItemsTotal(deal, eligibleItems, restorationList);
+  const neNasheBrandingList = loadNeNasheBrandingList(db);
+  const neNasheDecorMkList = loadNeNasheDecorMkList(db);
+  const tipRules = loadTipRules(db);
+  const neNasheLists = { neNasheBrandingList, neNasheDecorMkList };
+  const eligibleItems = getItemsForTwenty(allItems, streamContext);
+  const eligibleAmount = computeDealItemsTotal(deal, eligibleItems, restorationList, neNasheLists);
 
   return {
     configured: Boolean(twenty.apiUrl && twenty.apiToken),
@@ -408,15 +428,22 @@ export function buildSyncPreview(dealId) {
     eligibleCount: eligibleItems.length,
     totalCount: allItems.length,
     eligibleAmount,
-    eligibleItems: eligibleItems.map((item) => ({
-      id: item.id,
-      name: item.name,
-      reason: getItemEligibleReason(item, blacklist),
-      twentyLineAmount: computeLineItemTotal(item, deal, restorationList),
-      restorationMatch: isRestorationItem(item.name, restorationList),
-      podryadMatch: isPodryadItem(item.name, podryadList),
-      bannerMatch: isBannerItem(item.name, bannerList),
-    })),
+    eligibleItems: eligibleItems.map((item) => {
+      const tipHit = findTipRuleMatch(item.name, tipRules);
+      return {
+        id: item.id,
+        name: item.name,
+        reason: getItemEligibleReason(item, streamContext),
+        productStream: item.productStream || null,
+        twentyLineAmount: computeLineItemTotal(item, deal, restorationList, neNasheLists),
+        restorationMatch: isRestorationItem(item.name, restorationList),
+        neNasheBrandingMatch: isNeNasheBrandingItem(item.name, neNasheBrandingList),
+        neNasheDecorMkMatch: isNeNasheDecorMkItem(item.name, neNasheDecorMkList),
+        tipRuleMatch: Boolean(tipHit),
+        podryadMatch: tipHit?.tip === 'PODRYAD',
+        bannerMatch: tipHit?.tip === 'BANNERA',
+      };
+    }),
     alreadySynced: Boolean(deal.twenty_id),
     twentyId: deal.twenty_id || null,
     twentyError: deal.twenty_error || null,
@@ -440,11 +467,12 @@ export async function syncDealToTwenty(
   if (!deal) throw new Error(`Deal ${dealId} not found`);
 
   const allItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(dealId);
-  const blacklist = loadBlacklist(db);
+  const streamContext = loadProductStreamContext(db);
   const restorationList = loadRestorationList(db);
-  const podryadList = loadPodryadList(db);
-  const bannerList = loadBannerList(db);
-  const items = getItemsForTwenty(allItems, blacklist);
+  const neNasheBrandingList = loadNeNasheBrandingList(db);
+  const neNasheDecorMkList = loadNeNasheDecorMkList(db);
+  const tipRules = loadTipRules(db);
+  const items = getItemsForTwenty(allItems, streamContext);
   const mode = deal.twenty_id ? 'update' : 'create';
 
   beginTwentySyncContext({
@@ -473,8 +501,9 @@ export async function syncDealToTwenty(
         items,
         twenty,
         restorationList,
-        podryadList,
-        bannerList,
+        neNasheBrandingList,
+        neNasheDecorMkList,
+        tipRules,
         { ignoreLineItemStageProtection },
       );
     } else {
@@ -486,7 +515,16 @@ export async function syncDealToTwenty(
         throw new Error(message);
       }
 
-      result = await createDealInTwenty(dealId, deal, items, twenty, restorationList, podryadList, bannerList);
+      result = await createDealInTwenty(
+        dealId,
+        deal,
+        items,
+        twenty,
+        restorationList,
+        neNasheBrandingList,
+        neNasheDecorMkList,
+        tipRules,
+      );
     }
 
     if (!skipPrintSheetRefresh) {
@@ -594,6 +632,15 @@ export async function cancelDealInTwenty(dealId) {
     );
     assertHttpSuccess(oppResp, twenty.apiUrl);
     assertGqlSuccess(oppResp, 'Failed to cancel opportunity in Twenty');
+
+    const lineItemCancel = await cancelLineItemsForOpportunity(
+      gql,
+      twenty.apiUrl,
+      twenty.apiToken,
+      deal.twenty_id,
+      { assertHttpSuccess, assertGqlSuccess },
+    );
+    logTwentyStep('cancel.line_items', lineItemCancel);
 
     db.prepare(`
       UPDATE deals SET

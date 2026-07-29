@@ -1,24 +1,25 @@
 import { Router } from 'express';
 import { getDb } from '../db/connection.js';
-import {
-  loadBannerList,
-  createBannerEntry,
-  deleteBannerEntry,
-} from '../services/banner.js';
+import { loadTipRules, createTipRule, deleteTipRule } from '../services/tip-rules.js';
 import { scheduleListChangeResync } from '../services/list-change-resync.js';
 
 const router = Router();
 
 router.get('/', (req, res) => {
   const db = getDb();
-  res.json({ items: loadBannerList(db) });
+  res.json({ items: loadTipRules(db, 'BANNERA') });
 });
 
 router.post('/', (req, res) => {
   const { pattern, matchType, sourceName } = req.body ?? {};
   try {
     const db = getDb();
-    const item = createBannerEntry(db, { pattern, matchType, sourceName });
+    const item = createTipRule(db, {
+      pattern,
+      matchType,
+      tip: 'BANNERA',
+      sourceName,
+    });
     scheduleListChangeResync();
     res.status(201).json({ item });
   } catch (err) {
@@ -29,7 +30,7 @@ router.post('/', (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     const db = getDb();
-    deleteBannerEntry(db, Number(req.params.id));
+    deleteTipRule(db, Number(req.params.id), { tip: 'BANNERA' });
     scheduleListChangeResync();
     res.json({ success: true });
   } catch (err) {

@@ -33,12 +33,13 @@ export function buildPrintSheetRowValues(lineItem, options = {}) {
   const printComment = String(lineItem[PRINT_COMMENT_FIELD] ?? '').trim();
 
   // B–J manager fields, K empty, L–O printer fields (skip), P print comment
+  // Column F (index 4) = restoration checkbox
   return [
     resolvePrintSheetDepartment(opp.companyId),
     opp.name ?? '',
     opp.bitrixLink?.primaryLinkUrl ?? '',
     lineItem.name ?? '',
-    '',
+    lineItem.restavraciyaPechati === true ? 'TRUE' : 'FALSE',
     layoutUrl,
     formatResponsibleFromUpdatedBy(lineItem.updatedBy, workspaceMemberById),
     formatPrintReadyDate(lineItem.dataGotovnostiPechati),

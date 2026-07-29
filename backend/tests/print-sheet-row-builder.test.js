@@ -50,11 +50,16 @@ describe('buildPrintSheetRowValues', () => {
     expect(row[6]).toBe('Василий Добжанский');
   });
 
-  it('uses string updatedBy.name when member map missing', () => {
+  it('writes restoration checkbox to column F', () => {
     const row = buildPrintSheetRowValues({
       ...lineItem,
-      updatedBy: { name: 'crmscraper' },
+      restavraciyaPechati: true,
     });
-    expect(row[6]).toBe('crmscraper');
+    expect(row[4]).toBe('TRUE');
+  });
+
+  it('writes FALSE to column F when restoration unchecked', () => {
+    const row = buildPrintSheetRowValues(lineItem);
+    expect(row[4]).toBe('FALSE');
   });
 });

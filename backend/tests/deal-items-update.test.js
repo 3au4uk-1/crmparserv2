@@ -22,7 +22,8 @@ function createTestDb() {
       sum REAL,
       quantity_num REAL,
       sync_override TEXT,
-      twenty_id TEXT
+      twenty_id TEXT,
+      amount_locked INTEGER NOT NULL DEFAULT 0
     );
     INSERT INTO deals (id, title) VALUES (1, 'Test');
   `);
@@ -45,7 +46,13 @@ describe('deal-items-update', () => {
       { name: 'Баннер', sync_override: 'exclude', twenty_id: 'li-1' },
       { name: 'Кейтеринг', sync_override: null, twenty_id: null },
     ]);
-    expect(map['Баннер']).toEqual({ sync_override: 'exclude', twenty_id: 'li-1' });
+    expect(map['Баннер']).toEqual({
+      sync_override: 'exclude',
+      twenty_id: 'li-1',
+      amount_locked: 0,
+      sum: undefined,
+      price: undefined,
+    });
     expect(map['Кейтеринг']).toBeUndefined();
   });
 
@@ -74,6 +81,55 @@ describe('deal-items-update', () => {
     const stickers = items.find((i) => i.name === 'Наклейки');
     expect(stickers.sync_override).toBeNull();
     expect(stickers.twenty_id).toBeNull();
+  });
+
+  it('buildOverrideMap keeps amount_locked sum and price by name', () => {
+    const map = buildOverrideMap([
+      {
+        name: 'Баннер',
+        sync_override: null,
+        twenty_id: 'li-locked',
+        amount_locked: 1,
+        sum: 7500,
+        price: 7500,
+      },
+    ]);
+    expect(map['Баннер']).toEqual({
+      sync_override: null,
+      twenty_id: 'li-locked',
+      amount_locked: 1,
+      sum: 7500,
+      price: 7500,
+    });
+  });
+
+  it('preserves locked sum and price after replace with different Tony prices', () => {
+    db.prepare(`
+      INSERT INTO deal_items (deal_id, name, price, sum, classification, twenty_id, amount_locked)
+      VALUES (1, 'Баннер', 7500, 7500, 'keyword_match', 'li-locked', 1)
+    `).run();
+
+    const existing = db.prepare('SELECT * FROM deal_items WHERE deal_id = 1').all();
+    const overrideMap = buildOverrideMap(existing);
+
+    replaceDealItemsPreservingOverrides(db, 1, [
+      {
+        name: 'Баннер',
+        price: 10000,
+        quantity: '1',
+        discount: null,
+        classification: 'keyword_match',
+        classification_confidence: 1,
+        sum: 10000,
+        quantity_num: 1,
+      },
+    ], overrideMap);
+
+    const banner = db.prepare('SELECT * FROM deal_items WHERE deal_id = 1').get();
+    expect(banner.amount_locked).toBe(1);
+    expect(banner.sum).toBe(7500);
+    expect(banner.price).toBe(7500);
+    expect(banner.twenty_id).toBe('li-locked');
   });
 
   it('persists Tony item comment, sum, and quantity_num', () => {

@@ -1,6 +1,8 @@
 /** Twenty GraphQL enum values for Opportunity.stage (UI labels are localized separately). */
 import { buildCloseDate } from '../utils/crm-dates.js';
 import { isRestorationItem } from './restoration.js';
+import { isNeNasheBrandingItem } from './ne-nashe-branding.js';
+import { isNeNasheDecorMkItem } from './ne-nashe-decor-mk.js';
 import { PAYMENT_FIELDS, PAYMENT_STATUS } from './payment-field-names.js';
 
 export function buildPaymentFieldsInput(deal) {
@@ -39,12 +41,34 @@ export function parseQuantityNum(value) {
   return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
+export function shouldZeroLineItemAmount(itemName, {
+  restorationList = [],
+  neNasheBrandingList = [],
+  neNasheDecorMkList = [],
+} = {}) {
+  return (
+    isRestorationItem(itemName, restorationList)
+    || isNeNasheBrandingItem(itemName, neNasheBrandingList)
+    || isNeNasheDecorMkItem(itemName, neNasheDecorMkList)
+  );
+}
+
 /** Line total in rubles.
  * Tony: prefer `sum` (incl. 0); else unit `price` × qty.
  * Calendar: `price` is already «Итого» (line total), do not multiply by qty.
  */
-export function computeLineItemTotal(item, deal, restorationList = []) {
-  if (isRestorationItem(item.name, restorationList)) return 0;
+export function computeLineItemTotal(item, deal, restorationList = [], neNasheLists = {}) {
+  const branding = neNasheLists.neNasheBrandingList ?? [];
+  const decorMk = neNasheLists.neNasheDecorMkList ?? [];
+  if (shouldZeroLineItemAmount(item.name, {
+    restorationList,
+    neNasheBrandingList: branding,
+    neNasheDecorMkList: decorMk,
+  })) return 0;
+  if (item.amount_locked) {
+    const locked = Number(item.sum);
+    return Number.isFinite(locked) ? locked : 0;
+  }
   const isTony = deal?.data_source === 'tony';
   if (isTony && item.sum != null && Number.isFinite(item.sum)) {
     return item.sum;
@@ -59,9 +83,9 @@ export function computeLineItemTotal(item, deal, restorationList = []) {
   return (item.price || 0) * qty;
 }
 
-export function computeDealItemsTotal(deal, items, restorationList = []) {
+export function computeDealItemsTotal(deal, items, restorationList = [], neNasheLists = {}) {
   return items.reduce(
-    (total, item) => total + computeLineItemTotal(item, deal, restorationList),
+    (total, item) => total + computeLineItemTotal(item, deal, restorationList, neNasheLists),
     0
   );
 }
@@ -73,9 +97,12 @@ export function buildOpportunityInput(deal, items, options = {}) {
     companyTwentyId = null,
     personTwentyId = null,
     restorationList = [],
+    neNasheBrandingList = [],
+    neNasheDecorMkList = [],
   } = options;
 
-  const brandingBudget = computeDealItemsTotal(deal, items, restorationList);
+  const neNasheLists = { neNasheBrandingList, neNasheDecorMkList };
+  const brandingBudget = computeDealItemsTotal(deal, items, restorationList, neNasheLists);
 
   const input = {
     name: deal.title || `Deal ${deal.crm_event_id}`,

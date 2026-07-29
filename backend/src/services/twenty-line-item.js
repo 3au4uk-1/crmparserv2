@@ -1,15 +1,22 @@
 import { computeLineItemTotal, parseQuantityNum } from './twenty-opportunity.js';
-import { isPodryadItem, PODRYAD_TIP } from './podryad.js';
-import { isBannerItem, BANNER_TIP } from './banner.js';
+import { findTipRuleMatch } from './tip-rules.js';
+import { resolveTipDetail } from './tip-taxonomy.js';
 
 export function buildWarehouseItemCreateInput(name, position = 'first') {
   return { name, position };
 }
 
 function buildLineItemFields(item, options = {}) {
-  const { deal = null, restorationList = [], podryadList = [], bannerList = [] } = options;
+  const {
+    deal = null,
+    restorationList = [],
+    tipRules = [],
+    neNasheBrandingList = [],
+    neNasheDecorMkList = [],
+  } = options;
   const qty = item.quantity_num ?? parseQuantityNum(item.quantity);
-  const lineTotal = computeLineItemTotal(item, deal, restorationList);
+  const neNasheLists = { neNasheBrandingList, neNasheDecorMkList };
+  const lineTotal = computeLineItemTotal(item, deal, restorationList, neNasheLists);
   const unitPrice = qty > 0 ? lineTotal / qty : 0;
 
   const fields = {
@@ -24,10 +31,10 @@ function buildLineItemFields(item, options = {}) {
   const comment = (item.comment || '').trim();
   if (comment) fields.kommentariy = comment;
 
-  if (isPodryadItem(item.name, podryadList)) {
-    fields.tip = PODRYAD_TIP;
-  } else if (isBannerItem(item.name, bannerList)) {
-    fields.tip = BANNER_TIP;
+  const tipRule = findTipRuleMatch(item.name, tipRules);
+  if (tipRule) {
+    fields.tip = tipRule.tip;
+    fields.tipDetail = resolveTipDetail(tipRule);
   }
 
   return fields;

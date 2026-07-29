@@ -380,6 +380,70 @@ export function useAddItemToRestoration() {
   });
 }
 
+export function useNeNasheBrandingList() {
+  return useQuery({
+    queryKey: ['ne-nashe-branding'],
+    queryFn: () => api.get('/ne-nashe-branding').then((r) => r.data.items),
+  });
+}
+
+export function useAddNeNasheBrandingItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ pattern, matchType, sourceName }) =>
+      api.post('/ne-nashe-branding', { pattern, matchType, sourceName }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ne-nashe-branding'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal'] });
+    },
+  });
+}
+
+export function useRemoveNeNasheBrandingItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => api.delete(`/ne-nashe-branding/${id}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ne-nashe-branding'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal'] });
+    },
+  });
+}
+
+export function useNeNasheDecorMkList() {
+  return useQuery({
+    queryKey: ['ne-nashe-decor-mk'],
+    queryFn: () => api.get('/ne-nashe-decor-mk').then((r) => r.data.items),
+  });
+}
+
+export function useAddNeNasheDecorMkItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ pattern, matchType, sourceName }) =>
+      api.post('/ne-nashe-decor-mk', { pattern, matchType, sourceName }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ne-nashe-decor-mk'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal'] });
+    },
+  });
+}
+
+export function useRemoveNeNasheDecorMkItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => api.delete(`/ne-nashe-decor-mk/${id}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ne-nashe-decor-mk'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal'] });
+    },
+  });
+}
+
 export function usePodryadList() {
   return useQuery({
     queryKey: ['podryad'],
@@ -468,6 +532,40 @@ export function useAddItemToBanner() {
       qc.invalidateQueries({ queryKey: ['deal', dealId] });
       qc.invalidateQueries({ queryKey: ['deals'] });
       qc.invalidateQueries({ queryKey: ['sync-logs'] });
+    },
+  });
+}
+
+export function useTipRules(tip) {
+  return useQuery({
+    queryKey: ['tip-rules', tip ?? 'all'],
+    queryFn: () =>
+      api.get('/tip-rules', { params: tip ? { tip } : {} }).then((r) => r.data.items),
+  });
+}
+
+export function useAddTipRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => api.post('/tip-rules', body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tip-rules'] });
+      qc.invalidateQueries({ queryKey: ['podryad'] });
+      qc.invalidateQueries({ queryKey: ['banner'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+    },
+  });
+}
+
+export function useRemoveTipRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => api.delete(`/tip-rules/${id}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tip-rules'] });
+      qc.invalidateQueries({ queryKey: ['podryad'] });
+      qc.invalidateQueries({ queryKey: ['banner'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
     },
   });
 }

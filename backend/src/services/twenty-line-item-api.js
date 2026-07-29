@@ -1,5 +1,9 @@
 import { createBlacklistEntry } from './blacklist.js';
+import { createDecorBlacklistEntry } from './decor-blacklist.js';
+import { createMkBlacklistEntry } from './mk-blacklist.js';
 import { createRestorationEntry } from './restoration.js';
+import { createNeNasheBrandingEntry } from './ne-nashe-branding.js';
+import { createNeNasheDecorMkEntry } from './ne-nashe-decor-mk.js';
 import { createPodryadEntry } from './podryad.js';
 import { createBannerEntry } from './banner.js';
 import { enrichDealItems } from './twenty-items.js';
@@ -7,7 +11,11 @@ import { getCachedPatternLists, invalidatePatternListsCache } from './pattern-li
 
 const LIST_CREATORS = {
   blacklist: createBlacklistEntry,
+  decor_blacklist: createDecorBlacklistEntry,
+  mk_blacklist: createMkBlacklistEntry,
   restoration: createRestorationEntry,
+  ne_nashe_branding: createNeNasheBrandingEntry,
+  ne_nashe_decor_mk: createNeNasheDecorMkEntry,
   podryad: createPodryadEntry,
   banner: createBannerEntry,
 };
@@ -33,7 +41,11 @@ export function findDealItemByTwentyId(db, twentyLineItemId) {
 const NEUTRAL_LINE_ITEM_LIST_STATUS = {
   known: false,
   blacklisted: false,
+  decorBlacklisted: false,
+  mkBlacklisted: false,
   restorationMatch: false,
+  neNasheBrandingMatch: false,
+  neNasheDecorMkMatch: false,
   podryadMatch: false,
   bannerMatch: false,
   pattern: null,
@@ -45,7 +57,11 @@ function statusFromEnriched(item, deal, enriched) {
   return {
     known: true,
     blacklisted: enriched.blacklisted,
+    decorBlacklisted: enriched.decorBlacklisted,
+    mkBlacklisted: enriched.mkBlacklisted,
     restorationMatch: enriched.restorationMatch,
+    neNasheBrandingMatch: enriched.neNasheBrandingMatch,
+    neNasheDecorMkMatch: enriched.neNasheDecorMkMatch,
     podryadMatch: enriched.podryadMatch,
     bannerMatch: enriched.bannerMatch,
     pattern: item.name,
@@ -65,14 +81,21 @@ export function getLineItemListStatus(db, twentyLineItemId) {
     return { ...NEUTRAL_LINE_ITEM_LIST_STATUS };
   }
 
-  const { blacklist, restorationList, podryadList, bannerList } = getCachedPatternLists(db);
+  const {
+    streamContext,
+    restorationList,
+    neNasheBrandingList,
+    neNasheDecorMkList,
+    tipRules,
+  } = getCachedPatternLists(db);
   const [enriched] = enrichDealItems(
     [item],
-    blacklist,
+    streamContext,
     restorationList,
     deal,
-    podryadList,
-    bannerList,
+    tipRules,
+    neNasheBrandingList,
+    neNasheDecorMkList,
   );
   return statusFromEnriched(item, deal, enriched);
 }
@@ -110,7 +133,13 @@ export function getLineItemsListStatusBatch(db, twentyLineItemIds) {
     .all(...dealIds);
   const dealById = new Map(deals.map((deal) => [deal.id, deal]));
 
-  const { blacklist, restorationList, podryadList, bannerList } = getCachedPatternLists(db);
+  const {
+    streamContext,
+    restorationList,
+    neNasheBrandingList,
+    neNasheDecorMkList,
+    tipRules,
+  } = getCachedPatternLists(db);
 
   // Group by deal so enrichDealItems gets correct deal context once per group.
   const itemsByDealId = new Map();
@@ -124,11 +153,12 @@ export function getLineItemsListStatusBatch(db, twentyLineItemIds) {
     if (!deal) continue;
     const enrichedItems = enrichDealItems(
       dealItems,
-      blacklist,
+      streamContext,
       restorationList,
       deal,
-      podryadList,
-      bannerList,
+      tipRules,
+      neNasheBrandingList,
+      neNasheDecorMkList,
     );
     for (let i = 0; i < dealItems.length; i += 1) {
       const item = dealItems[i];

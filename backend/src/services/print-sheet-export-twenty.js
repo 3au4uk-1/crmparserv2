@@ -16,6 +16,7 @@ const LINE_ITEM_EXPORT_FIELDS = `
   printSheetRowNumber
   vzatoVRabotu
   gotovo
+  restavraciyaPechati
   plenka { markdown }
   ${LAYOUT_LINK_FIELD} { primaryLinkUrl }
   updatedBy {
@@ -132,6 +133,9 @@ export function buildReadbackUpdateInput(lineItem, readback) {
   }
   if (lineItem.gotovo !== readback.gotovo) {
     input.gotovo = readback.gotovo;
+  }
+  if (lineItem.restavraciyaPechati !== readback.restavraciyaPechati) {
+    input.restavraciyaPechati = readback.restavraciyaPechati;
   }
 
   return input;

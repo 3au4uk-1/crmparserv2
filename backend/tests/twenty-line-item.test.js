@@ -152,61 +152,80 @@ describe('restoration line items', () => {
   });
 });
 
-describe('podryad line items', () => {
-  const podryadList = [{ id: 1, pattern: 'флаги односторонние на виндеры', matchType: 'exact' }];
-  const tonyDeal = { data_source: 'tony' };
-  const item = {
-    name: 'Флаги односторонние на виндеры',
-    price: 5000,
-    quantity: '2',
-    sum: 10000,
-    quantity_num: 2,
-  };
-
-  it('builds create input with tip PODRYAD when podryad match', () => {
+describe('tip rule line items', () => {
+  it('sets tip+tipDetail from tipRules match', () => {
     const input = buildLineItemCreateInput(
-      item, 'wh-001', 'opp-456', 'first', { deal: tonyDeal, podryadList }
+      { name: 'Клише герб', quantity_num: 1, quantity: '1' },
+      'wh',
+      'opp',
+      'first',
+      {
+        tipRules: [
+          {
+            pattern: 'клише',
+            matchType: 'substring',
+            tip: 'PODRYAD',
+            tipDetail: 'KUVALDIN_KLISHE',
+            priority: 50,
+          },
+        ],
+      }
     );
     expect(input.tip).toBe('PODRYAD');
-    expect(input.amount.amountMicros).toBe(5000000000);
+    expect(input.tipDetail).toBe('KUVALDIN_KLISHE');
   });
 
-  it('omits tip when not in podryad list', () => {
+  it('defaults BANNERA tipDetail to KTO_EDET', () => {
     const input = buildLineItemCreateInput(
-      { ...item, name: 'Баннер' }, 'wh-001', 'opp-456', 'first', { deal: tonyDeal, podryadList }
-    );
-    expect(input.tip).toBeUndefined();
-  });
-
-  it('builds update input with tip PODRYAD when podryad match', () => {
-    const input = buildLineItemUpdateInput(item, { deal: tonyDeal, podryadList });
-    expect(input.tip).toBe('PODRYAD');
-  });
-});
-
-describe('banner line items', () => {
-  const bannerList = [{ id: 1, pattern: 'баннер 3x6', matchType: 'exact' }];
-  const tonyDeal = { data_source: 'tony' };
-  const item = {
-    name: 'Баннер 3x6',
-    price: 5000,
-    quantity: '1',
-    sum: 5000,
-    quantity_num: 1,
-  };
-
-  it('builds create input with tip BANNER when banner match', () => {
-    const input = buildLineItemCreateInput(
-      item, 'wh-001', 'opp-456', 'first', { deal: tonyDeal, bannerList }
+      { name: 'Баннер 3x6', quantity_num: 1, quantity: '1' },
+      'wh',
+      'opp',
+      'first',
+      {
+        tipRules: [
+          {
+            pattern: 'баннер',
+            matchType: 'substring',
+            tip: 'BANNERA',
+            tipDetail: null,
+            priority: 100,
+          },
+        ],
+      }
     );
     expect(input.tip).toBe('BANNERA');
+    expect(input.tipDetail).toBe('KTO_EDET');
   });
 
-  it('podryad takes precedence over banner when both match', () => {
-    const podryadList = [{ id: 2, pattern: 'баннер 3x6', matchType: 'exact' }];
-    const input = buildLineItemCreateInput(
-      item, 'wh-001', 'opp-456', 'first', { deal: tonyDeal, podryadList, bannerList }
+  it('sets PODRYAD tipDetail to null when the matching rule has no detail', () => {
+    const input = buildLineItemUpdateInput(
+      { name: 'Подрядная работа', quantity_num: 1, quantity: '1' },
+      {
+        tipRules: [
+          {
+            pattern: 'подрядная',
+            matchType: 'substring',
+            tip: 'PODRYAD',
+            tipDetail: null,
+            priority: 100,
+          },
+        ],
+      }
     );
+
     expect(input.tip).toBe('PODRYAD');
+    expect(input).toHaveProperty('tipDetail', null);
+  });
+
+  it('omits tip fields when no rule matches', () => {
+    const input = buildLineItemCreateInput(
+      { name: 'Скотч', quantity_num: 1, quantity: '1' },
+      'wh',
+      'opp',
+      'first',
+      { tipRules: [] }
+    );
+    expect(input.tip).toBeUndefined();
+    expect(input.tipDetail).toBeUndefined();
   });
 });

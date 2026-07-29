@@ -70,35 +70,39 @@ jobs:
 
       - name: Upload manifest to MinIO (optional)
         continue-on-error: true
+        working-directory: ops/backup
         env:
-          DOCKER_HOST_SSH_KEY: ${{ secrets.DOCKER_HOST_SSH_KEY }}
-          DOCKER_HOST: ${{ vars.DOCKER_HOST }}
-          DOCKER_HOST_USER: ${{ vars.DOCKER_HOST_USER }}
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          DOKPLOY_SCHEDULE_OPS_SYNC: ${{ vars.DOKPLOY_SCHEDULE_OPS_SYNC }}
+          DOKPLOY_SCHEDULE_OPS_RUN: ${{ vars.DOKPLOY_SCHEDULE_OPS_RUN }}
           MINIO_MC_ALIAS: ${{ vars.MINIO_MC_ALIAS }}
           MINIO_BUCKET: ${{ vars.MINIO_BUCKET }}
-          SNAPSHOT_ID: ${{ steps.snapshot.outputs.id }}
         run: |
           set -euo pipefail
-          if [ -z "${DOCKER_HOST_SSH_KEY:-}" ]; then
-            echo "DOCKER_HOST_SSH_KEY not set — skipping MinIO manifest upload (artifact still available)"
+          if [ -z "${DOKPLOY_SCHEDULE_OPS_SYNC:-}" ] || [ -z "${DOKPLOY_SCHEDULE_OPS_RUN:-}" ]; then
+            echo "DOKPLOY_SCHEDULE_OPS_SYNC or DOKPLOY_SCHEDULE_OPS_RUN not set — skipping MinIO manifest upload (artifact still available)"
             exit 0
           fi
-          HOST="${DOCKER_HOST:-10.50.50.132}"
-          USER="${DOCKER_HOST_USER:-root}"
           MC_ALIAS="${MINIO_MC_ALIAS:-minio-home}"
           BUCKET="${MINIO_BUCKET:-dokploy}"
-          REMOTE="/tmp/manifest-${SNAPSHOT_ID}.json"
-          OBJECT="${MC_ALIAS}/${BUCKET}/full-snapshots/${SNAPSHOT_ID}/manifest.json"
-
-          install -m 700 -d ~/.ssh
-          echo "${DOCKER_HOST_SSH_KEY}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "${HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
-
-          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "ops/backup/manifest.json" "${USER}@${HOST}:${REMOTE}"
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" \
-            "mc cp '${REMOTE}' '${OBJECT}' && rm -f '${REMOTE}'"
-          echo "Uploaded manifest to ${OBJECT}"
+          node remote-run.mjs sync
+          python3 - <<'PY' > /tmp/upload-manifest.sh
+          import os, pathlib
+          b64 = __import__("base64").b64encode(pathlib.Path("manifest.json").read_bytes()).decode()
+          snap_id = __import__("json").loads(pathlib.Path("manifest.json").read_text())["snapshotId"]
+          print(f"""set -euo pipefail
+          MC_ALIAS='{os.environ.get("MINIO_MC_ALIAS", "minio-home")}'
+          BUCKET='{os.environ.get("MINIO_BUCKET", "dokploy")}'
+          SNAP='{snap_id}'
+          mkdir -p /tmp/manifest-upload
+          echo '{b64}' | base64 -d > /tmp/manifest-upload/manifest.json
+          mc cp /tmp/manifest-upload/manifest.json "$MC_ALIAS/$BUCKET/full-snapshots/$SNAP/manifest.json"
+          rm -rf /tmp/manifest-upload
+          """)
+          PY
+          REMOTE_TIMEOUT_MS=600000 node remote-run.mjs run --script-file /tmp/upload-manifest.sh
+          echo "Uploaded manifest to ${MC_ALIAS}/${BUCKET}/full-snapshots/$(node --input-type=module -e "import { readFileSync } from 'node:fs'; console.log(JSON.parse(readFileSync('manifest.json','utf8')).snapshotId)")/manifest.json"
 
       - name: Prune expired full-snapshots
         id: prune
@@ -118,40 +122,37 @@ jobs:
 
       - name: Delete expired snapshot objects (optional)
         continue-on-error: true
+        working-directory: ops/backup
         env:
-          DOCKER_HOST_SSH_KEY: ${{ secrets.DOCKER_HOST_SSH_KEY }}
-          DOCKER_HOST: ${{ vars.DOCKER_HOST }}
-          DOCKER_HOST_USER: ${{ vars.DOCKER_HOST_USER }}
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          DOKPLOY_SCHEDULE_OPS_SYNC: ${{ vars.DOKPLOY_SCHEDULE_OPS_SYNC }}
+          DOKPLOY_SCHEDULE_OPS_RUN: ${{ vars.DOKPLOY_SCHEDULE_OPS_RUN }}
           MINIO_MC_ALIAS: ${{ vars.MINIO_MC_ALIAS }}
           MINIO_BUCKET: ${{ vars.MINIO_BUCKET }}
         run: |
           set -euo pipefail
-          if [ -z "${DOCKER_HOST_SSH_KEY:-}" ]; then
-            echo "DOCKER_HOST_SSH_KEY not set — expired prefixes recorded in expired.json artifact only"
+          if [ -z "${DOKPLOY_SCHEDULE_OPS_SYNC:-}" ] || [ -z "${DOKPLOY_SCHEDULE_OPS_RUN:-}" ]; then
+            echo "DOKPLOY_SCHEDULE_OPS_SYNC or DOKPLOY_SCHEDULE_OPS_RUN not set — expired prefixes recorded in expired.json artifact only"
             exit 0
           fi
-          HOST="${DOCKER_HOST:-10.50.50.132}"
-          USER="${DOCKER_HOST_USER:-root}"
-          MC_ALIAS="${MINIO_MC_ALIAS:-minio-home}"
-          BUCKET="${MINIO_BUCKET:-dokploy}"
-
-          install -m 700 -d ~/.ssh
-          echo "${DOCKER_HOST_SSH_KEY}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "${HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
-
-          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "ops/backup/expired.json" "${USER}@${HOST}:/tmp/expired-snapshots.json"
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" bash -s "${MC_ALIAS}" "${BUCKET}" <<'REMOTE'
-          set -euo pipefail
-          MC_ALIAS="$1"
-          BUCKET="$2"
+          python3 - <<'PY' > /tmp/delete-expired.sh
+          import os, pathlib
+          b64 = __import__("base64").b64encode(pathlib.Path("expired.json").read_bytes()).decode()
+          mc_alias = os.environ.get("MINIO_MC_ALIAS", "minio-home")
+          bucket = os.environ.get("MINIO_BUCKET", "dokploy")
+          body = """set -euo pipefail
+          MC_ALIAS='__MC_ALIAS__'
+          BUCKET='__BUCKET__'
+          echo '__B64__' | base64 -d > /tmp/expired-snapshots.json
           PREFIXES=$(node -e "
             const fs = require('node:fs');
             const data = JSON.parse(fs.readFileSync('/tmp/expired-snapshots.json','utf8'));
-            for (const p of data.expiredPrefixes || []) process.stdout.write(p + '\n');
+            for (const p of data.expiredPrefixes || []) process.stdout.write(p + '\\n');
           ")
           if [ -z "${PREFIXES}" ]; then
             echo "No expired prefixes to delete"
+            rm -f /tmp/expired-snapshots.json
             exit 0
           fi
           while IFS= read -r prefix; do
@@ -160,4 +161,11 @@ jobs:
             mc rm --recursive --force "${MC_ALIAS}/${BUCKET}/${prefix}"
           done <<< "${PREFIXES}"
           rm -f /tmp/expired-snapshots.json
-          REMOTE
+          """
+          print(
+            body.replace("__MC_ALIAS__", mc_alias)
+            .replace("__BUCKET__", bucket)
+            .replace("__B64__", b64)
+          )
+          PY
+          REMOTE_TIMEOUT_MS=600000 node remote-run.mjs run --script-file /tmp/delete-expired.sh

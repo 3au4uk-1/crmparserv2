@@ -3,6 +3,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { getDb } from './connection.js';
 import { bookingDealKey, resolveBookingNumber } from '../services/deal-keys.js';
+import {
+  migratePodryadBannerToTipRules,
+  seedDefaultTipRules,
+} from '../services/tip-rules.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -164,12 +168,79 @@ export function migrate() {
     );
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tip_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pattern TEXT NOT NULL,
+      match_type TEXT NOT NULL CHECK (match_type IN ('exact', 'substring')),
+      tip TEXT NOT NULL,
+      tip_detail TEXT,
+      priority INTEGER NOT NULL DEFAULT 100,
+      source_name TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS tip_rules_unique_pattern_tip_detail
+    ON tip_rules (
+      pattern,
+      match_type,
+      tip,
+      IFNULL(tip_detail, '')
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS decor_blacklist_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pattern TEXT NOT NULL,
+      match_type TEXT NOT NULL CHECK (match_type IN ('exact', 'substring')),
+      source_name TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (pattern, match_type)
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS mk_blacklist_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pattern TEXT NOT NULL,
+      match_type TEXT NOT NULL CHECK (match_type IN ('exact', 'substring')),
+      source_name TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (pattern, match_type)
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ne_nashe_branding_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pattern TEXT NOT NULL,
+      match_type TEXT NOT NULL CHECK (match_type IN ('exact', 'substring')),
+      source_name TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (pattern, match_type)
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ne_nashe_decor_mk_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pattern TEXT NOT NULL,
+      match_type TEXT NOT NULL CHECK (match_type IN ('exact', 'substring')),
+      source_name TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (pattern, match_type)
+    );
+  `);
+
   ensureColumn(db, 'deal_items', 'sync_override', 'TEXT');
   ensureColumn(db, 'deal_items', 'twenty_id', 'TEXT');
   ensureColumn(db, 'deal_items', 'comment', 'TEXT');
   db.exec(`CREATE INDEX IF NOT EXISTS idx_deal_items_twenty_id ON deal_items(twenty_id);`);
   ensureColumn(db, 'deal_items', 'sum', 'REAL');
   ensureColumn(db, 'deal_items', 'quantity_num', 'REAL');
+  ensureColumn(db, 'deal_items', 'amount_locked', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'deals', 'twenty_error', 'TEXT');
   ensureColumn(db, 'deals', 'tony_order_id', 'TEXT');
   ensureColumn(db, 'deals', 'arrival_time', 'TEXT');
@@ -256,6 +327,9 @@ export function migrate() {
     );
   `);
 
+  migratePodryadBannerToTipRules(db);
+  seedDefaultTipRules(db);
+
   const expenseDefaults = [
     ['expense_sheet_field_team', '1cqOIF0MBJggXdUzJ_ll4GaW9jVcDmFPKyrsbWr3ofwk'],
     ['expense_sheet_printing', '1OYLaUJukGnjvx5qmdHAaKWuVaCTscDsdffzCTqy64pA'],
@@ -267,6 +341,12 @@ export function migrate() {
   for (const [key, value] of expenseDefaults) {
     db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run(key, value);
   }
+
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('decor_keywords', '[]')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('mk_keywords', '[]')").run();
+
+  // Production freza queue spreadsheet — empty until cycle is wired; fill in Settings UI.
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('freza_sheet_id', '')").run();
 
   console.log('Database migrated successfully');
 }
