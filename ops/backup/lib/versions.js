@@ -36,5 +36,24 @@ function buildVersionPayload(crmparserImage, env, twentyAppVersion = 'unknown') 
   const versions = { crmparserImage, twentyAppVersion };
   const digest = env.CRMPARSER_DIGEST?.trim();
   if (digest) versions.crmparserDigest = digest;
+  const gitSha = env.TWENTY_APP_GIT_SHA?.trim();
+  if (gitSha) versions.twentyAppGitSha = gitSha;
   return versions;
+}
+
+/**
+ * Resolve pinned crmparser image ref from manifest versions (prefer digest).
+ * @param {{ crmparserImage?: string, crmparserDigest?: string }} versions
+ */
+export function resolveCrmparserImageRef(versions) {
+  const img = versions?.crmparserImage?.trim();
+  if (!img) throw new Error('manifest: versions.crmparserImage required');
+  if (img.includes('@sha256:')) return img;
+  const digest = versions?.crmparserDigest?.trim();
+  if (digest) {
+    const base = img.split('@')[0];
+    const normalized = digest.startsWith('sha256:') ? digest : `sha256:${digest}`;
+    return `${base}@${normalized}`;
+  }
+  return img;
 }

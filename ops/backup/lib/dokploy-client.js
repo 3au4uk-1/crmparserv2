@@ -44,5 +44,7 @@ export function createDokployClient({ baseUrl, apiKey, fetchImpl = fetch }) {
       request('GET', '/backup.listBackupFiles', { query: { destinationId, search } }),
     composeDeploy: (composeId, title, description) =>
       request('POST', '/compose.deploy', { body: { composeId, title, description } }),
+    composeOne: (composeId) => request('GET', '/compose.one', { query: { composeId } }),
+    composeUpdate: (body) => request('POST', '/compose.update', { body }),
   };
 }

@@ -25,4 +25,7 @@ export function assertManifest(m) {
   }
   if (!m.versions?.crmparserImage) throw new Error('manifest: versions.crmparserImage required');
   if (!m.versions?.twentyAppVersion) throw new Error('manifest: versions.twentyAppVersion required');
+  if (m.versions.twentyAppGitSha != null && typeof m.versions.twentyAppGitSha !== 'string') {
+    throw new Error('manifest: versions.twentyAppGitSha must be a string when set');
+  }
 }

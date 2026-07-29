@@ -1,0 +1,109 @@
+name: Rollback prod data
+
+on:
+  workflow_dispatch:
+    inputs:
+      snapshot_id:
+        description: Snapshot id (YYYYMMDDTHHMMSSZ) from release-prepare manifest
+        required: true
+        type: string
+      confirm:
+        description: Type RESTORE_PROD to confirm prod data restore
+        required: true
+        type: string
+
+concurrency:
+  group: rollback-prod-data
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirmation gate
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event.inputs.confirm }}" != "RESTORE_PROD" ]; then
+            echo "::error::Confirmation must be exactly RESTORE_PROD (got: ${{ github.event.inputs.confirm }})"
+            exit 1
+          fi
+          echo "Confirmation OK — proceeding with prod data restore"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch manifest from MinIO
+        id: resolve
+        env:
+          SNAPSHOT_ID: ${{ github.event.inputs.snapshot_id }}
+          DOCKER_HOST_SSH_KEY: ${{ secrets.DOCKER_HOST_SSH_KEY }}
+          DOCKER_HOST: ${{ vars.DOCKER_HOST }}
+          DOCKER_HOST_USER: ${{ vars.DOCKER_HOST_USER }}
+          MINIO_MC_ALIAS: ${{ vars.MINIO_MC_ALIAS }}
+          MINIO_BUCKET: ${{ vars.MINIO_BUCKET }}
+        run: |
+          set -euo pipefail
+          SNAPSHOT_ID="${SNAPSHOT_ID}"
+          MANIFEST_LOCAL="ops/backup/restore-manifest.json"
+
+          if [ -z "${DOCKER_HOST_SSH_KEY:-}" ]; then
+            echo "::error::DOCKER_HOST_SSH_KEY is required for prod data rollback."
+            exit 1
+          fi
+
+          HOST="${DOCKER_HOST:-10.50.50.132}"
+          USER="${DOCKER_HOST_USER:-root}"
+          MC_ALIAS="${MINIO_MC_ALIAS:-minio-home}"
+          BUCKET="${MINIO_BUCKET:-dokploy}"
+          REMOTE_MANIFEST="/tmp/manifest-${SNAPSHOT_ID}.json"
+          OBJECT="${MC_ALIAS}/${BUCKET}/full-snapshots/${SNAPSHOT_ID}/manifest.json"
+
+          install -m 700 -d ~/.ssh
+          echo "${DOCKER_HOST_SSH_KEY}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" \
+            "mc cp '${OBJECT}' '${REMOTE_MANIFEST}'"
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            "${USER}@${HOST}:${REMOTE_MANIFEST}" "${MANIFEST_LOCAL}"
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" \
+            "rm -f '${REMOTE_MANIFEST}'"
+
+          echo "id=${SNAPSHOT_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore prod data on docker host
+        env:
+          DOCKER_HOST_SSH_KEY: ${{ secrets.DOCKER_HOST_SSH_KEY }}
+          DOCKER_HOST: ${{ vars.DOCKER_HOST }}
+          DOCKER_HOST_USER: ${{ vars.DOCKER_HOST_USER }}
+          MINIO_MC_ALIAS: ${{ vars.MINIO_MC_ALIAS }}
+          MINIO_BUCKET: ${{ vars.MINIO_BUCKET }}
+          SNAPSHOT_ID: ${{ steps.resolve.outputs.id }}
+        run: |
+          set -euo pipefail
+          HOST="${DOCKER_HOST:-10.50.50.132}"
+          USER="${DOCKER_HOST_USER:-root}"
+          REMOTE_DIR="/tmp/prod-rollback-${SNAPSHOT_ID}"
+
+          install -m 700 -d ~/.ssh
+          echo "${DOCKER_HOST_SSH_KEY}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" "mkdir -p '${REMOTE_DIR}'"
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            ops/backup/restore-host.sh \
+            ops/backup/restore-manifest.json \
+            "${USER}@${HOST}:${REMOTE_DIR}/"
+
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" bash -s <<REMOTE
+          set -euo pipefail
+          cd '${REMOTE_DIR}'
+          chmod +x restore-host.sh
+          MINIO_MC_ALIAS='${MINIO_MC_ALIAS:-minio-home}' MINIO_BUCKET='${MINIO_BUCKET:-dokploy}' \
+            ./restore-host.sh \
+              --target prod \
+              --snapshot-id '${SNAPSHOT_ID}' \
+              --manifest restore-manifest.json
+          REMOTE

@@ -96,4 +96,18 @@ describe('createDokployClient', () => {
       '/api/compose.deploy',
     ]);
   });
+
+  it('composeOne and composeUpdate hit expected paths', async () => {
+    const client = createDokployClient({
+      baseUrl: 'https://dokploy.example',
+      apiKey: 'secret-key',
+      fetchImpl,
+    });
+
+    await client.composeOne('compose-id');
+    await client.composeUpdate({ composeId: 'compose-id', composeFile: 'services:\n  x:\n    image: a' });
+
+    const paths = fetchImpl.mock.calls.map(([url]) => url.pathname);
+    expect(paths).toEqual(['/api/compose.one', '/api/compose.update']);
+  });
 });

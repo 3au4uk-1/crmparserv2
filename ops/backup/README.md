@@ -138,6 +138,7 @@ export DOKPLOY_DESTINATION_ID=TfR-Va14SJniAB91hlgbt
 export TWENTY_APP_VERSION=0.5.4
 export CRMPARSER_IMAGE=ghcr.io/3au4uk-1/crmparserv2@sha256:...
 # optional: CRMPARSER_DIGEST=sha256:...
+# optional: TWENTY_APP_GIT_SHA=<BrandingTwentyView commit at capture time>
 
 node capture.mjs --out manifest.json
 ```
@@ -303,3 +304,59 @@ After live restore, workflow verifies `DISABLE_AUTO_PARSE=true` on the `crmparse
 | Twenty staging | `eMjWv7p-ovnfQ7XnpFKTe` | `twenty-staging` |
 | crmparser prod | `JWIhULvt6slzDxT8AQXyWz` | `crmparser` |
 | crmparser staging | `wjfA-wPgjI2FH8wW4ypcx` | `crmparser-staging` |
+
+## Prod data rollback (`rollback-data.yml`)
+
+Manual **Actions → Rollback prod data** on `staging` branch. Restores prod Postgres + file volumes from a release-prepare snapshot. Does **not** change crmparser image or Twenty app version.
+
+### Inputs
+
+| Input | Required | Notes |
+|-------|----------|-------|
+| `snapshot_id` | yes | `YYYYMMDDTHHMMSSZ` from release-prepare manifest |
+| `confirm` | yes | Must be exactly `RESTORE_PROD` — workflow fails otherwise |
+
+### Required GitHub configuration
+
+Same SSH/MinIO secrets as staging refresh (`DOCKER_HOST_SSH_KEY`, optional `DOCKER_HOST*` / `MINIO_*` vars).
+
+### Operator steps
+
+1. Identify snapshot id from the last good `release-prepare` artifact or MinIO `full-snapshots/<id>/manifest.json`.
+2. Actions → **Rollback prod data** → enter `snapshot_id` and type `RESTORE_PROD` in confirm.
+3. Monitor workflow; on failure services stay stopped (fail-closed restore script).
+4. Smoke prod: Twenty login, Реализация, crmparser UI.
+
+**Do not run without explicit operator approval.** Staging-equivalent drill: use **Staging data refresh** with a known snapshot id.
+
+## Prod release rollback (`rollback-release.yml`)
+
+Manual **Actions → Rollback prod release (data + code)**. Runs in order:
+
+1. Prod data restore (`restore-host.sh --target prod`) from manifest
+2. Pin prod crmparser compose image from manifest (`pin-crmparser-image.mjs` → `compose.update` + `compose.deploy`)
+3. `repository_dispatch` to `3au4uk-1/BrandingTwentyView` event `rollback-twenty-app` with `{ version, ref?, snapshot_id }`
+
+Same inputs and confirmation gate as data-only rollback (`snapshot_id` + `RESTORE_PROD`).
+
+### Additional secrets / vars
+
+| Name | Type | Notes |
+|------|------|-------|
+| `DOKPLOY_URL` | Secret | Dokploy API (pin + deploy crmparser) |
+| `DOKPLOY_API_KEY` | Secret | Dokploy API key |
+| `DOKPLOY_CRMPARSER_COMPOSE_ID` | Variable | Default `JWIhULvt6slzDxT8AQXyWz` |
+| `BRANDING_TWENTYVIEW_DISPATCH_TOKEN` | Secret | PAT with `repo` scope on BrandingTwentyView |
+
+Twenty deploy credentials stay in BrandingTwentyView (`TWENTY_DEPLOY_URL`, `TWENTY_DEPLOY_API_KEY`). The dispatch receiver is `.github/workflows/rollback-app.yml` there.
+
+### Manifest version fields for release rollback
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `versions.crmparserImage` | yes | Prefer digest form |
+| `versions.crmparserDigest` | optional | Combined with image when not `@sha256`-pinned |
+| `versions.twentyAppVersion` | yes | Passed to BrandingTwentyView dispatch |
+| `versions.twentyAppGitSha` | optional | Git ref for checkout; omit if unknown (uses default branch — prefer setting at capture) |
+
+Set optional `TWENTY_APP_GIT_SHA` env during manual `release-prepare` when recording the BrandingTwentyView commit on prod.
