@@ -257,7 +257,7 @@ restore_postgres() {
   download_component "$pg_key" "$archive"
 
   if $DRY_RUN; then
-    prepared_out="$(pg_prepared_path "$WORKDIR" "$archive")"
+    prepared_out="$(pg_prepared_path "$WORKDIR" "$archive" "$pg_key")"
     if needs_decompress "$archive"; then
       printf '[dry-run] decompress %q -> %q\n' "$archive" "$prepared_out"
     fi
@@ -282,7 +282,7 @@ restore_postgres() {
   }
   wait_pg || die "postgres not ready before restore"
 
-  prepared_out="$(pg_prepared_path "$WORKDIR" "$archive")"
+  prepared_out="$(pg_prepared_path "$WORKDIR" "$archive" "$pg_key")"
   prepared="$(decompress_if_needed "$archive" "$prepared_out")"
 
   log "terminating connections to ${PG_DB}"

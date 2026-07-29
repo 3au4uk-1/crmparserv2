@@ -40,8 +40,11 @@ export function createDokployClient({ baseUrl, apiKey, fetchImpl = fetch }) {
       request('POST', '/backup.manualBackupCompose', { body: { backupId } }),
     runVolumeBackup: (volumeBackupId) =>
       request('POST', '/volumeBackups.runManually', { body: { volumeBackupId } }),
-    listBackupFiles: (destinationId, search) =>
-      request('GET', '/backup.listBackupFiles', { query: { destinationId, search } }),
+    listBackupFiles: (destinationId, search, serverId) => {
+      const query = { destinationId, search };
+      if (serverId != null) query.serverId = serverId;
+      return request('GET', '/backup.listBackupFiles', { query });
+    },
     composeDeploy: (composeId, title, description) =>
       request('POST', '/compose.deploy', { body: { composeId, title, description } }),
     composeOne: (composeId) => request('GET', '/compose.one', { query: { composeId } }),

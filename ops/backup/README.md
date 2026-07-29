@@ -51,7 +51,7 @@ Tick in PR description when ops completes each drill. Items marked **operator fo
 - [ ] **Operator follow-up:** Staging refresh leaves env intact — workflow asserts `DISABLE_AUTO_PARSE=true` on `crmparser-staging`; URLs/tokens unchanged
 - [ ] **Operator follow-up:** Staging smoke OK after refresh (Twenty, Реализация, parser UI, optional attachment)
 - [ ] **Operator follow-up:** Rollback-data confirmation gate rejects without `RESTORE_PROD` (dry-run: dispatch with wrong/missing confirm → workflow fails)
-- [ ] **Operator follow-up:** Dokploy PG `keepLatestCount` is **7** (currently **14** — update in Dokploy UI; see [PG backup retention](#pg-backup-retention))
+- [ ] **Operator follow-up:** Dokploy PG `keepLatestCount` is **7** (verify in Dokploy UI; see [PG backup retention](#pg-backup-retention))
 
 **Unit tests (run anytime):**
 
@@ -139,13 +139,13 @@ Older per-volume jobs (`twenty_db-data`, legacy prefixes) remain for ad-hoc use;
 | backupId | `0rInusnjJ7d64Z3Pvm31O` |
 | prefix | `twenty-pg` |
 | schedule | `0 2 * * *` |
-| keepLatestCount | **14** (target: **7**) |
+| keepLatestCount | **7** |
 
-**Manual step required:** `backup.update` via Dokploy API returned HTTP 400 when setting `keepLatestCount: 7` (2026-07-29). Update in Dokploy UI:
+**Manual step required:** Confirm **Keep latest** is **7** in Dokploy UI:
 
 1. Open Twenty compose → Backups → Postgres backup (`twenty-pg`).
-2. Set **Keep latest** to **7**.
-3. Save and verify via `GET /backup.one?backupId=0rInusnjJ7d64Z3Pvm31O`.
+2. Verify **Keep latest** is **7**.
+3. Save if changed and verify via `GET /backup.one?backupId=0rInusnjJ7d64Z3Pvm31O`.
 
 ## Runbooks
 
@@ -260,7 +260,7 @@ If restore fails mid-way, workflows fail closed — services stay stopped. Do no
 
 ### Lost manifest
 
-Snapshot objects remain under MinIO prefixes (`twenty-pg`, `full-snapshots/twenty-files`, `full-snapshots/crmparser-sqlite`, `full-snapshots/<snapshotId>/`). Reconstruct component keys from Dokploy backup file list or download the GitHub artifact from the original `release-prepare` run.
+Snapshot objects remain under MinIO prefixes (`twenty_db/twenty-pg`, `twenty_server/full-snapshots/twenty-files`, `crmparser_crmparser/full-snapshots/crmparser-sqlite`, `full-snapshots/<snapshotId>/`). Reconstruct component keys from Dokploy backup file list or download the GitHub artifact from the original `release-prepare` run.
 
 ### Concurrent nightly + manual capture
 
@@ -291,7 +291,7 @@ node capture.mjs --out manifest.json
 | `--out` | `./manifest.json` | Manifest path (also printed to stdout) |
 | `--skip-versions` | off | Dry-run: sets `unknown` version placeholders |
 
-Polling: PG `twenty-pg` (10 min), volumes `full-snapshots/twenty-files` / `crmparser-sqlite` (20 min each), interval 15 s.
+Polling: PG `twenty_db/twenty-pg` (10 min), volumes `twenty_server/full-snapshots/twenty-files` / `crmparser_crmparser/full-snapshots/crmparser-sqlite` (20 min each), interval 15 s. `listBackupFiles` passes `DOKPLOY_SERVER_ID` (default `U9UZM_1xUvc-Uw_0YXMSmA`) for the remote Docker host.
 
 #### Concurrency
 
@@ -339,7 +339,8 @@ await client.runVolumeBackup(process.env.DOKPLOY_TWENTY_FILES_VOLUME_BACKUP_ID);
 await client.runVolumeBackup(process.env.DOKPLOY_CRMPARSER_VOLUME_BACKUP_ID);
 const files = await client.listBackupFiles(
   process.env.DOKPLOY_DESTINATION_ID,
-  'full-snapshots',
+  'twenty_server/full-snapshots',
+  process.env.DOKPLOY_SERVER_ID,
 );
 ```
 
@@ -347,7 +348,7 @@ const files = await client.listBackupFiles(
 
 ```bash
 cd ops/backup && npm test
-npm run test:pg-format   # bash: Dokploy .sql.gz → psql format detection
+npm run test:pg-format   # bash: Dokploy twenty_db/*.sql.gz → pg_restore format detection
 ```
 
 ### Smoke test (optional, low-traffic window)
