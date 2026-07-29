@@ -34,10 +34,11 @@ assert_eq "$(pg_archive_suffix 'twenty-pg/20260729T020000Z.sql.gz')" '.sql.gz' '
 assert_eq "$(pg_archive_suffix 'twenty-pg/dump.custom')" '.bin' 'suffix unknown'
 
 assert_psql 'twenty-pg/foo.sql'
-assert_psql 'twenty-pg/foo.sql.gz'
 assert_psql 'twenty-pg/foo.sql.xz'
 assert_psql 'twenty-pg/foo.sql.gz' '/tmp/twenty-pg.sql'
 
+assert_pg_restore 'twenty_db/twenty-pg/foo.sql.gz'
+assert_pg_restore 'twenty_db/twenty-pg/foo.sql.gz' '/tmp/twenty-pg.decompressed'
 assert_pg_restore 'twenty-pg/foo.dump'
 assert_pg_restore 'twenty-pg/foo.backup'
 assert_pg_restore 'twenty-pg/foo.custom' '/tmp/twenty-pg.decompressed'
@@ -46,5 +47,6 @@ needs_decompress '/tmp/twenty-pg.sql.gz' || { echo 'FAIL needs_decompress .sql.g
 needs_decompress '/tmp/twenty-pg.sql' && { echo 'FAIL needs_decompress plain .sql'; exit 1; }
 
 assert_eq "$(pg_prepared_path '/tmp/restore' '/tmp/restore/twenty-pg.sql.gz')" '/tmp/restore/twenty-pg.sql' 'prepared sql.gz'
+assert_eq "$(pg_prepared_path '/tmp/restore' '/tmp/restore/twenty-pg.sql.gz' 'twenty_db/twenty-pg/foo.sql.gz')" '/tmp/restore/twenty-pg.decompressed' 'prepared dokploy sql.gz'
 
 echo 'pg-restore-format.test.sh: ok'

@@ -58,6 +58,34 @@ describe('createDokployClient', () => {
     );
   });
 
+  it('includes serverId in listBackupFiles when provided', async () => {
+    const client = createDokployClient({
+      baseUrl: 'https://dokploy.example',
+      apiKey: 'secret-key',
+      fetchImpl,
+    });
+
+    await client.listBackupFiles('dest-1', 'twenty_db/twenty-pg', 'U9UZM_1xUvc-Uw_0YXMSmA');
+
+    const [url] = fetchImpl.mock.calls[0];
+    expect(url.toString()).toBe(
+      'https://dokploy.example/api/backup.listBackupFiles?destinationId=dest-1&search=twenty_db%2Ftwenty-pg&serverId=U9UZM_1xUvc-Uw_0YXMSmA',
+    );
+  });
+
+  it('omits serverId in listBackupFiles when not provided', async () => {
+    const client = createDokployClient({
+      baseUrl: 'https://dokploy.example',
+      apiKey: 'secret-key',
+      fetchImpl,
+    });
+
+    await client.listBackupFiles('dest-1', 'prefix');
+
+    const [url] = fetchImpl.mock.calls[0];
+    expect(url.searchParams.has('serverId')).toBe(false);
+  });
+
   it('throws with status and body on non-ok response', async () => {
     fetchImpl = vi.fn(async () => ({
       ok: false,
