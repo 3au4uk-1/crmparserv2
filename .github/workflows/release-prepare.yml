@@ -1,0 +1,160 @@
+name: Release prepare (full prod snapshot)
+
+on:
+  workflow_dispatch:
+    inputs:
+      twenty_app_version:
+        description: Twenty app version currently on prod (for rollback manifest)
+        required: true
+        type: string
+      crmparser_image:
+        description: Full image ref including digest if known
+        required: true
+        type: string
+  schedule:
+    # Align with Dokploy volume/PG backup cron; manual dispatch ties versions for release gate.
+    - cron: '0 2 * * *'
+
+concurrency:
+  group: release-prepare-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install ops/backup deps
+        working-directory: ops/backup
+        run: npm ci || npm install
+
+      - name: Capture full snapshot
+        id: capture
+        working-directory: ops/backup
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          DOKPLOY_TWENTY_PG_BACKUP_ID: ${{ vars.DOKPLOY_TWENTY_PG_BACKUP_ID }}
+          DOKPLOY_TWENTY_FILES_VOLUME_BACKUP_ID: ${{ vars.DOKPLOY_TWENTY_FILES_VOLUME_BACKUP_ID }}
+          DOKPLOY_CRMPARSER_VOLUME_BACKUP_ID: ${{ vars.DOKPLOY_CRMPARSER_VOLUME_BACKUP_ID }}
+          DOKPLOY_DESTINATION_ID: ${{ vars.DOKPLOY_DESTINATION_ID }}
+          TWENTY_APP_VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.twenty_app_version || 'nightly' }}
+          CRMPARSER_IMAGE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.crmparser_image || 'ghcr.io/3au4uk-1/crmparserv2:latest' }}
+        run: node capture.mjs --out manifest.json
+
+      - name: Read snapshot id
+        id: snapshot
+        working-directory: ops/backup
+        run: |
+          SNAPSHOT_ID=$(node --input-type=module -e "import { readFileSync } from 'node:fs'; console.log(JSON.parse(readFileSync('manifest.json','utf8')).snapshotId)")
+          echo "id=${SNAPSHOT_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload manifest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest-${{ steps.snapshot.outputs.id }}
+          path: ops/backup/manifest.json
+          retention-days: 14
+
+      - name: Upload manifest to MinIO (optional)
+        continue-on-error: true
+        env:
+          DOCKER_HOST_SSH_KEY: ${{ secrets.DOCKER_HOST_SSH_KEY }}
+          DOCKER_HOST: ${{ vars.DOCKER_HOST }}
+          DOCKER_HOST_USER: ${{ vars.DOCKER_HOST_USER }}
+          MINIO_MC_ALIAS: ${{ vars.MINIO_MC_ALIAS }}
+          MINIO_BUCKET: ${{ vars.MINIO_BUCKET }}
+          SNAPSHOT_ID: ${{ steps.snapshot.outputs.id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DOCKER_HOST_SSH_KEY:-}" ]; then
+            echo "DOCKER_HOST_SSH_KEY not set — skipping MinIO manifest upload (artifact still available)"
+            exit 0
+          fi
+          HOST="${DOCKER_HOST:-10.50.50.132}"
+          USER="${DOCKER_HOST_USER:-root}"
+          MC_ALIAS="${MINIO_MC_ALIAS:-minio-home}"
+          BUCKET="${MINIO_BUCKET:-dokploy}"
+          REMOTE="/tmp/manifest-${SNAPSHOT_ID}.json"
+          OBJECT="${MC_ALIAS}/${BUCKET}/full-snapshots/${SNAPSHOT_ID}/manifest.json"
+
+          install -m 700 -d ~/.ssh
+          echo "${DOCKER_HOST_SSH_KEY}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "ops/backup/manifest.json" "${USER}@${HOST}:${REMOTE}"
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" \
+            "mc cp '${REMOTE}' '${OBJECT}' && rm -f '${REMOTE}'"
+          echo "Uploaded manifest to ${OBJECT}"
+
+      - name: Prune expired full-snapshots
+        id: prune
+        working-directory: ops/backup
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          DOKPLOY_DESTINATION_ID: ${{ vars.DOKPLOY_DESTINATION_ID }}
+        run: node prune.mjs > expired.json
+
+      - name: Upload expired prefixes artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: expired-snapshot-prefixes-${{ steps.snapshot.outputs.id }}
+          path: ops/backup/expired.json
+          retention-days: 14
+
+      # TODO: enable mc deletion when DOCKER_HOST_SSH_KEY + MinIO mc alias are verified on the docker host.
+      # Parses expired.json and runs: mc rm --recursive "${MINIO_MC_ALIAS}/${MINIO_BUCKET}/${prefix}"
+      - name: Delete expired snapshot objects (optional)
+        continue-on-error: true
+        env:
+          DOCKER_HOST_SSH_KEY: ${{ secrets.DOCKER_HOST_SSH_KEY }}
+          DOCKER_HOST: ${{ vars.DOCKER_HOST }}
+          DOCKER_HOST_USER: ${{ vars.DOCKER_HOST_USER }}
+          MINIO_MC_ALIAS: ${{ vars.MINIO_MC_ALIAS }}
+          MINIO_BUCKET: ${{ vars.MINIO_BUCKET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DOCKER_HOST_SSH_KEY:-}" ]; then
+            echo "DOCKER_HOST_SSH_KEY not set — expired prefixes recorded in expired.json artifact only"
+            exit 0
+          fi
+          HOST="${DOCKER_HOST:-10.50.50.132}"
+          USER="${DOCKER_HOST_USER:-root}"
+          MC_ALIAS="${MINIO_MC_ALIAS:-minio-home}"
+          BUCKET="${MINIO_BUCKET:-dokploy}"
+
+          install -m 700 -d ~/.ssh
+          echo "${DOCKER_HOST_SSH_KEY}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "ops/backup/expired.json" "${USER}@${HOST}:/tmp/expired-snapshots.json"
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" bash -s "${MC_ALIAS}" "${BUCKET}" <<'REMOTE'
+          set -euo pipefail
+          MC_ALIAS="$1"
+          BUCKET="$2"
+          PREFIXES=$(node -e "
+            const fs = require('node:fs');
+            const data = JSON.parse(fs.readFileSync('/tmp/expired-snapshots.json','utf8'));
+            for (const p of data.expiredPrefixes || []) process.stdout.write(p + '\n');
+          ")
+          if [ -z "${PREFIXES}" ]; then
+            echo "No expired prefixes to delete"
+            exit 0
+          fi
+          while IFS= read -r prefix; do
+            [ -z "${prefix}" ] && continue
+            echo "Deleting ${MC_ALIAS}/${BUCKET}/${prefix}"
+            mc rm --recursive --force "${MC_ALIAS}/${BUCKET}/${prefix}"
+          done <<< "${PREFIXES}"
+          rm -f /tmp/expired-snapshots.json
+          REMOTE

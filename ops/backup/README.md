@@ -26,7 +26,22 @@ Set these as GitHub repository **Variables** (Settings → Secrets and variables
 | `DOKPLOY_TWENTY_COMPOSE_ID` | `oI7-NCBTpfyrxJBitrJrd0` | Prod Twenty compose |
 | `DOKPLOY_CRMPARSER_COMPOSE_ID` | `JWIhULvt6slzDxT8AQXyWz` | Prod crmparser compose |
 
-GitHub **Secrets** (not variables): `DOKPLOY_URL`, `DOKPLOY_API_KEY`.
+GitHub **Secrets** (Settings → Secrets and variables → Actions → Secrets):
+
+| Secret | Required by | Notes |
+|--------|-------------|-------|
+| `DOKPLOY_URL` | `release-prepare`, `docker-publish` | Dokploy API base URL |
+| `DOKPLOY_API_KEY` | `release-prepare`, `docker-publish` | Dokploy API key |
+| `DOCKER_HOST_SSH_KEY` | optional | Private key for docker host (CT 103); enables MinIO manifest upload + expired snapshot deletion |
+
+Optional GitHub **Variables** for SSH/MinIO steps (defaults shown in workflow when unset):
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `DOCKER_HOST` | `10.50.50.132` | Docker host reachable from GitHub runners |
+| `DOCKER_HOST_USER` | `root` | SSH user on docker host |
+| `MINIO_MC_ALIAS` | `minio-home` | `mc` alias configured on docker host (matches Dokploy destination name) |
+| `MINIO_BUCKET` | `dokploy` | MinIO bucket for Dokploy backups — **verify** with `mc ls minio-home/` on host |
 
 ## Volume backup jobs (prod)
 
@@ -154,8 +169,9 @@ Nightly cron (`0 2 * * *`) and a manual `release-prepare` capture can overlap. P
 Lists expired snapshot folder prefixes under `full-snapshots/YYYYMMDDTHHMMSSZ/` (7-day retention). Does **not** delete objects — v1 delegates deletion to the GitHub workflow.
 
 ```bash
+node prune.mjs > expired.json
+# or stdout only:
 node prune.mjs
-# stdout:
 # { "expiredPrefixes": ["full-snapshots/20260720T010000Z/", ...] }
 ```
 
@@ -164,6 +180,40 @@ node prune.mjs
 | Flag | Default |
 |------|---------|
 | `--retention-days` | `7` |
+
+## Release prepare workflow (`release-prepare.yml`)
+
+Captures a tied full prod snapshot before promoting staging → main. Also runs on a nightly cron (`0 2 * * *`) aligned with Dokploy backup jobs.
+
+### Release gate (manual dispatch)
+
+**Do not merge staging → main unless a manual `release-prepare` workflow run succeeded for that release.** Nightly cron snapshots are for retention/testing only — they use placeholder versions (`nightly` / `latest`) and do not satisfy the release gate.
+
+Before opening or merging the promote PR:
+
+1. Confirm prod is on the Twenty app version and crmparser image you are about to replace (note digest if available).
+2. Actions → **Release prepare (full prod snapshot)** → **Run workflow** on the release branch (usually `staging`).
+3. Fill inputs (both required — workflow never uses `--skip-versions` on dispatch):
+   - **twenty_app_version** — Twenty app version currently running on prod (e.g. `0.5.4`).
+   - **crmparser_image** — full image ref; prefer digest form `ghcr.io/3au4uk-1/crmparserv2@sha256:…` over a moving tag.
+4. Wait for green. Capture takes up to ~20 minutes (PG poll 10 min + volume polls 20 min).
+5. Download artifact **`release-manifest-<snapshotId>`** and spot-check `manifest.json`: all three component keys present, versions match prod.
+6. Optional: confirm `full-snapshots/<snapshotId>/manifest.json` in MinIO when `DOCKER_HOST_SSH_KEY` is configured.
+7. Only then merge staging → main and deploy.
+
+If capture fails, do **not** promote. Fix Dokploy/GitHub wiring or retry outside the `02:00` UTC nightly window to reduce poll races (see **Concurrency** under capture).
+
+### Nightly cron
+
+Scheduled runs use `TWENTY_APP_VERSION=nightly` and `CRMPARSER_IMAGE=ghcr.io/3au4uk-1/crmparserv2:latest`. Artifacts are retained 14 days. Expired snapshot folder prefixes (>7 days) are written to **`expired-snapshot-prefixes-<snapshotId>`** artifact (`expired.json`).
+
+Deletion of expired objects is best-effort when `DOCKER_HOST_SSH_KEY` is set (runs `mc rm --recursive` on the docker host). Without SSH secrets, operators must delete listed prefixes manually or enable secrets and re-run.
+
+### Required GitHub configuration checklist
+
+- [ ] Secrets: `DOKPLOY_URL`, `DOKPLOY_API_KEY`
+- [ ] Variables: `DOKPLOY_TWENTY_PG_BACKUP_ID`, `DOKPLOY_TWENTY_FILES_VOLUME_BACKUP_ID`, `DOKPLOY_CRMPARSER_VOLUME_BACKUP_ID`, `DOKPLOY_DESTINATION_ID`
+- [ ] Optional: `DOCKER_HOST_SSH_KEY` + `MINIO_*` / `DOCKER_HOST*` vars for MinIO manifest copy and prune deletion
 
 ## Dry-run without Dokploy
 
