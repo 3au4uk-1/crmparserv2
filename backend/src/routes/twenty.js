@@ -10,6 +10,7 @@ import {
   archiveManualTwentyLineItem,
   upsertManualTwentyLineItem,
 } from '../services/manual-twenty-line-item.js';
+import { lockDealItemAmount } from '../services/deal-item-amount-lock.js';
 import { scheduleListChangeResync } from '../services/list-change-resync.js';
 import { syncDealToTwenty } from '../services/twenty-sync.js';
 
@@ -33,6 +34,24 @@ router.get('/line-items/:twentyLineItemId/list-status', (req, res, next) => {
   try {
     const db = getDb();
     res.json(getLineItemListStatus(db, req.params.twentyLineItemId));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/line-items/:twentyLineItemId/amount', async (req, res, next) => {
+  try {
+    const db = getDb();
+    const amountRub = req.body?.amountRub;
+    const result = lockDealItemAmount(db, req.params.twentyLineItemId, amountRub);
+    const sync = await syncDealToTwenty(result.dealId, { ignoreLineItemStageProtection: true });
+    res.json({
+      success: true,
+      amountRub: result.amountRub,
+      opportunityAmountRub: result.opportunityAmountRub,
+      dealId: result.dealId,
+      sync,
+    });
   } catch (err) {
     next(err);
   }

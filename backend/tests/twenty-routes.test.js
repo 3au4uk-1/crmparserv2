@@ -115,6 +115,57 @@ describe('twenty routes', () => {
     });
   });
 
+  it('POST line-items amount locks sum and syncs deal', async () => {
+    const res = await request(createApp())
+      .post('/api/twenty/line-items/li-1/amount')
+      .set('Authorization', 'Bearer test-secret')
+      .send({ amountRub: 15000 });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      success: true,
+      amountRub: 15000,
+      opportunityAmountRub: 15000,
+      dealId: 1,
+      sync: { action: 'updated', twentyId: 'opp-1' },
+    });
+    expect(syncDealToTwentyMock).toHaveBeenCalledWith(1, { ignoreLineItemStageProtection: true });
+
+    const db = getDb();
+    const row = db.prepare('SELECT amount_locked, sum FROM deal_items WHERE twenty_id = ?').get('li-1');
+    expect(row.amount_locked).toBe(1);
+    expect(row.sum).toBe(15000);
+  });
+
+  it('POST line-items amount returns 404 for unknown id', async () => {
+    const res = await request(createApp())
+      .post('/api/twenty/line-items/li-missing/amount')
+      .set('Authorization', 'Bearer test-secret')
+      .send({ amountRub: 1000 });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toContain('Line item not found');
+    expect(syncDealToTwentyMock).not.toHaveBeenCalled();
+  });
+
+  it('POST line-items amount returns 400 for restoration item', async () => {
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO restoration_items (pattern, match_type, source_name)
+      VALUES ('banner', 'exact', 'Banner')
+    `).run();
+    resetPatternListsCacheForTests();
+
+    const res = await request(createApp())
+      .post('/api/twenty/line-items/li-1/amount')
+      .set('Authorization', 'Bearer test-secret')
+      .send({ amountRub: 15000 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('restoration');
+    expect(syncDealToTwentyMock).not.toHaveBeenCalled();
+  });
+
   it('POST add-to-list accepts ne_nashe_branding', async () => {
     const res = await request(createApp())
       .post('/api/twenty/line-items/li-1/add-to-list')
