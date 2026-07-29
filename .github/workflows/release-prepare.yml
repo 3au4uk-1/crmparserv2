@@ -150,16 +150,16 @@ jobs:
             const data = JSON.parse(fs.readFileSync('/tmp/expired-snapshots.json','utf8'));
             for (const p of data.expiredPrefixes || []) process.stdout.write(p + '\\n');
           ")
-          if [ -z "${{PREFIXES}}" ]; then
+          if [ -z "$${PREFIXES}" ]; then
             echo "No expired prefixes to delete"
             rm -f /tmp/expired-snapshots.json
             exit 0
           fi
           while IFS= read -r prefix; do
-            [ -z "${{prefix}}" ] && continue
-            echo "Deleting ${{MC_ALIAS}}/${{BUCKET}}/${{prefix}}"
-            mc rm --recursive --force "${{MC_ALIAS}}/${{BUCKET}}/${{prefix}}"
-          done <<< "${{PREFIXES}}"
+            [ -z "$${prefix}" ] && continue
+            echo "Deleting $${MC_ALIAS}/$${BUCKET}/$${prefix}"
+            mc rm --recursive --force "$${MC_ALIAS}/$${BUCKET}/$${prefix}"
+          done <<< "$${PREFIXES}"
           rm -f /tmp/expired-snapshots.json
           """)
           PY

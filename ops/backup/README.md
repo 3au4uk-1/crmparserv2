@@ -117,7 +117,7 @@ Twenty deploy credentials stay in BrandingTwentyView (`TWENTY_DEPLOY_URL`, `TWEN
 ### Required GitHub configuration checklist
 
 - [ ] Secrets: `DOKPLOY_URL`, `DOKPLOY_API_KEY`
-- [ ] Variables: `DOKPLOY_TWENTY_PG_BACKUP_ID`, `DOKPLOY_TWENTY_FILES_VOLUME_BACKUP_ID`, `DOKPLOY_CRMPARSER_VOLUME_BACKUP_ID`, `DOKPLOY_DESTINATION_ID`, `DOKPLOY_SCHEDULE_OPS_SYNC`, `DOKPLOY_SCHEDULE_OPS_RUN`
+- [ ] Variables: `DOKPLOY_TWENTY_PG_BACKUP_ID`, `DOKPLOY_TWENTY_FILES_VOLUME_BACKUP_ID`, `DOKPLOY_CRMPARSER_VOLUME_BACKUP_ID`, `DOKPLOY_DESTINATION_ID`, `DOKPLOY_SERVER_ID`, `DOKPLOY_SCHEDULE_OPS_SYNC`, `DOKPLOY_SCHEDULE_OPS_RUN`
 - [ ] One-time: run `ensure-schedules.mjs` (see [Dokploy schedule setup](#dokploy-schedule-setup-one-time))
 - [ ] Optional: `MINIO_MC_ALIAS` / `MINIO_BUCKET` (defaults `minio-home` / `dokploy`)
 - [ ] Rollback release: `BRANDING_TWENTYVIEW_DISPATCH_TOKEN`

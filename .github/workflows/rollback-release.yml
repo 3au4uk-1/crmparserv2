@@ -124,10 +124,10 @@ jobs:
           MC_ALIAS='${MC_ALIAS}'
           BUCKET='${BUCKET}'
           SNAP='${SNAP}'
-          mc cat "\${MC_ALIAS}/\${BUCKET}/full-snapshots/\${SNAP}/manifest.json" | base64 -w0
+          echo "MANIFEST_B64=$(mc cat "\${MC_ALIAS}/\${BUCKET}/full-snapshots/\${SNAP}/manifest.json" | base64 -w0)"
           EOF
           )
-          MANIFEST_B64=$(echo "${LOGS}" | tr -d '\r' | grep -E '^[A-Za-z0-9+/=]+$' | tail -n1)
+          MANIFEST_B64=$(echo "${LOGS}" | tr -d '\r' | grep '^MANIFEST_B64=' | tail -n1 | cut -d= -f2-)
           [ -n "${MANIFEST_B64}" ] || { echo "::error::Could not parse manifest base64 from remote logs"; exit 1; }
           echo "${MANIFEST_B64}" | base64 -d > manifest.json
           node --input-type=module -e "

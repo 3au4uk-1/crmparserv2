@@ -17,7 +17,7 @@ const SYNC_RELATIVE_PATHS = [
 ];
 
 function requireEnv(name) {
-  const v = process.env[name];
+  const v = process.env[name]?.trim();
   if (!v) throw new Error(`${name} is required`);
   return v;
 }
