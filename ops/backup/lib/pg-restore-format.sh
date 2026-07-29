@@ -26,8 +26,14 @@ needs_decompress() {
 pg_prepared_path() {
   local workdir="$1"
   local archive="$2"
+  local key="${3:-}"
   case "$archive" in
-    *.sql.gz|*.sql.xz) printf '%s/twenty-pg.sql' "$workdir" ;;
+    *.sql.gz|*.sql.xz)
+      case "$key" in
+        twenty_db/*) printf '%s/twenty-pg.decompressed' "$workdir" ;;
+        *) printf '%s/twenty-pg.sql' "$workdir" ;;
+      esac
+      ;;
     *.gz) printf '%s/twenty-pg.decompressed' "$workdir" ;;
     *.xz) printf '%s/twenty-pg.decompressed' "$workdir" ;;
     *) printf '%s' "$archive" ;;
@@ -38,11 +44,15 @@ pg_prepared_path() {
 pg_uses_psql() {
   local key="$1"
   local prepared="${2:-$1}"
+  case "$key" in
+    twenty_db/*) return 1 ;;
+  esac
   case "$prepared" in
     *.sql) return 0 ;;
   esac
   case "$key" in
-    *.sql|*.sql.gz|*.sql.xz) return 0 ;;
+    *.sql) return 0 ;;
+    *.sql.xz) return 0 ;;
   esac
   return 1
 }

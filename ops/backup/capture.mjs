@@ -6,9 +6,10 @@ import { createManifest } from './lib/manifest.js';
 import { normalizeBackupFileEntries, pollForNewBackupKey } from './lib/backup-files.js';
 import { validateCaptureVersions } from './lib/versions.js';
 
-const PG_SEARCH = 'twenty-pg';
-const TWENTY_FILES_SEARCH = 'full-snapshots/twenty-files';
-const CRMPARSER_SEARCH = 'full-snapshots/crmparser-sqlite';
+const DEFAULT_SERVER_ID = 'U9UZM_1xUvc-Uw_0YXMSmA';
+const PG_SEARCH = 'twenty_db/twenty-pg';
+const TWENTY_FILES_SEARCH = 'twenty_server/full-snapshots/twenty-files';
+const CRMPARSER_SEARCH = 'crmparser_crmparser/full-snapshots/crmparser-sqlite';
 const PG_TIMEOUT_MS = 10 * 60 * 1000;
 const VOLUME_TIMEOUT_MS = 20 * 60 * 1000;
 const POLL_INTERVAL_MS = 15_000;
@@ -36,6 +37,7 @@ Environment:
   DOKPLOY_URL, DOKPLOY_API_KEY (required)
   DOKPLOY_TWENTY_PG_BACKUP_ID, DOKPLOY_TWENTY_FILES_VOLUME_BACKUP_ID,
   DOKPLOY_CRMPARSER_VOLUME_BACKUP_ID, DOKPLOY_DESTINATION_ID (required)
+  DOKPLOY_SERVER_ID (optional, default ${DEFAULT_SERVER_ID})
   TWENTY_APP_VERSION, CRMPARSER_IMAGE (required unless --skip-versions)
   CRMPARSER_DIGEST (optional)
 `);
@@ -48,16 +50,18 @@ function requireEnv(name) {
 }
 
 function loadConfig() {
+  const serverId = process.env.DOKPLOY_SERVER_ID?.trim() || DEFAULT_SERVER_ID;
   return {
     pgBackupId: requireEnv('DOKPLOY_TWENTY_PG_BACKUP_ID'),
     twentyFilesBackupId: requireEnv('DOKPLOY_TWENTY_FILES_VOLUME_BACKUP_ID'),
     crmparserBackupId: requireEnv('DOKPLOY_CRMPARSER_VOLUME_BACKUP_ID'),
     destinationId: requireEnv('DOKPLOY_DESTINATION_ID'),
+    serverId,
   };
 }
 
-async function listEntries(client, destinationId, search) {
-  const raw = await client.listBackupFiles(destinationId, search);
+async function listEntries(client, destinationId, search, serverId) {
+  const raw = await client.listBackupFiles(destinationId, search, serverId);
   return normalizeBackupFileEntries(raw);
 }
 
@@ -76,23 +80,25 @@ async function capture({ out, skipVersions }) {
 
   process.stderr.write(`[capture] snapshotId=${snapshotId}\n`);
 
-  const pgBefore = (await listEntries(client, config.destinationId, PG_SEARCH)).map((e) => e.key);
+  const pgBefore = (await listEntries(client, config.destinationId, PG_SEARCH, config.serverId)).map(
+    (e) => e.key,
+  );
   process.stderr.write('[capture] triggering PG backup…\n');
   await client.manualBackupCompose(config.pgBackupId);
 
   const twentyPgKey = await pollForNewBackupKey(
-    () => listEntries(client, config.destinationId, PG_SEARCH),
+    () => listEntries(client, config.destinationId, PG_SEARCH, config.serverId),
     pgBefore,
     { timeoutMs: PG_TIMEOUT_MS, intervalMs: POLL_INTERVAL_MS, since: captureStartedAt },
   );
   process.stderr.write(`[capture] PG key: ${twentyPgKey}\n`);
 
-  const filesBefore = (await listEntries(client, config.destinationId, TWENTY_FILES_SEARCH)).map(
-    (e) => e.key,
-  );
-  const crmparserBefore = (await listEntries(client, config.destinationId, CRMPARSER_SEARCH)).map(
-    (e) => e.key,
-  );
+  const filesBefore = (
+    await listEntries(client, config.destinationId, TWENTY_FILES_SEARCH, config.serverId)
+  ).map((e) => e.key);
+  const crmparserBefore = (
+    await listEntries(client, config.destinationId, CRMPARSER_SEARCH, config.serverId)
+  ).map((e) => e.key);
 
   process.stderr.write('[capture] triggering volume backups…\n');
   await Promise.all([
@@ -107,12 +113,12 @@ async function capture({ out, skipVersions }) {
   };
   const [twentyFilesKey, crmparserKey] = await Promise.all([
     pollForNewBackupKey(
-      () => listEntries(client, config.destinationId, TWENTY_FILES_SEARCH),
+      () => listEntries(client, config.destinationId, TWENTY_FILES_SEARCH, config.serverId),
       filesBefore,
       pollOpts,
     ),
     pollForNewBackupKey(
-      () => listEntries(client, config.destinationId, CRMPARSER_SEARCH),
+      () => listEntries(client, config.destinationId, CRMPARSER_SEARCH, config.serverId),
       crmparserBefore,
       pollOpts,
     ),
