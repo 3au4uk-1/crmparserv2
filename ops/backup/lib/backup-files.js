@@ -20,6 +20,7 @@ export function parseBackupFileEntry(item) {
   if (!item || typeof item !== 'object') return null;
 
   const obj = /** @type {Record<string, unknown>} */ (item);
+  if (obj.IsDir === true || obj.isDir === true) return null;
   const key = obj.key ?? obj.Key ?? obj.path ?? obj.Path ?? obj.name;
   if (key == null || key === '') return null;
 
