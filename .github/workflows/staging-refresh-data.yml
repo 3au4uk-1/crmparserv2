@@ -123,6 +123,9 @@ jobs:
             ops/backup/restore-host.sh \
             ops/backup/restore-manifest.json \
             "${USER}@${HOST}:${REMOTE_DIR}/"
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new -r \
+            ops/backup/lib \
+            "${USER}@${HOST}:${REMOTE_DIR}/"
 
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" bash -s <<REMOTE
           set -euo pipefail
@@ -169,6 +172,9 @@ jobs:
           scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
             ops/backup/restore-host.sh \
             ops/backup/restore-manifest.json \
+            "${USER}@${HOST}:${REMOTE_DIR}/"
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new -r \
+            ops/backup/lib \
             "${USER}@${HOST}:${REMOTE_DIR}/"
 
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" bash -s <<REMOTE
