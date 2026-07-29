@@ -111,13 +111,20 @@ jobs:
           DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
           DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
           DOKPLOY_SCHEDULE_OPS_RUN: ${{ vars.DOKPLOY_SCHEDULE_OPS_RUN }}
+          MINIO_MC_ALIAS: ${{ vars.MINIO_MC_ALIAS }}
+          MINIO_BUCKET: ${{ vars.MINIO_BUCKET }}
           SNAPSHOT_ID: ${{ github.event.inputs.snapshot_id }}
         run: |
           set -euo pipefail
-          WORKDIR="/etc/dokploy/ops-backup/work/${SNAPSHOT_ID}"
+          MC_ALIAS="${MINIO_MC_ALIAS:-minio-home}"
+          BUCKET="${MINIO_BUCKET:-dokploy}"
+          SNAP='${SNAPSHOT_ID}'
           LOGS=$(cat <<EOF | node remote-run.mjs run
           set -euo pipefail
-          base64 -w0 "${WORKDIR}/manifest.json"
+          MC_ALIAS='${MC_ALIAS}'
+          BUCKET='${BUCKET}'
+          SNAP='${SNAP}'
+          mc cat "\${MC_ALIAS}/\${BUCKET}/full-snapshots/\${SNAP}/manifest.json" | base64 -w0
           EOF
           )
           MANIFEST_B64=$(echo "${LOGS}" | tr -d '\r' | grep -E '^[A-Za-z0-9+/=]+$' | tail -n1)
