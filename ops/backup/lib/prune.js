@@ -11,7 +11,7 @@ export function parseSnapshotTimeFromPrefix(prefix) {
 }
 
 export function listExpiredSnapshotPrefixes(prefixes, now = new Date(), retentionDays = 7) {
-  const cutoff = new Date(now.getTime() - (retentionDays + 1) * 24 * 60 * 60 * 1000);
+  const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000);
   return prefixes.filter((p) => {
     const t = parseSnapshotTimeFromPrefix(p);
     return t != null && t < cutoff;
