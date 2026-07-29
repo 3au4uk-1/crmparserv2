@@ -51,7 +51,30 @@ export function buildSyncScript(files, hostRoot = HOST_OPS_ROOT) {
 }
 
 export function parseRemoteOk(logs) {
-  return logs.split('\n').some((line) => line === REMOTE_OK_MARKER);
+  return logs.split(/\r?\n/).some((line) => line === REMOTE_OK_MARKER);
+}
+
+/** Dokploy server schedules often omit script stdout; success is signaled in wrapper logs. */
+export function parseDokployCommandSuccess(logs) {
+  return logs.includes('✅ Command executed successfully');
+}
+
+export function isRemoteJobSuccess(logs) {
+  return parseRemoteOk(logs) || parseDokployCommandSuccess(logs);
+}
+
+/** Prefer `command` for small scripts so Dokploy may capture stdout; large sync stays in `script`. */
+export const COMMAND_SCRIPT_MAX_BYTES = 80_000;
+
+export function chooseSchedulePayload(script, commandOverride) {
+  const bytes = Buffer.byteLength(script, 'utf8');
+  if (commandOverride != null) {
+    return { command: commandOverride, script };
+  }
+  if (bytes <= COMMAND_SCRIPT_MAX_BYTES) {
+    return { command: script, script: null };
+  }
+  return { command: 'bash', script };
 }
 
 export function parseMarkerValue(logs, key) {
@@ -122,6 +145,7 @@ export async function runScheduleJob({
 }) {
   // Dokploy schedule.update requires name + cronExpression (full schema).
   const existing = await client.scheduleOne(scheduleId);
+  const payload = chooseSchedulePayload(script, command);
   await client.scheduleUpdate({
     scheduleId,
     name: existing.name,
@@ -134,8 +158,7 @@ export async function runScheduleJob({
     enabled: existing.enabled ?? false,
     timezone: existing.timezone ?? 'UTC',
     shellType: existing.shellType ?? 'bash',
-    script,
-    command: command ?? 'bash',
+    ...payload,
   });
 
   const startedAt = now();
@@ -167,9 +190,9 @@ export async function runScheduleJob({
 
   const logs = normalizeLogs(await client.deploymentReadLogs(deployment.deploymentId));
 
-  if (deployment.status !== 'done' || !parseRemoteOk(logs)) {
+  if (deployment.status !== 'done' || !isRemoteJobSuccess(logs)) {
     throw new Error(
-      `Schedule job failed (status=${deployment.status}, remote-ok=${parseRemoteOk(logs)}): ${logTail(logs)}`,
+      `Schedule job failed (status=${deployment.status}, remote-ok=${parseRemoteOk(logs)}, dokploy-ok=${parseDokployCommandSuccess(logs)}): ${logTail(logs)}`,
     );
   }
 

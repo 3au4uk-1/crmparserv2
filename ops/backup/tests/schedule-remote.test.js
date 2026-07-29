@@ -183,4 +183,33 @@ describe('runScheduleJob', () => {
       }),
     ).rejects.toThrow(/Schedule job failed/);
   });
+
+  it('accepts Dokploy success emoji without remote-ok marker', async () => {
+    const client = {
+      scheduleOne: vi.fn(async () => ({
+        name: 'ops-backup-run',
+        cronExpression: '0 0 1 1 *',
+        scheduleType: 'server',
+        serverId: 'srv-1',
+        enabled: false,
+      })),
+      scheduleUpdate: vi.fn(async () => ({})),
+      scheduleRunManually: vi.fn(async () => ({})),
+      deploymentAllByType: vi.fn(async () => [
+        { deploymentId: 'd1', status: 'done', createdAt: '2026-07-29T12:00:01.000Z' },
+      ]),
+      deploymentReadLogs: vi.fn(async () => 'Running script\n✅ Command executed successfully\n'),
+    };
+    const result = await runScheduleJob({
+      client,
+      scheduleId: 'sch-1',
+      script: 'echo hi',
+      pollIntervalMs: 1,
+      timeoutMs: 500,
+      now: () => new Date('2026-07-29T12:00:00.000Z'),
+    });
+    expect(result.status).toBe('done');
+    expect(client.scheduleUpdate.mock.calls[0][0].command).toContain('echo hi');
+    expect(client.scheduleUpdate.mock.calls[0][0].script).toBe(null);
+  });
 });
