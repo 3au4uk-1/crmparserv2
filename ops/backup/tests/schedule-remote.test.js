@@ -10,6 +10,7 @@ import {
   runScheduleJob,
   HOST_OPS_ROOT,
   REMOTE_OK_MARKER,
+  SYNC_HEREDOC_DELIMITER,
 } from '../lib/schedule-remote.js';
 
 describe('wrapRemoteScript', () => {
@@ -28,16 +29,33 @@ describe('buildSyncScript', () => {
       { relativePath: 'lib/manifest.js', content: 'export const x = 1;\n' },
     ]);
     expect(script).toContain(`mkdir -p '${HOST_OPS_ROOT}/lib'`);
-    expect(script).toContain(`cat > '${HOST_OPS_ROOT}/restore-host.sh' <<'EOF'`);
+    expect(script).toContain(
+      `cat > '${HOST_OPS_ROOT}/restore-host.sh' <<'${SYNC_HEREDOC_DELIMITER}'`,
+    );
     expect(script).toContain('#!/bin/bash');
     expect(script).toContain(`chmod +x '${HOST_OPS_ROOT}/restore-host.sh'`);
-    expect(script).toContain(`cat > '${HOST_OPS_ROOT}/lib/manifest.js' <<'EOF'`);
+    expect(script).toContain(
+      `cat > '${HOST_OPS_ROOT}/lib/manifest.js' <<'${SYNC_HEREDOC_DELIMITER}'`,
+    );
   });
 
-  it('throws when file content contains a line exactly EOF', () => {
+  it('allows files that contain a plain EOF heredoc line', () => {
+    const script = buildSyncScript([
+      { relativePath: 'restore-host.sh', content: "cat <<'EOF'\nhelp\nEOF\n" },
+    ]);
+    expect(script).toContain("cat <<'EOF'");
+    expect(script).toContain(SYNC_HEREDOC_DELIMITER);
+  });
+
+  it('throws when file content contains the sync delimiter line', () => {
     expect(() =>
-      buildSyncScript([{ relativePath: 'bad.txt', content: 'hello\nEOF\nworld\n' }]),
-    ).toThrow(/exactly EOF/);
+      buildSyncScript([
+        {
+          relativePath: 'bad.txt',
+          content: `hello\n${SYNC_HEREDOC_DELIMITER}\nworld\n`,
+        },
+      ]),
+    ).toThrow(new RegExp(`exactly ${SYNC_HEREDOC_DELIMITER}`));
   });
 });
 

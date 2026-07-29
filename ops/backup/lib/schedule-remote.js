@@ -5,11 +5,17 @@ export function wrapRemoteScript(bodyScript) {
   return `set -euo pipefail\n${bodyScript}\necho '${REMOTE_OK_MARKER}'`;
 }
 
+/** Heredoc delimiter unlikely to appear in synced ops files (restore-host.sh uses EOF). */
+export const SYNC_HEREDOC_DELIMITER = 'CRMOPS_SYNC_EOF';
+
 export function buildSyncScript(files, hostRoot = HOST_OPS_ROOT) {
+  const delim = SYNC_HEREDOC_DELIMITER;
   for (const file of files) {
-    if (file.content.split('\n').some((line) => line === 'EOF')) {
+    if (
+      file.content.split(/\r?\n/).some((line) => line === delim)
+    ) {
       throw new Error(
-        `File content must not contain a line that is exactly EOF: ${file.relativePath}`,
+        `File content must not contain a line that is exactly ${delim}: ${file.relativePath}`,
       );
     }
   }
@@ -31,9 +37,9 @@ export function buildSyncScript(files, hostRoot = HOST_OPS_ROOT) {
 
   for (const file of files) {
     const fullPath = `${hostRoot}/${file.relativePath}`;
-    parts.push(`cat > '${fullPath}' <<'EOF'`);
-    parts.push(file.content.replace(/\n$/, ''));
-    parts.push('EOF');
+    parts.push(`cat > '${fullPath}' <<'${delim}'`);
+    parts.push(file.content.replace(/\r?\n$/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n'));
+    parts.push(delim);
     if (file.relativePath.endsWith('.sh')) {
       parts.push(`chmod +x '${fullPath}'`);
     }
