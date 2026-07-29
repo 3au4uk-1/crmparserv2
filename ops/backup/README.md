@@ -106,3 +106,59 @@ Trigger once after wiring GitHub vars:
 ```bash
 cd ops/backup && npm test
 ```
+
+## Capture orchestrator (`capture.mjs`)
+
+Triggers a tied full prod snapshot: PG compose backup + both volume backups, polls MinIO via Dokploy until each new artifact appears, then writes a manifest.
+
+```bash
+cd ops/backup
+export DOKPLOY_URL=...
+export DOKPLOY_API_KEY=...
+export DOKPLOY_TWENTY_PG_BACKUP_ID=0rInusnjJ7d64Z3Pvm31O
+export DOKPLOY_TWENTY_FILES_VOLUME_BACKUP_ID=oGxdDhtMUOUUL2GOhJrnz
+export DOKPLOY_CRMPARSER_VOLUME_BACKUP_ID=hjNHo-tuuwf_7UtDHQkOn
+export DOKPLOY_DESTINATION_ID=TfR-Va14SJniAB91hlgbt
+export TWENTY_APP_VERSION=0.5.4
+export CRMPARSER_IMAGE=ghcr.io/3au4uk-1/crmparserv2@sha256:...
+# optional: CRMPARSER_DIGEST=sha256:...
+
+node capture.mjs --out manifest.json
+```
+
+| Flag | Default | Notes |
+|------|---------|-------|
+| `--out` | `./manifest.json` | Manifest path (also printed to stdout) |
+| `--skip-versions` | off | Dry-run: sets `unknown` version placeholders |
+
+**Fail-closed:** any trigger error, poll timeout, or missing component key → exit 1; no manifest file is written.
+
+Polling:
+
+| Step | Search prefix | Timeout |
+|------|---------------|---------|
+| PG | `twenty-pg` | 10 min |
+| Twenty files volume | `full-snapshots/twenty-files` | 20 min |
+| crmparser volume | `full-snapshots/crmparser-sqlite` | 20 min |
+
+Poll interval: 15 s. New files are detected by diffing `listBackupFiles` results before/after trigger (Dokploy returns path strings, newest first).
+
+## Prune orchestrator (`prune.mjs`)
+
+Lists expired snapshot folder prefixes under `full-snapshots/YYYYMMDDTHHMMSSZ/` (7-day retention). Does **not** delete objects — v1 delegates deletion to the GitHub workflow.
+
+```bash
+node prune.mjs
+# stdout:
+# { "expiredPrefixes": ["full-snapshots/20260720T010000Z/", ...] }
+```
+
+**Workflow contract (Task 4):** parse `expiredPrefixes` from stdout JSON; for each prefix run `mc rm --recursive` on the MinIO bucket over SSH. Component volume prefixes (`full-snapshots/twenty-files`, `full-snapshots/crmparser-sqlite`) are managed by Dokploy `keepLatestCount`, not this prune pass.
+
+| Flag | Default |
+|------|---------|
+| `--retention-days` | `7` |
+
+## Dry-run without Dokploy
+
+Unit tests cover `normalizeBackupFileList`, `findNewBackupKey`, `pollForNewBackupKey`, `extractSnapshotPrefixesFromKeys`, and `resolveVersions`. Live Dokploy smoke requires secrets above; defer to low-traffic window after GitHub vars are set.

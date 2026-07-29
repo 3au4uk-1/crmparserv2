@@ -18,5 +18,15 @@ export function listExpiredSnapshotPrefixes(prefixes, now = new Date(), retentio
   });
 }
 
+/** @param {string[]} keys object keys from listBackupFiles */
+export function extractSnapshotPrefixesFromKeys(keys) {
+  const seen = new Set();
+  for (const key of keys) {
+    const m = String(key).match(/^(full-snapshots\/\d{8}T\d{6}Z\/)/);
+    if (m) seen.add(m[1]);
+  }
+  return [...seen].sort();
+}
+
 // re-export for tests that want id format compatibility
 export { buildSnapshotId };
