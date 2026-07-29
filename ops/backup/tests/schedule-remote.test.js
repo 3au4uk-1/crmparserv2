@@ -33,6 +33,12 @@ describe('buildSyncScript', () => {
     expect(script).toContain(`chmod +x '${HOST_OPS_ROOT}/restore-host.sh'`);
     expect(script).toContain(`cat > '${HOST_OPS_ROOT}/lib/manifest.js' <<'EOF'`);
   });
+
+  it('throws when file content contains a line exactly EOF', () => {
+    expect(() =>
+      buildSyncScript([{ relativePath: 'bad.txt', content: 'hello\nEOF\nworld\n' }]),
+    ).toThrow(/exactly EOF/);
+  });
 });
 
 describe('parseRemoteOk / parseMarkerValue', () => {
@@ -113,5 +119,26 @@ describe('runScheduleJob', () => {
         now: () => new Date('2026-07-29T12:00:00.000Z'),
       }),
     ).rejects.toThrow(/remote-ok/);
+  });
+
+  it('throws when deployment status is error even with remote-ok', async () => {
+    const client = {
+      scheduleUpdate: vi.fn(async () => ({})),
+      scheduleRunManually: vi.fn(async () => ({})),
+      deploymentAllByType: vi.fn(async () => [
+        { deploymentId: 'd1', status: 'error', createdAt: '2026-07-29T12:00:01.000Z' },
+      ]),
+      deploymentReadLogs: vi.fn(async () => 'failed\n[remote-ok]\n'),
+    };
+    await expect(
+      runScheduleJob({
+        client,
+        scheduleId: 'sch-1',
+        script: 'echo x',
+        pollIntervalMs: 1,
+        timeoutMs: 500,
+        now: () => new Date('2026-07-29T12:00:00.000Z'),
+      }),
+    ).rejects.toThrow(/Schedule job failed/);
   });
 });

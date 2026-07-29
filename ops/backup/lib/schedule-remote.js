@@ -90,11 +90,14 @@ function normalizeLogs(rawLogs) {
 
 function pickRunDeployment(deployments, startedAt) {
   const threshold = startedAt.getTime() - 2000;
-  const candidates = deployments.filter((d) => {
+  const eligible = deployments.filter((d) => {
     if (!d.createdAt) return false;
-    return new Date(d.createdAt).getTime() >= threshold;
+    const createdMs = new Date(d.createdAt).getTime();
+    if (createdMs >= threshold) return true;
+    return !isTerminalStatus(d.status);
   });
-  return candidates.length > 0 ? pickNewestDeployment(candidates) : pickNewestDeployment(deployments);
+  if (eligible.length === 0) return null;
+  return pickNewestDeployment(eligible);
 }
 
 function logTail(logs, lines = 20) {
@@ -107,7 +110,7 @@ export async function runScheduleJob({
   scheduleId,
   script,
   command,
-  pollIntervalMs = 2000,
+  pollIntervalMs = 5000,
   timeoutMs = 300000,
   now = () => new Date(),
 }) {
