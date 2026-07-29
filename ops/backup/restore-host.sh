@@ -7,6 +7,7 @@ TARGET=""
 SNAPSHOT_ID=""
 MANIFEST=""
 DRY_RUN=false
+SKIP_HTTP_HEALTH=false
 WORKDIR=""
 
 MC_ALIAS="${MINIO_MC_ALIAS:-minio-home}"
@@ -25,7 +26,7 @@ RESTORE_SUCCEEDED=false
 
 usage() {
   cat <<'EOF'
-Usage: restore-host.sh --target staging|prod --snapshot-id ID --manifest PATH [--dry-run] [--workdir DIR]
+Usage: restore-host.sh --target staging|prod --snapshot-id ID --manifest PATH [--dry-run] [--workdir DIR] [--skip-http-health]
 
 Restores twentyPg + twentyFiles + crmparserSqlite from a capture manifest into the
 target stack. Stops twenty + crmparser compose projects, restores data, then starts
@@ -78,6 +79,8 @@ parse_args() {
         WORKDIR="${2:-}"; shift 2 ;;
       --dry-run)
         DRY_RUN=true; shift ;;
+      --skip-http-health)
+        SKIP_HTTP_HEALTH=true; shift ;;
       -h|--help)
         usage; exit 0 ;;
       *)
@@ -136,11 +139,15 @@ validate_manifest() {
   local script_dir
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   if command -v node >/dev/null 2>&1 && [ -f "${script_dir}/lib/manifest.js" ]; then
-    (cd "$script_dir" && node --input-type=module -e "
+    if ! (cd "$script_dir" && node --input-type=module -e "
       import { readFileSync } from 'node:fs';
       import { assertManifest } from './lib/manifest.js';
       assertManifest(JSON.parse(readFileSync(process.argv[1], 'utf8')));
-    " "$MANIFEST") && return 0
+    " "$MANIFEST"); then
+      die "manifest validation failed"
+    fi
+    log "manifest validated"
+    return 0
   fi
   log "manifest shape check skipped (node/lib unavailable); proceeding with component keys"
 }
@@ -218,19 +225,25 @@ start_db_container() {
 
 decompress_if_needed() {
   local src="$1"
-  local out="$2"
+  local out="${2:-}"
+  if ! needs_decompress "$src"; then
+    printf '%s' "$src"
+    return 0
+  fi
+  if [ -z "$out" ]; then
+    case "$src" in
+      *.gz) out="${src%.gz}" ;;
+      *.xz) out="${src%.xz}" ;;
+    esac
+  fi
   case "$src" in
     *.gz)
-      if $DRY_RUN; then printf '[dry-run] gunzip -c %q > %q\n' "$src" "$out"; return 0; fi
+      if $DRY_RUN; then printf '[dry-run] gunzip -c %q > %q\n' "$src" "$out"; printf '%s' "$out"; return 0; fi
       gunzip -c "$src" > "$out"
       ;;
     *.xz)
-      if $DRY_RUN; then printf '[dry-run] xz -dc %q > %q\n' "$src" "$out"; return 0; fi
+      if $DRY_RUN; then printf '[dry-run] xz -dc %q > %q\n' "$src" "$out"; printf '%s' "$out"; return 0; fi
       xz -dc "$src" > "$out"
-      ;;
-    *)
-      printf '%s' "$src"
-      return 0
       ;;
   esac
   printf '%s' "$out"
@@ -238,14 +251,22 @@ decompress_if_needed() {
 
 restore_postgres() {
   local pg_key="$1"
-  local archive="${WORKDIR}/twenty-pg.dump"
-  local prepared=""
-  local db_id
+  local suffix archive prepared prepared_out db_id
+  suffix="$(pg_archive_suffix "$pg_key")"
+  archive="${WORKDIR}/twenty-pg${suffix}"
   download_component "$pg_key" "$archive"
 
   if $DRY_RUN; then
+    prepared_out="$(pg_prepared_path "$WORKDIR" "$archive")"
+    if needs_decompress "$archive"; then
+      printf '[dry-run] decompress %q -> %q\n' "$archive" "$prepared_out"
+    fi
+    if pg_uses_psql "$pg_key" "$prepared_out"; then
+      printf '[dry-run] restore via psql (%s)\n' "$prepared_out"
+    else
+      printf '[dry-run] restore via pg_restore (%s)\n' "$prepared_out"
+    fi
     printf '[dry-run] start db container for project %s\n' "$TWENTY_PROJECT"
-    printf '[dry-run] detect dump format and restore into %s (db=%s user=%s)\n' "$PG_VOLUME" "$PG_DB" "$PG_USER"
     return 0
   fi
 
@@ -261,7 +282,8 @@ restore_postgres() {
   }
   wait_pg || die "postgres not ready before restore"
 
-  prepared="$(decompress_if_needed "$archive" "${WORKDIR}/twenty-pg.prepared")"
+  prepared_out="$(pg_prepared_path "$WORKDIR" "$archive")"
+  prepared="$(decompress_if_needed "$archive" "$prepared_out")"
 
   log "terminating connections to ${PG_DB}"
   docker exec "$db_id" psql -U "$PG_USER" -d postgres -v ON_ERROR_STOP=1 -c \
@@ -272,18 +294,15 @@ restore_postgres() {
     -c "DROP DATABASE IF EXISTS \"${PG_DB}\";" \
     -c "CREATE DATABASE \"${PG_DB}\";"
 
-  case "$prepared" in
-    *.sql)
-      log "restore via psql (${prepared})"
-      docker exec -i "$db_id" psql -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 < "$prepared"
-      ;;
-    *)
-      log "restore via pg_restore (${prepared})"
-      docker cp "$prepared" "${db_id}:/tmp/restore.dump"
-      docker exec "$db_id" pg_restore -U "$PG_USER" -d "$PG_DB" --clean --if-exists --no-owner --no-privileges /tmp/restore.dump
-      docker exec "$db_id" rm -f /tmp/restore.dump
-      ;;
-  esac
+  if pg_uses_psql "$pg_key" "$prepared"; then
+    log "restore via psql (${prepared})"
+    docker exec -i "$db_id" psql -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 < "$prepared"
+  else
+    log "restore via pg_restore (${prepared})"
+    docker cp "$prepared" "${db_id}:/tmp/restore.dump"
+    docker exec "$db_id" pg_restore -U "$PG_USER" -d "$PG_DB" --clean --if-exists --no-owner --no-privileges /tmp/restore.dump
+    docker exec "$db_id" rm -f /tmp/restore.dump
+  fi
 
   log "postgres restore complete"
 }
@@ -363,8 +382,11 @@ wait_for_health() {
     --filter "label=com.docker.compose.project=${TWENTY_PROJECT}" \
     --filter "label=com.docker.compose.service=server" | head -n1)"
   if [ -z "$server_id" ]; then
-    log "twenty server container not found; skipping HTTP health check"
-    return 0
+    if $SKIP_HTTP_HEALTH; then
+      log "twenty server container not found; skipping HTTP health check (--skip-http-health)"
+      return 0
+    fi
+    die "twenty server container not found for project ${TWENTY_PROJECT}"
   fi
 
   local i
@@ -379,6 +401,11 @@ wait_for_health() {
 }
 
 main() {
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  # shellcheck source=lib/pg-restore-format.sh
+  source "${script_dir}/lib/pg-restore-format.sh"
+
   parse_args "$@"
   resolve_target
   validate_manifest

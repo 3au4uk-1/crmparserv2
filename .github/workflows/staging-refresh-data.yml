@@ -104,10 +104,9 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${DOCKER_HOST_SSH_KEY:-}" ]; then
-            echo "DOCKER_HOST_SSH_KEY not set — dry-run requires SSH to the docker host."
-            echo "Configure DOCKER_HOST_SSH_KEY, then re-run with dry_run=true."
-            bash ops/backup/restore-host.sh --help
-            exit 0
+            echo "::error::DOCKER_HOST_SSH_KEY is required for staging refresh dry-run."
+            echo "Configure secret DOCKER_HOST_SSH_KEY (private key for docker host CT 103), then re-run with dry_run=true."
+            exit 1
           fi
 
           HOST="${DOCKER_HOST:-10.50.50.132}"

@@ -120,6 +120,7 @@ Trigger once after wiring GitHub vars:
 
 ```bash
 cd ops/backup && npm test
+npm run test:pg-format   # bash: Dokploy .sql.gz → psql format detection
 ```
 
 ## Capture orchestrator (`capture.mjs`)
@@ -240,6 +241,7 @@ cd ops/backup
 | `--snapshot-id` | yes | Canonical id from capture manifest |
 | `--manifest` | yes | Local path to manifest JSON (component keys) |
 | `--dry-run` | no | Print actions; no stop/restore/start |
+| `--skip-http-health` | no | Skip Twenty `/healthz` wait (debug only; default fails if server missing) |
 | `--workdir` | no | Temp download dir (default `/tmp/restore-<id>-<pid>`) |
 
 **Target volume names:**
@@ -253,7 +255,7 @@ cd ops/backup
 
 1. Stop containers in compose projects `twenty-staging` + `crmparser-staging` (or prod equivalents) only.
 2. Download `twentyPg`, `twentyFiles`, `crmparserSqlite` objects from MinIO via `mc` (`MINIO_MC_ALIAS` / `MINIO_BUCKET`).
-3. Restore Postgres (detect `.sql` vs custom → `psql` / `pg_restore`).
+3. Restore Postgres: preserves suffix from manifest key (e.g. Dokploy `twenty-pg/*.sql.gz`); decompresses `.gz`/`.xz`; uses `psql` for `.sql`/`.sql.gz`/`.sql.xz`, else `pg_restore`.
 4. Extract volume tar archives into target Docker volumes.
 5. On **any** failure: exit 1, services stay stopped.
 6. On success: start stopped containers, wait for `pg_isready` + Twenty server `/healthz`.
@@ -281,7 +283,7 @@ Manual **Actions → Staging data refresh** on `staging` branch. Overwrites stag
 | `MINIO_MC_ALIAS` | Variable | Default `minio-home` (must exist on host) |
 | `MINIO_BUCKET` | Variable | Default `dokploy` |
 
-Without `DOCKER_HOST_SSH_KEY`: use `dry_run=true`, or pass `snapshot_id` only after configuring SSH. Live refresh fails closed with a clear error.
+Without `DOCKER_HOST_SSH_KEY`: live refresh **and** `dry_run=true` fail closed (workflow exit 1). Configure SSH before running either path.
 
 After live restore, workflow verifies `DISABLE_AUTO_PARSE=true` on the `crmparser-staging` container.
 
