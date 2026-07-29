@@ -23,6 +23,12 @@ import {
   useRestorationList,
   useAddRestorationItem,
   useRemoveRestorationItem,
+  useNeNasheBrandingList,
+  useAddNeNasheBrandingItem,
+  useRemoveNeNasheBrandingItem,
+  useNeNasheDecorMkList,
+  useAddNeNasheDecorMkItem,
+  useRemoveNeNasheDecorMkItem,
   useTipRules,
   useAddTipRule,
   useRemoveTipRule,
@@ -53,6 +59,11 @@ const TABS = [
   { id: 'integrations', label: 'Интеграции' },
   { id: 'directories', label: 'Справочники' },
   { id: 'data', label: 'Данные' },
+];
+
+const PARSING_DIRECTIONS = [
+  { id: 'branding', label: 'Брендинг и производство' },
+  { id: 'decor_mk', label: 'Декор и МК' },
 ];
 
 const TIP_ZONES = [
@@ -537,6 +548,8 @@ export default function Settings() {
   const { data: decorBlacklist } = useDecorBlacklist();
   const { data: mkBlacklist } = useMkBlacklist();
   const { data: restorationList } = useRestorationList();
+  const { data: neNasheBrandingList } = useNeNasheBrandingList();
+  const { data: neNasheDecorMkList } = useNeNasheDecorMkList();
   const { data: tipRules } = useTipRules();
   const { data: companies } = useCompanies();
   const updateSetting = useUpdateSetting();
@@ -551,6 +564,10 @@ export default function Settings() {
   const removeMkBlacklistItem = useRemoveMkBlacklistItem();
   const addRestorationItem = useAddRestorationItem();
   const removeRestorationItem = useRemoveRestorationItem();
+  const addNeNasheBrandingItem = useAddNeNasheBrandingItem();
+  const removeNeNasheBrandingItem = useRemoveNeNasheBrandingItem();
+  const addNeNasheDecorMkItem = useAddNeNasheDecorMkItem();
+  const removeNeNasheDecorMkItem = useRemoveNeNasheDecorMkItem();
   const addTipRule = useAddTipRule();
   const removeTipRule = useRemoveTipRule();
   const clearParsingData = useClearParsingData();
@@ -573,6 +590,13 @@ export default function Settings() {
   const [newRestorationPattern, setNewRestorationPattern] = useState('');
   const [newRestorationMatchType, setNewRestorationMatchType] = useState('exact');
   const [restorationError, setRestorationError] = useState('');
+  const [newNeNasheBrandingPattern, setNewNeNasheBrandingPattern] = useState('');
+  const [newNeNasheBrandingMatchType, setNewNeNasheBrandingMatchType] = useState('exact');
+  const [neNasheBrandingError, setNeNasheBrandingError] = useState('');
+  const [newNeNasheDecorMkPattern, setNewNeNasheDecorMkPattern] = useState('');
+  const [newNeNasheDecorMkMatchType, setNewNeNasheDecorMkMatchType] = useState('exact');
+  const [neNasheDecorMkError, setNeNasheDecorMkError] = useState('');
+  const [parsingDirection, setParsingDirection] = useState('branding');
   const [patternListBusy, setPatternListBusy] = useState(null);
   const [cookieValue, setCookieValue] = useState('');
 
@@ -701,9 +725,30 @@ export default function Settings() {
 
       {activeTab === 'parsing' && (
         <>
+          <nav
+            className="flex gap-1 overflow-x-auto pb-1 mb-6 border-b border-border"
+            aria-label="Направление парсинга"
+          >
+            {PARSING_DIRECTIONS.map((direction) => (
+              <button
+                key={direction.id}
+                type="button"
+                onClick={() => setParsingDirection(direction.id)}
+                className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors duration-200 ${
+                  parsingDirection === direction.id
+                    ? 'border-ink text-ink'
+                    : 'border-transparent text-ink-muted hover:text-ink'
+                }`}
+              >
+                {direction.label}
+              </button>
+            ))}
+          </nav>
+
+          {parsingDirection === 'branding' && (
           <DirectionGroup
             title="Брендинг и производство"
-            description="Ключевые слова, блеклист, реставрация и правила типов для основного потока и печати."
+            description="Ключевые слова, блеклист, «Не наше», реставрация и правила типов для основного потока и печати."
           >
           <Section
             title="Ключевые слова брендинга"
@@ -803,6 +848,67 @@ export default function Settings() {
           </Section>
 
           <Section
+            title="Не наше (брендинг)"
+            description="Позиции из списка синкаются с суммой 0 ₽; tipDetail «Не наши» не затрагивается. Можно добавить одно значение или несколько через запятую."
+          >
+            <div className="flex flex-wrap gap-2 mb-4">
+              {(neNasheBrandingList || []).map((entry) => (
+                <span
+                  key={entry.id}
+                  className="inline-flex items-center gap-1.5 bg-pastel-gray-bg text-pastel-gray-text px-2.5 py-1 rounded-md text-sm"
+                >
+                  {entry.sourceName || entry.pattern}
+                  <span className="text-xs opacity-70">
+                    ({entry.matchType === 'exact' ? 'точное' : 'фрагмент'})
+                  </span>
+                  <button
+                    onClick={() => removeNeNasheBrandingItem.mutate(entry.id)}
+                    className="opacity-60 hover:opacity-100 transition-opacity"
+                    aria-label="Удалить из списка «Не наше (брендинг)»"
+                  >
+                    &times;
+                  </button>
+                </span>
+              ))}
+            </div>
+            {neNasheBrandingError && (
+              <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-3">{neNasheBrandingError}</p>
+            )}
+            <div className="flex flex-wrap gap-2 items-end max-w-2xl">
+              <textarea
+                value={newNeNasheBrandingPattern}
+                onChange={(e) => setNewNeNasheBrandingPattern(e.target.value)}
+                rows={2}
+                className="input-field flex-1 min-w-[12rem]"
+                placeholder="Пример позиции «не наше»"
+              />
+              <select
+                value={newNeNasheBrandingMatchType}
+                onChange={(e) => setNewNeNasheBrandingMatchType(e.target.value)}
+                className="select-field"
+              >
+                <option value="exact">Точное</option>
+                <option value="substring">Фрагмент</option>
+              </select>
+              <button
+                onClick={() => handleAddPatterns({
+                  listKey: 'ne-nashe-branding',
+                  text: newNeNasheBrandingPattern,
+                  matchType: newNeNasheBrandingMatchType,
+                  mutateAsync: addNeNasheBrandingItem.mutateAsync,
+                  setError: setNeNasheBrandingError,
+                  clearInput: () => setNewNeNasheBrandingPattern(''),
+                  duplicateLabel: 'Уже в списке «Не наше (брендинг)»',
+                })}
+                disabled={!newNeNasheBrandingPattern.trim() || patternListBusy === 'ne-nashe-branding' || addNeNasheBrandingItem.isPending}
+                className="btn-primary btn-sm"
+              >
+                Добавить
+              </button>
+            </div>
+          </Section>
+
+          <Section
             title="Реставрация"
             description="Eligible-позиции из списка попадают в Twenty с суммой 0 ₽. Не eligible — не синкаются. Стадия не меняется. Можно добавить одно значение или несколько через запятую."
           >
@@ -875,10 +981,12 @@ export default function Settings() {
             />
           ))}
           </DirectionGroup>
+          )}
 
+          {parsingDirection === 'decor_mk' && (
           <DirectionGroup
             title="Декор и МК"
-            description="Ключевые слова и блеклисты для доски «МК и Декор»."
+            description="Ключевые слова, блеклисты и «Не наше» для доски «МК и Декор»."
           >
           <Section
             title="Ключевые слова декора"
@@ -1073,7 +1181,69 @@ export default function Settings() {
               </button>
             </div>
           </Section>
+
+          <Section
+            title="Не наше (декор/МК)"
+            description="Позиции из списка синкаются с суммой 0 ₽; tipDetail «Не наши» не затрагивается. Можно добавить одно значение или несколько через запятую."
+          >
+            <div className="flex flex-wrap gap-2 mb-4">
+              {(neNasheDecorMkList || []).map((entry) => (
+                <span
+                  key={entry.id}
+                  className="inline-flex items-center gap-1.5 bg-pastel-gray-bg text-pastel-gray-text px-2.5 py-1 rounded-md text-sm"
+                >
+                  {entry.sourceName || entry.pattern}
+                  <span className="text-xs opacity-70">
+                    ({entry.matchType === 'exact' ? 'точное' : 'фрагмент'})
+                  </span>
+                  <button
+                    onClick={() => removeNeNasheDecorMkItem.mutate(entry.id)}
+                    className="opacity-60 hover:opacity-100 transition-opacity"
+                    aria-label="Удалить из списка «Не наше (декор/МК)»"
+                  >
+                    &times;
+                  </button>
+                </span>
+              ))}
+            </div>
+            {neNasheDecorMkError && (
+              <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-3">{neNasheDecorMkError}</p>
+            )}
+            <div className="flex flex-wrap gap-2 items-end max-w-2xl">
+              <textarea
+                value={newNeNasheDecorMkPattern}
+                onChange={(e) => setNewNeNasheDecorMkPattern(e.target.value)}
+                rows={2}
+                className="input-field flex-1 min-w-[12rem]"
+                placeholder="Пример позиции «не наше»"
+              />
+              <select
+                value={newNeNasheDecorMkMatchType}
+                onChange={(e) => setNewNeNasheDecorMkMatchType(e.target.value)}
+                className="select-field"
+              >
+                <option value="exact">Точное</option>
+                <option value="substring">Фрагмент</option>
+              </select>
+              <button
+                onClick={() => handleAddPatterns({
+                  listKey: 'ne-nashe-decor-mk',
+                  text: newNeNasheDecorMkPattern,
+                  matchType: newNeNasheDecorMkMatchType,
+                  mutateAsync: addNeNasheDecorMkItem.mutateAsync,
+                  setError: setNeNasheDecorMkError,
+                  clearInput: () => setNewNeNasheDecorMkPattern(''),
+                  duplicateLabel: 'Уже в списке «Не наше (декор/МК)»',
+                })}
+                disabled={!newNeNasheDecorMkPattern.trim() || patternListBusy === 'ne-nashe-decor-mk' || addNeNasheDecorMkItem.isPending}
+                className="btn-primary btn-sm"
+              >
+                Добавить
+              </button>
+            </div>
+          </Section>
           </DirectionGroup>
+          )}
 
           <Section
             title="Расписание парсинга"
