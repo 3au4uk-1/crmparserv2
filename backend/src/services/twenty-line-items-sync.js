@@ -6,7 +6,7 @@ import { normalizePattern } from './blacklist.js';
 import { shouldZeroLineItemAmount } from './twenty-opportunity.js';
 import { findTipRuleMatch } from './tip-rules.js';
 import { logTwentyStep } from './twenty-sync-log.js';
-import { DEFAULT_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
+import { CANCELLED_OPPORTUNITY_STAGE, DEFAULT_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
 import { MANUAL_TWENTY_CLASSIFICATION } from './manual-twenty-line-item.js';
 
 /** Line items at this stage (or null) may be deleted/updated on re-sync. */
@@ -114,6 +114,45 @@ export async function deleteLineItem(gql, apiUrl, apiToken, lineItemId) {
     }`,
     { id: lineItemId }
   );
+}
+
+export async function cancelLineItemsForOpportunity(
+  gql,
+  apiUrl,
+  apiToken,
+  oppId,
+  {
+    cancelledStage = CANCELLED_OPPORTUNITY_STAGE,
+    assertHttpSuccess = null,
+    assertGqlSuccess = null,
+  } = {},
+) {
+  const existingLineItems = await listLineItemsForOpportunity(gql, apiUrl, apiToken, oppId);
+  let cancelled = 0;
+
+  for (const li of existingLineItems) {
+    if (li.stage === cancelledStage) continue;
+
+    logTwentyStep('line_items.cancel', { lineItemId: li.id, name: li.name, fromStage: li.stage });
+
+    const resp = await gql(
+      apiUrl,
+      apiToken,
+      `mutation UpdateDealLineItem($id: ID!, $input: DealLineItemUpdateInput!) {
+        updateDealLineItem(id: $id, data: $input) { id }
+      }`,
+      { id: li.id, input: { stage: cancelledStage } }
+    );
+
+    if (assertHttpSuccess) assertHttpSuccess(resp, apiUrl);
+    if (assertGqlSuccess) {
+      assertGqlSuccess(resp, `Failed to cancel line item "${li.name}" in Twenty`);
+    }
+
+    cancelled += 1;
+  }
+
+  return { cancelled, total: existingLineItems.length };
 }
 
 export async function syncLineItemsDiff({

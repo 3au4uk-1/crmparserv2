@@ -13,6 +13,7 @@ import {
 } from './twenty-items.js';
 import { buildWarehouseItemCreateInput } from './twenty-line-item.js';
 import {
+  cancelLineItemsForOpportunity,
   listLineItemsForOpportunity,
   syncLineItemsDiff,
 } from './twenty-line-items-sync.js';
@@ -631,6 +632,15 @@ export async function cancelDealInTwenty(dealId) {
     );
     assertHttpSuccess(oppResp, twenty.apiUrl);
     assertGqlSuccess(oppResp, 'Failed to cancel opportunity in Twenty');
+
+    const lineItemCancel = await cancelLineItemsForOpportunity(
+      gql,
+      twenty.apiUrl,
+      twenty.apiToken,
+      deal.twenty_id,
+      { assertHttpSuccess, assertGqlSuccess },
+    );
+    logTwentyStep('cancel.line_items', lineItemCancel);
 
     db.prepare(`
       UPDATE deals SET

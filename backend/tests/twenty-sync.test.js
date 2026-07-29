@@ -255,6 +255,49 @@ describe('syncDealToTwenty', () => {
     expect(runPrintSheetCycleMock).toHaveBeenCalledTimes(1);
   });
 
+  it('updates opportunity dates even when all line items are protected', async () => {
+    const dealId = dbMock.__seedDeal({
+      id: 7,
+      twenty_id: 'opp-dates',
+      approval_status: 'synced',
+      title: 'Dates deal',
+      start_date: '2026-06-16T00:00:00+03:00',
+      end_date: '2026-06-17T00:00:00+03:00',
+      load_date: '2026-06-16',
+      load_time: '04:00',
+      crm_event_id: 'e7',
+    });
+    dbMock.__seedItem({
+      deal_id: dealId,
+      name: 'Баннер',
+      price: 2000,
+      classification: 'keyword_match',
+      sync_override: null,
+    });
+
+    axiosPost
+      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-dates' } }))
+      .mockResolvedValueOnce(gqlOk({
+        dealLineItems: { edges: [{ node: { id: 'li-protected', name: 'Баннер', stage: 'V_PECHATI' } }] },
+      }));
+
+    runPrintSheetCycleMock.mockResolvedValue({ exported: 0, readbackUpdated: 0, sessionsCleared: 0 });
+
+    await syncDealToTwenty(dealId);
+
+    const oppUpdateCall = axiosPost.mock.calls.find(([_, body]) =>
+      body.query.includes('updateOpportunity')
+    );
+    expect(oppUpdateCall).toBeTruthy();
+    expect(oppUpdateCall[1].variables.input.closeDate).toBeTruthy();
+    expect(oppUpdateCall[1].variables.input.loadDate).toBe('2026-06-16T04:00:00+03:00');
+
+    const lineItemUpdateCalls = axiosPost.mock.calls.filter(([_, body]) =>
+      body.query.includes('updateDealLineItem')
+    );
+    expect(lineItemUpdateCalls).toHaveLength(0);
+  });
+
   it('cancels opportunity when deal disappears from calendar', async () => {
     const dealId = dbMock.__seedDeal({
       id: 3,
@@ -266,12 +309,36 @@ describe('syncDealToTwenty', () => {
       twenty_stage: null,
     });
 
-    axiosPost.mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-cancel' } }));
+    axiosPost
+      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-cancel' } }))
+      .mockResolvedValueOnce(gqlOk({
+        dealLineItems: {
+          edges: [
+            { node: { id: 'li-novyy', name: 'Баннер', stage: 'NOVYY' } },
+            { node: { id: 'li-protected', name: 'Ролл-ап', stage: 'V_PECHATI' } },
+            { node: { id: 'li-cancelled', name: 'Наклейка', stage: 'OTMENA' } },
+          ],
+        },
+      }))
+      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-novyy' } }))
+      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-protected' } }));
 
     const result = await cancelDealInTwenty(dealId);
 
     expect(result.action).toBe('cancelled');
     expect(axiosPost.mock.calls[0][1].variables.input.stage).toBe('OTMENA');
+
+    const lineItemCancelCalls = axiosPost.mock.calls.filter(([_, body]) =>
+      body.query.includes('updateDealLineItem')
+    );
+    expect(lineItemCancelCalls).toHaveLength(2);
+    expect(lineItemCancelCalls.map(([, body]) => body.variables.id).sort()).toEqual([
+      'li-novyy',
+      'li-protected',
+    ]);
+    for (const [, body] of lineItemCancelCalls) {
+      expect(body.variables.input.stage).toBe('OTMENA');
+    }
   });
 
   it('skips cancel when deal already cancelled in Twenty', async () => {
