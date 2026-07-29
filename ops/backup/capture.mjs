@@ -3,8 +3,8 @@ import { writeFileSync } from 'node:fs';
 import { createDokployClient } from './lib/dokploy-client.js';
 import { buildSnapshotId } from './lib/snapshot-id.js';
 import { createManifest } from './lib/manifest.js';
-import { normalizeBackupFileList, pollForNewBackupKey } from './lib/backup-files.js';
-import { resolveVersions } from './lib/versions.js';
+import { normalizeBackupFileEntries, pollForNewBackupKey } from './lib/backup-files.js';
+import { validateCaptureVersions } from './lib/versions.js';
 
 const PG_SEARCH = 'twenty-pg';
 const TWENTY_FILES_SEARCH = 'full-snapshots/twenty-files';
@@ -56,36 +56,43 @@ function loadConfig() {
   };
 }
 
-async function listKeys(client, destinationId, search) {
+async function listEntries(client, destinationId, search) {
   const raw = await client.listBackupFiles(destinationId, search);
-  return normalizeBackupFileList(raw);
+  return normalizeBackupFileEntries(raw);
 }
 
 async function capture({ out, skipVersions }) {
+  const versions = validateCaptureVersions(process.env, { skipVersions });
+
   const config = loadConfig();
   const client = createDokployClient({
     baseUrl: process.env.DOKPLOY_URL,
     apiKey: process.env.DOKPLOY_API_KEY,
   });
 
-  const snapshotId = buildSnapshotId();
-  const createdAt = new Date().toISOString();
+  const captureStartedAt = new Date();
+  const snapshotId = buildSnapshotId(captureStartedAt);
+  const createdAt = captureStartedAt.toISOString();
 
   process.stderr.write(`[capture] snapshotId=${snapshotId}\n`);
 
-  const pgBefore = await listKeys(client, config.destinationId, PG_SEARCH);
+  const pgBefore = (await listEntries(client, config.destinationId, PG_SEARCH)).map((e) => e.key);
   process.stderr.write('[capture] triggering PG backup…\n');
   await client.manualBackupCompose(config.pgBackupId);
 
   const twentyPgKey = await pollForNewBackupKey(
-    () => listKeys(client, config.destinationId, PG_SEARCH),
+    () => listEntries(client, config.destinationId, PG_SEARCH),
     pgBefore,
-    { timeoutMs: PG_TIMEOUT_MS, intervalMs: POLL_INTERVAL_MS },
+    { timeoutMs: PG_TIMEOUT_MS, intervalMs: POLL_INTERVAL_MS, since: captureStartedAt },
   );
   process.stderr.write(`[capture] PG key: ${twentyPgKey}\n`);
 
-  const filesBefore = await listKeys(client, config.destinationId, TWENTY_FILES_SEARCH);
-  const crmparserBefore = await listKeys(client, config.destinationId, CRMPARSER_SEARCH);
+  const filesBefore = (await listEntries(client, config.destinationId, TWENTY_FILES_SEARCH)).map(
+    (e) => e.key,
+  );
+  const crmparserBefore = (await listEntries(client, config.destinationId, CRMPARSER_SEARCH)).map(
+    (e) => e.key,
+  );
 
   process.stderr.write('[capture] triggering volume backups…\n');
   await Promise.all([
@@ -93,22 +100,25 @@ async function capture({ out, skipVersions }) {
     client.runVolumeBackup(config.crmparserBackupId),
   ]);
 
+  const pollOpts = {
+    timeoutMs: VOLUME_TIMEOUT_MS,
+    intervalMs: POLL_INTERVAL_MS,
+    since: captureStartedAt,
+  };
   const [twentyFilesKey, crmparserKey] = await Promise.all([
     pollForNewBackupKey(
-      () => listKeys(client, config.destinationId, TWENTY_FILES_SEARCH),
+      () => listEntries(client, config.destinationId, TWENTY_FILES_SEARCH),
       filesBefore,
-      { timeoutMs: VOLUME_TIMEOUT_MS, intervalMs: POLL_INTERVAL_MS },
+      pollOpts,
     ),
     pollForNewBackupKey(
-      () => listKeys(client, config.destinationId, CRMPARSER_SEARCH),
+      () => listEntries(client, config.destinationId, CRMPARSER_SEARCH),
       crmparserBefore,
-      { timeoutMs: VOLUME_TIMEOUT_MS, intervalMs: POLL_INTERVAL_MS },
+      pollOpts,
     ),
   ]);
   process.stderr.write(`[capture] twenty-files key: ${twentyFilesKey}\n`);
   process.stderr.write(`[capture] crmparser key: ${crmparserKey}\n`);
-
-  const versions = resolveVersions(process.env, { skipVersions });
 
   const manifest = createManifest({
     snapshotId,

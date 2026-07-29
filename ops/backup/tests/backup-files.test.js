@@ -1,11 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   normalizeBackupFileList,
+  normalizeBackupFileEntries,
+  parseBackupFileEntry,
   findNewBackupKey,
   pollForNewBackupKey,
 } from '../lib/backup-files.js';
 import { extractSnapshotPrefixesFromKeys } from '../lib/prune.js';
-import { resolveVersions } from '../lib/versions.js';
+import { resolveVersions, validateCaptureVersions } from '../lib/versions.js';
 
 describe('normalizeBackupFileList', () => {
   it('accepts bare string array from Dokploy', () => {
@@ -25,16 +27,53 @@ describe('normalizeBackupFileList', () => {
   });
 });
 
+describe('normalizeBackupFileEntries', () => {
+  it('parses objects with LastModified', () => {
+    const entries = normalizeBackupFileEntries([
+      { Key: 'twenty-pg/a.sql.gz', LastModified: '2026-07-29T15:30:00.000Z' },
+    ]);
+    expect(entries[0].key).toBe('twenty-pg/a.sql.gz');
+    expect(entries[0].modifiedAt?.toISOString()).toBe('2026-07-29T15:30:00.000Z');
+  });
+});
+
+describe('parseBackupFileEntry', () => {
+  it('accepts path-only strings', () => {
+    expect(parseBackupFileEntry('a/b')).toEqual({ key: 'a/b' });
+  });
+});
+
 describe('findNewBackupKey', () => {
-  it('returns first new key preserving Dokploy newest-first order', () => {
+  it('returns first new key preserving Dokploy newest-first order (path-only)', () => {
     const before = ['twenty-pg/old.sql.gz'];
-    const after = ['twenty-pg/new.sql.gz', 'twenty-pg/old.sql.gz'];
+    const after = [{ key: 'twenty-pg/new.sql.gz' }, { key: 'twenty-pg/old.sql.gz' }];
     expect(findNewBackupKey(before, after)).toBe('twenty-pg/new.sql.gz');
   });
 
   it('returns null when no new keys', () => {
-    const keys = ['a', 'b'];
-    expect(findNewBackupKey(keys, keys)).toBeNull();
+    const keys = [{ key: 'a' }, { key: 'b' }];
+    expect(findNewBackupKey(['a', 'b'], keys)).toBeNull();
+  });
+
+  it('prefers newest timed entry at or after capture start', () => {
+    const since = new Date('2026-07-29T15:00:00.000Z');
+    const before = ['twenty-pg/old.sql.gz'];
+    const after = [
+      { key: 'twenty-pg/concurrent.sql.gz', modifiedAt: new Date('2026-07-29T14:59:00.000Z') },
+      { key: 'twenty-pg/ours.sql.gz', modifiedAt: new Date('2026-07-29T15:05:00.000Z') },
+      { key: 'twenty-pg/old.sql.gz', modifiedAt: new Date('2026-07-29T10:00:00.000Z') },
+    ];
+    expect(findNewBackupKey(before, after, { since })).toBe('twenty-pg/ours.sql.gz');
+  });
+
+  it('ignores timed newcomers before capture start when all have mtime', () => {
+    const since = new Date('2026-07-29T15:00:00.000Z');
+    const before = ['twenty-pg/old.sql.gz'];
+    const after = [
+      { key: 'twenty-pg/concurrent.sql.gz', modifiedAt: new Date('2026-07-29T14:59:00.000Z') },
+      { key: 'twenty-pg/old.sql.gz' },
+    ];
+    expect(findNewBackupKey(before, after, { since })).toBeNull();
   });
 });
 
@@ -58,7 +97,7 @@ describe('pollForNewBackupKey', () => {
     let n = 0;
     const listFn = vi.fn(async () => {
       n++;
-      return n === 1 ? ['a'] : ['b', 'a'];
+      return n === 1 ? [{ key: 'a' }] : [{ key: 'b' }, { key: 'a' }];
     });
     const key = await pollForNewBackupKey(listFn, ['a'], {
       timeoutMs: 1000,
@@ -70,7 +109,7 @@ describe('pollForNewBackupKey', () => {
   });
 
   it('throws on timeout', async () => {
-    const listFn = vi.fn(async () => ['same']);
+    const listFn = vi.fn(async () => [{ key: 'same' }]);
     await expect(
       pollForNewBackupKey(listFn, ['same'], {
         timeoutMs: 5,
@@ -104,6 +143,25 @@ describe('resolveVersions', () => {
     expect(resolveVersions({}, { skipVersions: true })).toEqual({
       crmparserImage: 'unknown',
       twentyAppVersion: 'unknown',
+    });
+  });
+});
+
+describe('validateCaptureVersions', () => {
+  it('delegates to resolveVersions for fail-fast preflight', () => {
+    expect(() => validateCaptureVersions({})).toThrow(/TWENTY_APP_VERSION/);
+    expect(() => validateCaptureVersions({ TWENTY_APP_VERSION: '1.0' })).toThrow(/CRMPARSER_IMAGE/);
+  });
+
+  it('returns resolved versions when env is complete', () => {
+    expect(
+      validateCaptureVersions({
+        TWENTY_APP_VERSION: '0.5.4',
+        CRMPARSER_IMAGE: 'ghcr.io/org/app:tag',
+      }),
+    ).toEqual({
+      crmparserImage: 'ghcr.io/org/app:tag',
+      twentyAppVersion: '0.5.4',
     });
   });
 });

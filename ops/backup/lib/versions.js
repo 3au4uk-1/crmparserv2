@@ -1,4 +1,13 @@
 /**
+ * Fail-fast gate for capture.mjs — validates version env before backup triggers.
+ * @param {NodeJS.ProcessEnv} env
+ * @param {{ skipVersions?: boolean }} opts
+ */
+export function validateCaptureVersions(env, { skipVersions = false } = {}) {
+  return resolveVersions(env, { skipVersions });
+}
+
+/**
  * Resolve manifest version fields from environment.
  * @param {NodeJS.ProcessEnv} env
  * @param {{ skipVersions?: boolean }} opts

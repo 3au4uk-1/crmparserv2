@@ -141,7 +141,13 @@ Polling:
 | Twenty files volume | `full-snapshots/twenty-files` | 20 min |
 | crmparser volume | `full-snapshots/crmparser-sqlite` | 20 min |
 
-Poll interval: 15 s. New files are detected by diffing `listBackupFiles` results before/after trigger (Dokploy returns path strings, newest first).
+Poll interval: 15 s. New files are detected by diffing `listBackupFiles` results before/after trigger. When the API returns object entries with `modifiedAt` / `LastModified`, capture picks the newest new key with mtime ≥ capture start. Otherwise it uses set-diff on path strings (Dokploy returns newest first).
+
+**Version fail-fast:** `TWENTY_APP_VERSION` and `CRMPARSER_IMAGE` are validated before any backup is triggered (unless `--skip-versions`), so misconfigured runs fail in seconds instead of after poll timeouts.
+
+### Concurrency
+
+Nightly cron (`0 2 * * *`) and a manual `release-prepare` capture can overlap. Poll logic snapshots known keys immediately before each trigger, then waits for a key not in that set. If Dokploy returns only path strings (typical today), a concurrent job that finishes first may produce the "new" key capture binds to — run manual captures outside the nightly window when possible, or accept that the manifest points at whichever backup finished first during overlap. Timestamp-aware selection applies when the list API exposes mtime metadata.
 
 ## Prune orchestrator (`prune.mjs`)
 
