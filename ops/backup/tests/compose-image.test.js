@@ -32,7 +32,7 @@ describe('resolveCrmparserImageRef', () => {
         crmparserImage: 'ghcr.io/3au4uk-1/crmparserv2:abc123',
         crmparserDigest: 'sha256:deadbeef',
       }),
-    ).toBe('ghcr.io/3au4uk-1/crmparserv2:abc123@sha256:deadbeef');
+    ).toBe('ghcr.io/3au4uk-1/crmparserv2@sha256:deadbeef');
   });
 
   it('returns image as-is when already digest-pinned', () => {

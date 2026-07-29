@@ -51,7 +51,12 @@ export function resolveCrmparserImageRef(versions) {
   if (img.includes('@sha256:')) return img;
   const digest = versions?.crmparserDigest?.trim();
   if (digest) {
-    const base = img.split('@')[0];
+    let base = img.split('@')[0];
+    const lastSlash = base.lastIndexOf('/');
+    const lastColon = base.lastIndexOf(':');
+    if (lastColon > lastSlash) {
+      base = base.slice(0, lastColon);
+    }
     const normalized = digest.startsWith('sha256:') ? digest : `sha256:${digest}`;
     return `${base}@${normalized}`;
   }

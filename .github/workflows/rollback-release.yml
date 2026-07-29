@@ -79,11 +79,25 @@ jobs:
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "${USER}@${HOST}" \
             "rm -f '${REMOTE_MANIFEST}'"
 
-          TWENTY_VERSION=$(node --input-type=module -e "import { readFileSync } from 'node:fs'; console.log(JSON.parse(readFileSync('${MANIFEST_LOCAL}','utf8')).versions.twentyAppVersion)")
-          TWENTY_REF=$(node --input-type=module -e "import { readFileSync } from 'node:fs'; const v=JSON.parse(readFileSync('${MANIFEST_LOCAL}','utf8')).versions; console.log(v.twentyAppGitSha||'')")
           echo "id=${SNAPSHOT_ID}" >> "$GITHUB_OUTPUT"
-          echo "twenty_version=${TWENTY_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "twenty_ref=${TWENTY_REF}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate manifest
+        id: validate
+        working-directory: ops/backup
+        env:
+          SNAPSHOT_ID: ${{ github.event.inputs.snapshot_id }}
+        run: |
+          node --input-type=module -e "
+          import { readFileSync, appendFileSync } from 'node:fs';
+          import { assertManifest } from './lib/manifest.js';
+          const manifest = JSON.parse(readFileSync('manifest.json', 'utf8'));
+          assertManifest(manifest);
+          if (manifest.snapshotId !== process.env.SNAPSHOT_ID) {
+            throw new Error(\`manifest snapshotId \${manifest.snapshotId} does not match input \${process.env.SNAPSHOT_ID}\`);
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, 'twenty_version=' + manifest.versions.twentyAppVersion + '\n');
+          appendFileSync(process.env.GITHUB_OUTPUT, 'twenty_ref=' + (manifest.versions.twentyAppGitSha || '') + '\n');
+          "
 
       - name: Restore prod data on docker host
         env:
@@ -132,8 +146,8 @@ jobs:
       - name: Trigger Twenty app rollback in BrandingTwentyView
         env:
           DISPATCH_TOKEN: ${{ secrets.BRANDING_TWENTYVIEW_DISPATCH_TOKEN }}
-          TWENTY_VERSION: ${{ steps.resolve.outputs.twenty_version }}
-          TWENTY_REF: ${{ steps.resolve.outputs.twenty_ref }}
+          TWENTY_VERSION: ${{ steps.validate.outputs.twenty_version }}
+          TWENTY_REF: ${{ steps.validate.outputs.twenty_ref }}
           SNAPSHOT_ID: ${{ steps.resolve.outputs.id }}
         run: |
           set -euo pipefail

@@ -32,6 +32,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install ops/backup deps
+        working-directory: ops/backup
+        run: npm ci || npm install
+
       - name: Fetch manifest from MinIO
         id: resolve
         env:
@@ -71,6 +80,21 @@ jobs:
             "rm -f '${REMOTE_MANIFEST}'"
 
           echo "id=${SNAPSHOT_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate manifest
+        working-directory: ops/backup
+        env:
+          SNAPSHOT_ID: ${{ github.event.inputs.snapshot_id }}
+        run: |
+          node --input-type=module -e "
+          import { readFileSync } from 'node:fs';
+          import { assertManifest } from './lib/manifest.js';
+          const manifest = JSON.parse(readFileSync('restore-manifest.json', 'utf8'));
+          assertManifest(manifest);
+          if (manifest.snapshotId !== process.env.SNAPSHOT_ID) {
+            throw new Error(\`manifest snapshotId \${manifest.snapshotId} does not match input \${process.env.SNAPSHOT_ID}\`);
+          }
+          "
 
       - name: Restore prod data on docker host
         env:
