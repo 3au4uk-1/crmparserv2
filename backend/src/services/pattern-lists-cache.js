@@ -1,4 +1,6 @@
 import { loadRestorationList } from './restoration.js';
+import { loadNeNasheBrandingList } from './ne-nashe-branding.js';
+import { loadNeNasheDecorMkList } from './ne-nashe-decor-mk.js';
 import { loadTipRules } from './tip-rules.js';
 import { loadProductStreamContext } from './twenty-items.js';
 
@@ -18,6 +20,8 @@ export function getCachedPatternLists(db) {
     // Keep legacy key for callers that still expect `blacklist`.
     blacklist: streamContext.brandingBlacklist,
     restorationList: loadRestorationList(db),
+    neNasheBrandingList: loadNeNasheBrandingList(db),
+    neNasheDecorMkList: loadNeNasheDecorMkList(db),
     tipRules: loadTipRules(db),
   };
   cacheAt = Date.now();

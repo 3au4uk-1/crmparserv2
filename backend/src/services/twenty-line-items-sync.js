@@ -3,7 +3,7 @@ import {
   buildLineItemUpdateInput,
 } from './twenty-line-item.js';
 import { normalizePattern } from './blacklist.js';
-import { isRestorationItem } from './restoration.js';
+import { shouldZeroLineItemAmount } from './twenty-opportunity.js';
 import { findTipRuleMatch } from './tip-rules.js';
 import { logTwentyStep } from './twenty-sync-log.js';
 import { DEFAULT_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
@@ -129,6 +129,8 @@ export async function syncLineItemsDiff({
   db,
   deal = null,
   restorationList = [],
+  neNasheBrandingList = [],
+  neNasheDecorMkList = [],
   tipRules = [],
   ignoreStageProtection = false,
 }) {
@@ -141,7 +143,13 @@ export async function syncLineItemsDiff({
     },
   );
 
-  const lineItemOptions = { deal, restorationList, tipRules };
+  const lineItemOptions = {
+    deal,
+    restorationList,
+    neNasheBrandingList,
+    neNasheDecorMkList,
+    tipRules,
+  };
 
   logTwentyStep('line_items.diff', {
     toUpdate: toUpdate.length,
@@ -157,7 +165,11 @@ export async function syncLineItemsDiff({
     logTwentyStep('line_items.preserved', { items: preserved });
   }
 
-  const zeroed = eligibleItems.filter((i) => isRestorationItem(i.name, restorationList));
+  const zeroed = eligibleItems.filter((i) => shouldZeroLineItemAmount(i.name, {
+    restorationList,
+    neNasheBrandingList,
+    neNasheDecorMkList,
+  }));
   if (zeroed.length) {
     logTwentyStep('line_items.restoration_zero', { names: zeroed.map((i) => i.name) });
   }

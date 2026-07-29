@@ -20,6 +20,8 @@ describe('twenty-line-item-api', () => {
     db.prepare('DELETE FROM restoration_items').run();
     db.prepare('DELETE FROM decor_blacklist_items').run();
     db.prepare('DELETE FROM mk_blacklist_items').run();
+    db.prepare('DELETE FROM ne_nashe_branding_items').run();
+    db.prepare('DELETE FROM ne_nashe_decor_mk_items').run();
 
     const dealResult = db.prepare(`
       INSERT INTO deals (crm_event_id, deal_key, data_source, title, twenty_id, approval_status)
@@ -52,6 +54,8 @@ describe('twenty-line-item-api', () => {
       decorBlacklisted: false,
       mkBlacklisted: false,
       restorationMatch: false,
+      neNasheBrandingMatch: false,
+      neNasheDecorMkMatch: false,
       podryadMatch: false,
       bannerMatch: false,
       pattern: null,
@@ -101,6 +105,8 @@ describe('twenty-line-item-api', () => {
       decorBlacklisted: false,
       mkBlacklisted: false,
       restorationMatch: false,
+      neNasheBrandingMatch: false,
+      neNasheDecorMkMatch: false,
       podryadMatch: false,
       bannerMatch: false,
       pattern: null,
@@ -138,6 +144,34 @@ describe('twenty-line-item-api', () => {
     const db = getDb();
     addDealItemToList(db, 'li-twenty-1', 'mk_blacklist');
     const rows = db.prepare('SELECT * FROM mk_blacklist_items').all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].pattern).toBe('велотележка для мороженого');
+  });
+
+  it('getLineItemListStatus reflects ne-nashe branding match', () => {
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO ne_nashe_branding_items (pattern, match_type, source_name)
+      VALUES ('велотележка для мороженого', 'exact', 'Велотележка для мороженого')
+    `).run();
+
+    const status = getLineItemListStatus(db, 'li-twenty-1');
+    expect(status.neNasheBrandingMatch).toBe(true);
+    expect(status.neNasheDecorMkMatch).toBe(false);
+  });
+
+  it('addDealItemToList creates ne-nashe branding entry', () => {
+    const db = getDb();
+    addDealItemToList(db, 'li-twenty-1', 'ne_nashe_branding');
+    const rows = db.prepare('SELECT * FROM ne_nashe_branding_items').all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].pattern).toBe('велотележка для мороженого');
+  });
+
+  it('addDealItemToList creates ne-nashe decor-mk entry', () => {
+    const db = getDb();
+    addDealItemToList(db, 'li-twenty-1', 'ne_nashe_decor_mk');
+    const rows = db.prepare('SELECT * FROM ne_nashe_decor_mk_items').all();
     expect(rows).toHaveLength(1);
     expect(rows[0].pattern).toBe('велотележка для мороженого');
   });

@@ -7,9 +7,16 @@ export function buildWarehouseItemCreateInput(name, position = 'first') {
 }
 
 function buildLineItemFields(item, options = {}) {
-  const { deal = null, restorationList = [], tipRules = [] } = options;
+  const {
+    deal = null,
+    restorationList = [],
+    tipRules = [],
+    neNasheBrandingList = [],
+    neNasheDecorMkList = [],
+  } = options;
   const qty = item.quantity_num ?? parseQuantityNum(item.quantity);
-  const lineTotal = computeLineItemTotal(item, deal, restorationList);
+  const neNasheLists = { neNasheBrandingList, neNasheDecorMkList };
+  const lineTotal = computeLineItemTotal(item, deal, restorationList, neNasheLists);
   const unitPrice = qty > 0 ? lineTotal / qty : 0;
 
   const fields = {

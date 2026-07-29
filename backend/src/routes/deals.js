@@ -4,6 +4,8 @@ import { syncDealToTwenty, buildSyncPreview, resyncDealIfSynced } from '../servi
 import { enrichDealItems } from '../services/twenty-items.js';
 import { loadBlacklist, createBlacklistEntry } from '../services/blacklist.js';
 import { loadRestorationList, createRestorationEntry } from '../services/restoration.js';
+import { loadNeNasheBrandingList } from '../services/ne-nashe-branding.js';
+import { loadNeNasheDecorMkList } from '../services/ne-nashe-decor-mk.js';
 import { createTipRule, loadTipRules } from '../services/tip-rules.js';
 import { scheduleListChangeResync } from '../services/list-change-resync.js';
 import { importAuthMiddleware } from '../middleware/import-auth.js';
@@ -64,6 +66,8 @@ function attachDealItemCounts(deals, db) {
   if (!deals.length) return deals;
   const blacklist = loadBlacklist(db);
   const restorationList = loadRestorationList(db);
+  const neNasheBrandingList = loadNeNasheBrandingList(db);
+  const neNasheDecorMkList = loadNeNasheDecorMkList(db);
   const tipRules = loadTipRules(db);
   const ids = deals.map((d) => d.id);
   const placeholders = ids.map(() => '?').join(',');
@@ -83,7 +87,9 @@ function attachDealItemCounts(deals, db) {
       blacklist,
       restorationList,
       deal,
-      tipRules
+      tipRules,
+      neNasheBrandingList,
+      neNasheDecorMkList,
     );
     return {
       ...deal,
@@ -280,9 +286,19 @@ router.get('/:id', (req, res) => {
   if (!deal) return res.status(404).json({ error: 'Deal not found' });
   const blacklist = loadBlacklist(db);
   const restorationList = loadRestorationList(db);
+  const neNasheBrandingList = loadNeNasheBrandingList(db);
+  const neNasheDecorMkList = loadNeNasheDecorMkList(db);
   const tipRules = loadTipRules(db);
   const items = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(req.params.id);
-  const enrichedItems = enrichDealItems(items, blacklist, restorationList, deal, tipRules);
+  const enrichedItems = enrichDealItems(
+    items,
+    blacklist,
+    restorationList,
+    deal,
+    tipRules,
+    neNasheBrandingList,
+    neNasheDecorMkList,
+  );
   res.json({
     ...deal,
     items: enrichedItems,

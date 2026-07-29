@@ -6,6 +6,7 @@ import {
   computeLineItemTotal,
   parseQuantity,
   parseQuantityNum,
+  shouldZeroLineItemAmount,
   DEFAULT_OPPORTUNITY_STAGE,
 } from '../src/services/twenty-opportunity.js';
 
@@ -210,6 +211,56 @@ describe('restoration pricing', () => {
         { name: 'Баннер', price: 5000, sum: 5000 },
       ],
       { includeStage: false, restorationList }
+    );
+    expect(input.amount.amountMicros).toBe(5000 * 1_000_000);
+  });
+});
+
+describe('ne-nashe pricing', () => {
+  const neNasheBrandingList = [{ id: 1, pattern: 'чужой брендинг', matchType: 'exact' }];
+  const neNasheDecorMkList = [{ id: 2, pattern: 'чужой декор', matchType: 'exact' }];
+  const neNasheLists = { neNasheBrandingList, neNasheDecorMkList };
+  const deal = { data_source: 'tony' };
+  const item = { name: 'Чужой брендинг', price: 12000, quantity: '1', sum: 12000 };
+
+  it('shouldZeroLineItemAmount matches branding and decor-mk lists', () => {
+    expect(shouldZeroLineItemAmount('Чужой брендинг', { neNasheBrandingList })).toBe(true);
+    expect(shouldZeroLineItemAmount('Чужой декор', { neNasheDecorMkList })).toBe(true);
+    expect(shouldZeroLineItemAmount('Баннер', { neNasheBrandingList, neNasheDecorMkList })).toBe(false);
+  });
+
+  it('computeLineItemTotal returns 0 for ne-nashe branding match', () => {
+    expect(computeLineItemTotal(item, deal, [], neNasheLists)).toBe(0);
+  });
+
+  it('computeLineItemTotal returns 0 for ne-nashe decor-mk match', () => {
+    const decorItem = { name: 'Чужой декор', price: 8000, sum: 8000 };
+    expect(computeLineItemTotal(decorItem, deal, [], neNasheLists)).toBe(0);
+  });
+
+  it('computeLineItemTotal unchanged when only other direction list matches', () => {
+    expect(computeLineItemTotal(item, deal, [], { neNasheDecorMkList })).toBe(12000);
+    const decorItem = { name: 'Чужой декор', price: 8000, sum: 8000 };
+    expect(computeLineItemTotal(decorItem, deal, [], { neNasheBrandingList })).toBe(8000);
+  });
+
+  it('computeDealItemsTotal excludes ne-nashe rubles', () => {
+    const items = [
+      { name: 'Чужой брендинг', price: 12000, sum: 12000 },
+      { name: 'Баннер', price: 5000, sum: 5000 },
+    ];
+    expect(computeDealItemsTotal(deal, items, [], neNasheLists)).toBe(5000);
+  });
+
+  it('buildOpportunityInput amount excludes ne-nashe branding', () => {
+    const d = { data_source: 'tony', title: 'T', crm_event_id: 'e1', start_date: '2026-06-16' };
+    const input = buildOpportunityInput(
+      d,
+      [
+        { name: 'Чужой брендинг', price: 12000, sum: 12000 },
+        { name: 'Баннер', price: 5000, sum: 5000 },
+      ],
+      { includeStage: false, neNasheBrandingList, neNasheDecorMkList },
     );
     expect(input.amount.amountMicros).toBe(5000 * 1_000_000);
   });

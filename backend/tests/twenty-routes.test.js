@@ -22,6 +22,7 @@ vi.mock('../src/services/list-change-resync.js', () => ({
 
 import { getDb, initDb } from '../src/db/connection.js';
 import { migrate } from '../src/db/migrate.js';
+import { resetPatternListsCacheForTests } from '../src/services/pattern-lists-cache.js';
 import twentyRouter from '../src/routes/twenty.js';
 
 function createApp() {
@@ -36,6 +37,7 @@ function createApp() {
 
 describe('twenty routes', () => {
   beforeEach(() => {
+    resetPatternListsCacheForTests();
     initDb();
     migrate();
     const db = getDb();
@@ -86,9 +88,55 @@ describe('twenty routes', () => {
       known: false,
       blacklisted: false,
       restorationMatch: false,
+      neNasheBrandingMatch: false,
+      neNasheDecorMkMatch: false,
       podryadMatch: false,
       bannerMatch: false,
     });
+  });
+
+  it('GET list-status returns ne-nashe flags when matched', async () => {
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO ne_nashe_branding_items (pattern, match_type, source_name)
+      VALUES ('banner', 'exact', 'Banner')
+    `).run();
+    resetPatternListsCacheForTests();
+
+    const res = await request(createApp())
+      .get('/api/twenty/line-items/li-1/list-status')
+      .set('Authorization', 'Bearer test-secret');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      known: true,
+      neNasheBrandingMatch: true,
+      neNasheDecorMkMatch: false,
+    });
+  });
+
+  it('POST add-to-list accepts ne_nashe_branding', async () => {
+    const res = await request(createApp())
+      .post('/api/twenty/line-items/li-1/add-to-list')
+      .set('Authorization', 'Bearer test-secret')
+      .send({ list: 'ne_nashe_branding' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    const db = getDb();
+    expect(db.prepare('SELECT COUNT(*) AS c FROM ne_nashe_branding_items').get().c).toBe(1);
+  });
+
+  it('POST add-to-list accepts ne_nashe_decor_mk', async () => {
+    const res = await request(createApp())
+      .post('/api/twenty/line-items/li-1/add-to-list')
+      .set('Authorization', 'Bearer test-secret')
+      .send({ list: 'ne_nashe_decor_mk' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    const db = getDb();
+    expect(db.prepare('SELECT COUNT(*) AS c FROM ne_nashe_decor_mk_items').get().c).toBe(1);
   });
 
   it('POST add-to-list creates entry and resyncs deal', async () => {

@@ -2,6 +2,8 @@ import { findBlacklistMatch, isBlacklisted, loadBlacklist } from './blacklist.js
 import { findDecorBlacklistMatch, loadDecorBlacklist } from './decor-blacklist.js';
 import { findMkBlacklistMatch, loadMkBlacklist } from './mk-blacklist.js';
 import { findRestorationMatch } from './restoration.js';
+import { findNeNasheBrandingMatch } from './ne-nashe-branding.js';
+import { findNeNasheDecorMkMatch } from './ne-nashe-decor-mk.js';
 import { findTipRuleMatch } from './tip-rules.js';
 import { classifyProductStream } from './product-stream.js';
 import { computeLineItemTotal } from './twenty-opportunity.js';
@@ -116,15 +118,20 @@ export function enrichDealItems(
   restorationList = [],
   deal = null,
   tipRules = [],
+  neNasheBrandingList = [],
+  neNasheDecorMkList = [],
 ) {
   const ctx = normalizeStreamContext(context);
   const dealContext = deal ? { data_source: deal.data_source } : null;
+  const neNasheLists = { neNasheBrandingList, neNasheDecorMkList };
 
   return items.map((item) => {
     const blacklistHit = findBlacklistMatch(item.name, ctx.brandingBlacklist);
     const decorBlacklistHit = findDecorBlacklistMatch(item.name, ctx.decorBlacklist);
     const mkBlacklistHit = findMkBlacklistMatch(item.name, ctx.mkBlacklist);
     const restorationHit = findRestorationMatch(item.name, restorationList);
+    const neNasheBrandingHit = findNeNasheBrandingMatch(item.name, neNasheBrandingList);
+    const neNasheDecorMkHit = findNeNasheDecorMkMatch(item.name, neNasheDecorMkList);
     const tipHit = findTipRuleMatch(item.name, tipRules);
     const productStream = resolveItemProductStream(item, ctx)
       || (item.sync_override === 'include' ? 'BRANDING' : null);
@@ -142,6 +149,22 @@ export function enrichDealItems(
       restorationMatchEntry: restorationHit
         ? { id: restorationHit.id, pattern: restorationHit.pattern, matchType: restorationHit.matchType }
         : null,
+      neNasheBrandingMatch: Boolean(neNasheBrandingHit),
+      neNasheBrandingMatchEntry: neNasheBrandingHit
+        ? {
+            id: neNasheBrandingHit.id,
+            pattern: neNasheBrandingHit.pattern,
+            matchType: neNasheBrandingHit.matchType,
+          }
+        : null,
+      neNasheDecorMkMatch: Boolean(neNasheDecorMkHit),
+      neNasheDecorMkMatchEntry: neNasheDecorMkHit
+        ? {
+            id: neNasheDecorMkHit.id,
+            pattern: neNasheDecorMkHit.pattern,
+            matchType: neNasheDecorMkHit.matchType,
+          }
+        : null,
       tipRuleMatch: Boolean(tipHit),
       tipRuleMatchEntry: tipHit
         ? {
@@ -154,7 +177,7 @@ export function enrichDealItems(
         : null,
       podryadMatch: tipHit?.tip === 'PODRYAD',
       bannerMatch: tipHit?.tip === 'BANNERA',
-      twentyLineAmount: computeLineItemTotal(item, dealContext, restorationList),
+      twentyLineAmount: computeLineItemTotal(item, dealContext, restorationList, neNasheLists),
       eligibleForTwenty: isItemEligibleForTwenty(item, ctx),
       syncMode: item.sync_override ? 'manual' : 'auto',
       eligibleReason: getItemEligibleReason(item, ctx),

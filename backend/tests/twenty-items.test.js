@@ -115,6 +115,44 @@ describe('enrichDealItems restoration', () => {
     expect(enriched[0].eligibleForTwenty).toBe(true);
   });
 
+  it('adds neNasheBrandingMatch and zero twentyLineAmount', () => {
+    const neNasheBrandingList = [{ id: 1, pattern: 'чужой брендинг', matchType: 'exact' }];
+    const items = [
+      {
+        id: 1,
+        name: 'Чужой брендинг',
+        price: 12000,
+        quantity: '1',
+        sum: 12000,
+        classification: 'keyword_match',
+        sync_override: null,
+      },
+    ];
+    const enriched = enrichDealItems(items, [], [], deal, [], neNasheBrandingList, []);
+    expect(enriched[0].neNasheBrandingMatch).toBe(true);
+    expect(enriched[0].neNasheDecorMkMatch).toBe(false);
+    expect(enriched[0].twentyLineAmount).toBe(0);
+  });
+
+  it('adds neNasheDecorMkMatch without branding match', () => {
+    const neNasheDecorMkList = [{ id: 2, pattern: 'чужой декор', matchType: 'exact' }];
+    const items = [
+      {
+        id: 1,
+        name: 'Чужой декор',
+        price: 8000,
+        quantity: '1',
+        sum: 8000,
+        classification: 'keyword_match',
+        sync_override: null,
+      },
+    ];
+    const enriched = enrichDealItems(items, [], [], deal, [], [], neNasheDecorMkList);
+    expect(enriched[0].neNasheBrandingMatch).toBe(false);
+    expect(enriched[0].neNasheDecorMkMatch).toBe(true);
+    expect(enriched[0].twentyLineAmount).toBe(0);
+  });
+
   it('does not change eligibility for ineligible item even if name matches', () => {
     const items = [
       {
