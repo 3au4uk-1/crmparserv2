@@ -65,6 +65,10 @@ export function computeLineItemTotal(item, deal, restorationList = [], neNasheLi
     neNasheBrandingList: branding,
     neNasheDecorMkList: decorMk,
   })) return 0;
+  if (item.amount_locked) {
+    const locked = Number(item.sum);
+    return Number.isFinite(locked) ? locked : 0;
+  }
   const isTony = deal?.data_source === 'tony';
   if (isTony && item.sum != null && Number.isFinite(item.sum)) {
     return item.sum;

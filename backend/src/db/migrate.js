@@ -240,6 +240,7 @@ export function migrate() {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_deal_items_twenty_id ON deal_items(twenty_id);`);
   ensureColumn(db, 'deal_items', 'sum', 'REAL');
   ensureColumn(db, 'deal_items', 'quantity_num', 'REAL');
+  ensureColumn(db, 'deal_items', 'amount_locked', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'deals', 'twenty_error', 'TEXT');
   ensureColumn(db, 'deals', 'tony_order_id', 'TEXT');
   ensureColumn(db, 'deals', 'arrival_time', 'TEXT');
