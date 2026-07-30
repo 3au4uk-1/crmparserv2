@@ -18,6 +18,12 @@ import {
   useUpdateTelegramAutoInviteMember,
   useDeleteTelegramAutoInviteMember,
   useRetryTelegramAutoInviteRun,
+  useTelegramUserbotAuthStatus,
+  useTelegramUserbotAuthStart,
+  useTelegramUserbotAuthCode,
+  useTelegramUserbotAuthPassword,
+  useTelegramUserbotAuthCancel,
+  useTelegramUserbotAuthLogout,
 } from '../api';
 
 function Section({ title, description, children }) {
@@ -59,6 +65,14 @@ function formatTopicLabel(topic) {
   return topic.name ? topic.name : `#${topic.threadId}`;
 }
 
+function formatUserbotUserLabel(user) {
+  if (!user) return null;
+  if (user.username) return `@${user.username}`;
+  if (user.firstName) return user.firstName;
+  if (user.id) return `id ${user.id}`;
+  return null;
+}
+
 export default function Telegram() {
   const { data: telegramSettings } = useTelegramSettings();
   const updateTelegramSettings = useUpdateTelegramSettings();
@@ -81,6 +95,15 @@ export default function Telegram() {
   const updateAutoInviteMember = useUpdateTelegramAutoInviteMember();
   const deleteAutoInviteMember = useDeleteTelegramAutoInviteMember();
   const retryAutoInviteRun = useRetryTelegramAutoInviteRun();
+  const {
+    data: userbotAuthStatus,
+    isLoading: userbotAuthLoading,
+  } = useTelegramUserbotAuthStatus();
+  const userbotAuthStart = useTelegramUserbotAuthStart();
+  const userbotAuthCode = useTelegramUserbotAuthCode();
+  const userbotAuthPassword = useTelegramUserbotAuthPassword();
+  const userbotAuthCancel = useTelegramUserbotAuthCancel();
+  const userbotAuthLogout = useTelegramUserbotAuthLogout();
 
   const [activeOnly, setActiveOnly] = useState(true);
   const { data: chatsData, isLoading: chatsLoading } = useTelegramChats(activeOnly);
@@ -97,6 +120,9 @@ export default function Telegram() {
   const [autoInviteUserId, setAutoInviteUserId] = useState('');
   const [autoInviteDisplayName, setAutoInviteDisplayName] = useState('');
   const [retryChatId, setRetryChatId] = useState('');
+  const [userbotPhone, setUserbotPhone] = useState('');
+  const [userbotCode, setUserbotCode] = useState('');
+  const [userbotPassword, setUserbotPassword] = useState('');
 
   const [saveError, setSaveError] = useState('');
   const [actionError, setActionError] = useState('');
@@ -104,6 +130,10 @@ export default function Telegram() {
 
   const autoInviteConfigured = Boolean(autoInviteStatus?.configured);
   const autoInviteMembers = autoInviteMembersData?.members ?? [];
+  const userbotApiConfigured = Boolean(userbotAuthStatus?.apiConfigured);
+  const userbotSessionSet = Boolean(userbotAuthStatus?.sessionSet);
+  const userbotPending = userbotAuthStatus?.pending ?? null;
+  const userbotUserLabel = formatUserbotUserLabel(userbotAuthStatus?.user);
 
   const chats = chatsData?.chats ?? [];
   const savedChatInActiveList = Boolean(
@@ -394,6 +424,96 @@ export default function Telegram() {
     }
   }
 
+  async function onUserbotAuthStart() {
+    setActionError('');
+    setActionSuccess('');
+    const phone = userbotPhone.trim();
+    if (!phone) {
+      setActionError('Введите номер телефона');
+      return;
+    }
+    try {
+      await userbotAuthStart.mutateAsync(phone);
+      setUserbotCode('');
+      setUserbotPassword('');
+      setActionSuccess('Код отправлен в Telegram');
+    } catch (err) {
+      setActionError(
+        err.response?.data?.error || err.message || 'Не удалось отправить код',
+      );
+    }
+  }
+
+  async function onUserbotAuthCode() {
+    setActionError('');
+    setActionSuccess('');
+    const code = userbotCode.trim();
+    if (!code) {
+      setActionError('Введите код из Telegram');
+      return;
+    }
+    try {
+      await userbotAuthCode.mutateAsync(code);
+      setUserbotCode('');
+      setUserbotPassword('');
+      setActionSuccess('User-bot подключён');
+    } catch (err) {
+      setActionError(
+        err.response?.data?.error || err.message || 'Не удалось подтвердить код',
+      );
+    }
+  }
+
+  async function onUserbotAuthPassword() {
+    setActionError('');
+    setActionSuccess('');
+    const password = userbotPassword;
+    if (!password) {
+      setActionError('Введите пароль двухфакторной аутентификации');
+      return;
+    }
+    try {
+      await userbotAuthPassword.mutateAsync(password);
+      setUserbotPassword('');
+      setActionSuccess('User-bot подключён');
+    } catch (err) {
+      setActionError(
+        err.response?.data?.error || err.message || 'Не удалось войти',
+      );
+    }
+  }
+
+  async function onUserbotAuthCancel() {
+    setActionError('');
+    setActionSuccess('');
+    try {
+      await userbotAuthCancel.mutateAsync();
+      setUserbotCode('');
+      setUserbotPassword('');
+      setActionSuccess('Вход отменён');
+    } catch (err) {
+      setActionError(
+        err.response?.data?.error || err.message || 'Не удалось отменить вход',
+      );
+    }
+  }
+
+  async function onUserbotAuthLogout() {
+    setActionError('');
+    setActionSuccess('');
+    try {
+      await userbotAuthLogout.mutateAsync();
+      setUserbotPhone('');
+      setUserbotCode('');
+      setUserbotPassword('');
+      setActionSuccess('User-bot отключён');
+    } catch (err) {
+      setActionError(
+        err.response?.data?.error || err.message || 'Не удалось выйти',
+      );
+    }
+  }
+
   const tgWebhook = webhookStatus?.telegram;
   const webhookConnected =
     tgWebhook?.url && webhookStatus?.webhookUrl && tgWebhook.url === webhookStatus.webhookUrl;
@@ -501,11 +621,136 @@ export default function Telegram() {
         description="User-bot автоматически добавляет команду брендинга в чаты заказов, когда бот туда вступает."
       >
         <div className="space-y-4">
+          <div className="max-w-2xl space-y-4 pb-4 border-b border-border">
+            <div>
+              <h4 className="text-sm font-semibold text-ink">User-bot</h4>
+              <p className="text-xs text-ink-faint mt-1 leading-relaxed">
+                Войдите сервисным Telegram-аккаунтом для авто-добавления участников.
+              </p>
+            </div>
+
+            {userbotAuthLoading ? (
+              <p className="text-sm text-ink-muted">Загрузка…</p>
+            ) : !userbotApiConfigured ? (
+              <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md">
+                Задайте TELEGRAM_API_ID и TELEGRAM_API_HASH на сервере (Dokploy / .env).
+              </p>
+            ) : userbotSessionSet && !userbotPending ? (
+              <div className="space-y-3">
+                <p className="text-sm text-pastel-green-text bg-pastel-green-bg px-3 py-2 rounded-md">
+                  User-bot подключён
+                  {userbotUserLabel && (
+                    <span className="ml-1.5 font-mono text-ink">{userbotUserLabel}</span>
+                  )}
+                </p>
+                <button
+                  type="button"
+                  onClick={onUserbotAuthLogout}
+                  disabled={userbotAuthLogout.isPending}
+                  className="btn-secondary btn-sm"
+                >
+                  {userbotAuthLogout.isPending ? 'Выход…' : 'Выйти'}
+                </button>
+              </div>
+            ) : userbotPending === 'password' ? (
+              <div className="space-y-3 max-w-md">
+                <p className="text-sm text-ink-muted">
+                  Требуется пароль двухфакторной аутентификации Telegram.
+                </p>
+                <div>
+                  <FieldLabel>Пароль 2FA</FieldLabel>
+                  <input
+                    type="password"
+                    value={userbotPassword}
+                    onChange={(e) => setUserbotPassword(e.target.value)}
+                    className="input-field w-full"
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={onUserbotAuthPassword}
+                    disabled={userbotAuthPassword.isPending}
+                    className="btn-primary btn-sm"
+                  >
+                    {userbotAuthPassword.isPending ? 'Вход…' : 'Войти'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onUserbotAuthCancel}
+                    disabled={userbotAuthCancel.isPending}
+                    className="btn-secondary btn-sm"
+                  >
+                    {userbotAuthCancel.isPending ? 'Отмена…' : 'Отмена'}
+                  </button>
+                </div>
+              </div>
+            ) : userbotPending === 'code' ? (
+              <div className="space-y-3 max-w-md">
+                <p className="text-sm text-ink-muted">
+                  Введите код из Telegram (SMS или приложение).
+                </p>
+                <div>
+                  <FieldLabel>Код</FieldLabel>
+                  <input
+                    type="text"
+                    value={userbotCode}
+                    onChange={(e) => setUserbotCode(e.target.value)}
+                    className="input-field font-mono w-full"
+                    placeholder="12345"
+                    autoComplete="one-time-code"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={onUserbotAuthCode}
+                    disabled={userbotAuthCode.isPending}
+                    className="btn-primary btn-sm"
+                  >
+                    {userbotAuthCode.isPending ? 'Проверка…' : 'Подтвердить'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onUserbotAuthCancel}
+                    disabled={userbotAuthCancel.isPending}
+                    className="btn-secondary btn-sm"
+                  >
+                    {userbotAuthCancel.isPending ? 'Отмена…' : 'Отмена'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3 max-w-md">
+                <div>
+                  <FieldLabel>Телефон</FieldLabel>
+                  <input
+                    type="tel"
+                    value={userbotPhone}
+                    onChange={(e) => setUserbotPhone(e.target.value)}
+                    className="input-field font-mono w-full"
+                    placeholder="+79001234567"
+                    autoComplete="tel"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={onUserbotAuthStart}
+                  disabled={userbotAuthStart.isPending}
+                  className="btn-primary btn-sm"
+                >
+                  {userbotAuthStart.isPending ? 'Отправка…' : 'Отправить код'}
+                </button>
+              </div>
+            )}
+          </div>
+
           {autoInviteStatusLoading ? (
             <p className="text-sm text-ink-muted">Загрузка…</p>
           ) : !autoInviteConfigured ? (
-            <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md">
-              Задайте TELEGRAM_API_ID / HASH / USER_SESSION на сервере
+            <p className="text-sm text-ink-muted">
+              Список участников станет доступен после подключения user-bot.
             </p>
           ) : (
             <>

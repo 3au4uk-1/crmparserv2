@@ -1065,3 +1065,58 @@ export function useRetryTelegramAutoInviteRun() {
         .then((r) => r.data),
   });
 }
+
+function invalidateTelegramUserbotAuth(qc) {
+  qc.invalidateQueries({ queryKey: ['telegram-userbot-auth-status'] });
+  qc.invalidateQueries({ queryKey: ['telegram-auto-invite-status'] });
+}
+
+export function useTelegramUserbotAuthStatus() {
+  return useQuery({
+    queryKey: ['telegram-userbot-auth-status'],
+    queryFn: () => api.get('/telegram/userbot/auth/status').then((r) => r.data),
+  });
+}
+
+export function useTelegramUserbotAuthStart() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (phone) =>
+      api.post('/telegram/userbot/auth/start', { phone }).then((r) => r.data),
+    onSuccess: () => invalidateTelegramUserbotAuth(qc),
+  });
+}
+
+export function useTelegramUserbotAuthCode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (code) =>
+      api.post('/telegram/userbot/auth/code', { code }).then((r) => r.data),
+    onSuccess: () => invalidateTelegramUserbotAuth(qc),
+  });
+}
+
+export function useTelegramUserbotAuthPassword() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (password) =>
+      api.post('/telegram/userbot/auth/password', { password }).then((r) => r.data),
+    onSuccess: () => invalidateTelegramUserbotAuth(qc),
+  });
+}
+
+export function useTelegramUserbotAuthCancel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post('/telegram/userbot/auth/cancel').then((r) => r.data),
+    onSuccess: () => invalidateTelegramUserbotAuth(qc),
+  });
+}
+
+export function useTelegramUserbotAuthLogout() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post('/telegram/userbot/auth/logout').then((r) => r.data),
+    onSuccess: () => invalidateTelegramUserbotAuth(qc),
+  });
+}
