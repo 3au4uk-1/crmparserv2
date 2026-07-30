@@ -283,7 +283,7 @@ router.post('/webhook/teardown', async (req, res, next) => {
 });
 
 router.get('/auto-invite/status', (req, res) => {
-  res.json({ configured: isUserbotConfigured() });
+  res.json({ configured: isUserbotConfigured(getDb()) });
 });
 
 router.get('/auto-invite/members', (req, res) => {

@@ -20,13 +20,13 @@ function defaultDeps(db) {
     getToken: (database) => getTelegramBotToken(database),
     createInviteLink: createChatInviteLink,
     promote: promoteChatMemberForInvite,
-    getClient: getUserbotClient,
+    getClient: () => getUserbotClient(db),
     joinInvite: joinChatByInviteLink,
     resolveUser,
     inviteUser: inviteUserToChat,
     getSelfUserId,
     listMembers: (database) => listAutoInviteMembers(database, { activeOnly: true }),
-    isConfigured: isUserbotConfigured,
+    isConfigured: () => isUserbotConfigured(db),
     updateMember: updateAutoInviteMember,
   };
 }

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import Database from 'better-sqlite3';
 import { Api } from 'telegram';
 import {
   extractInviteHash,
@@ -9,10 +10,17 @@ import {
 } from '../src/telegram/userbot/actions.js';
 import { isUserbotConfigured } from '../src/telegram/userbot/client.js';
 
+function memDb() {
+  const db = new Database(':memory:');
+  db.exec(`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
+  return db;
+}
+
 describe('isUserbotConfigured', () => {
   it('returns true when api id, hash, and session are set', () => {
+    const db = memDb();
     expect(
-      isUserbotConfigured({
+      isUserbotConfigured(db, {
         telegramApiId: '123',
         telegramApiHash: 'abc',
         telegramUserSession: 'session',
@@ -21,15 +29,16 @@ describe('isUserbotConfigured', () => {
   });
 
   it('returns false when any value is missing', () => {
+    const db = memDb();
     expect(
-      isUserbotConfigured({
+      isUserbotConfigured(db, {
         telegramApiId: '123',
         telegramApiHash: 'abc',
         telegramUserSession: '',
       }),
     ).toBe(false);
     expect(
-      isUserbotConfigured({
+      isUserbotConfigured(db, {
         telegramApiId: '',
         telegramApiHash: 'abc',
         telegramUserSession: 'session',
