@@ -204,6 +204,25 @@ CREATE TABLE IF NOT EXISTS telegram_send_log (
 CREATE INDEX IF NOT EXISTS idx_telegram_send_log_event_line
   ON telegram_send_log(event, line_item_id);
 
+CREATE TABLE IF NOT EXISTS telegram_chats (
+  chat_id TEXT PRIMARY KEY,
+  title TEXT NOT NULL DEFAULT '',
+  type TEXT NOT NULL DEFAULT '',
+  is_forum INTEGER NOT NULL DEFAULT 0,
+  username TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  source TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS telegram_topics (
+  chat_id TEXT NOT NULL,
+  thread_id INTEGER NOT NULL,
+  name TEXT,
+  source TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (chat_id, thread_id)
+);
+
 INSERT OR IGNORE INTO companies (code, full_name) VALUES ('ПРО', 'ProInteractive');
 INSERT OR IGNORE INTO companies (code, full_name) VALUES ('АРТ', 'Art-Active');
 INSERT OR IGNORE INTO companies (code, full_name) VALUES ('АРЕНДА', 'Arenda');
