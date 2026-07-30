@@ -484,7 +484,10 @@ export default function Telegram() {
             <FieldLabel>Чат</FieldLabel>
             <select
               value={okleykaChatId}
-              onChange={(e) => setOkleykaChatId(e.target.value)}
+              onChange={(e) => {
+                setOkleykaChatId(e.target.value);
+                setOkleykaThreadId('');
+              }}
               className="select-field w-full"
             >
               <option value="">— выберите чат —</option>

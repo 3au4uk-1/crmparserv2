@@ -81,3 +81,21 @@ cd frontend && npm run build
 - `frontend/src/api.js` — `useTelegramChats` accepts optional `queryOptions` (for `enabled`)
 
 **Status:** DONE
+
+---
+
+## Okleyka threadId reset on chat change (2026-07-30)
+
+**Commit:** `fix(telegram): reset okleyka threadId when changing chat`
+
+### Fix
+- Okleyka chat `<select>` onChange now resets `okleykaThreadId` to `''` so the forum sync effect can default to General (`'1'`) when switching between forum chats.
+
+### Build
+
+```
+cd frontend && npm run build
+✓ built in 2.31s
+```
+
+**Status:** DONE
