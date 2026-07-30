@@ -36,3 +36,22 @@ export function getTelegramDestination(db, event) {
 export function getTelegramChatId(db, event) {
   return getTelegramDestination(db, event)?.chatId ?? '';
 }
+
+export function mergeChatMapEntry(existing, incoming) {
+  const result = { ...existing };
+  for (const [key, raw] of Object.entries(incoming)) {
+    if (key === 'okleyka.send') {
+      const normalized = normalizeOkleykaDestination(raw);
+      if (normalized) {
+        const entry = { chatId: normalized.chatId };
+        if (normalized.threadId != null) {
+          entry.threadId = normalized.threadId;
+        }
+        result[key] = entry;
+      }
+    } else {
+      result[key] = raw;
+    }
+  }
+  return result;
+}

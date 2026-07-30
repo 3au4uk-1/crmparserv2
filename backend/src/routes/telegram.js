@@ -1,6 +1,19 @@
+import { randomBytes } from 'node:crypto';
 import { Router } from 'express';
+import { config } from '../config.js';
 import { getDb } from '../db/connection.js';
-import { getTelegramBotToken, getTelegramDestination } from '../telegram/settings.js';
+import { callTelegram } from '../telegram/api-client.js';
+import {
+  getTelegramBotToken,
+  getTelegramDestination,
+  mergeChatMapEntry,
+} from '../telegram/settings.js';
+import {
+  listTelegramChats,
+  listTelegramTopics,
+  upsertTelegramChat,
+  upsertTelegramTopic,
+} from '../telegram/chat-store.js';
 import { sendOkleykaToTelegram } from '../telegram/outbound.js';
 import { handleTelegramWebhook } from '../telegram/inbound.js';
 
@@ -15,6 +28,40 @@ function readChatMap(db) {
   } catch {
     return {};
   }
+}
+
+function readWebhookSecret(db) {
+  const row = db.prepare(`SELECT value FROM settings WHERE key = 'telegram_webhook_secret'`).get();
+  return (row?.value ?? '').trim();
+}
+
+function writeWebhookSecret(db, secret) {
+  db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('telegram_webhook_secret', ?)`).run(
+    secret,
+  );
+}
+
+function mapChatRow(row) {
+  return {
+    chatId: row.chat_id,
+    title: row.title,
+    type: row.type,
+    isForum: Boolean(row.is_forum),
+    username: row.username,
+    active: Boolean(row.active),
+    source: row.source,
+    lastSeenAt: row.last_seen_at,
+  };
+}
+
+function mapTopicRow(row) {
+  return {
+    chatId: row.chat_id,
+    threadId: row.thread_id,
+    name: row.name,
+    source: row.source,
+    lastSeenAt: row.last_seen_at,
+  };
 }
 
 function buildTokenPreview(token) {
@@ -60,7 +107,7 @@ router.put('/settings', (req, res) => {
   }
 
   if (chatMap && typeof chatMap === 'object' && !Array.isArray(chatMap)) {
-    const merged = { ...readChatMap(db), ...chatMap };
+    const merged = mergeChatMapEntry(readChatMap(db), chatMap);
     db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('telegram_chat_map', ?)`).run(
       JSON.stringify(merged),
     );
@@ -103,6 +150,125 @@ router.post('/test-send', async (req, res, next) => {
       fileUrls: [],
     });
     res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/chats', (req, res) => {
+  const db = getDb();
+  const activeOnly = req.query.active !== '0';
+  const chats = listTelegramChats(db, { activeOnly }).map(mapChatRow);
+  res.json({ chats });
+});
+
+router.get('/chats/:chatId/topics', (req, res) => {
+  const db = getDb();
+  const topics = listTelegramTopics(db, req.params.chatId).map(mapTopicRow);
+  res.json({ topics });
+});
+
+router.post('/chats', async (req, res, next) => {
+  try {
+    const db = getDb();
+    const token = getTelegramBotToken(db);
+    if (!token) {
+      return res.status(400).json({ error: 'Bot token not configured' });
+    }
+    const chatId = String(req.body?.chatId ?? '').trim();
+    if (!chatId) {
+      return res.status(400).json({ error: 'chatId required' });
+    }
+    const chat = await callTelegram(token, 'getChat', { chat_id: chatId });
+    upsertTelegramChat(db, {
+      chatId: String(chat.id),
+      title: chat.title || chat.username || '',
+      type: chat.type || '',
+      isForum: Boolean(chat.is_forum),
+      username: chat.username || null,
+      active: true,
+      source: 'manual',
+    });
+    const row = db.prepare(`SELECT * FROM telegram_chats WHERE chat_id = ?`).get(String(chat.id));
+    res.json({ chat: mapChatRow(row) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/chats/:chatId/topics', (req, res) => {
+  const db = getDb();
+  const chatId = req.params.chatId;
+  const threadId = Number(req.body?.threadId);
+  if (!Number.isInteger(threadId) || threadId <= 0) {
+    return res.status(400).json({ error: 'threadId must be a positive integer' });
+  }
+  const name = req.body?.name != null ? String(req.body.name) : null;
+  upsertTelegramTopic(db, { chatId, threadId, name, source: 'manual' });
+  const row = db
+    .prepare(`SELECT * FROM telegram_topics WHERE chat_id = ? AND thread_id = ?`)
+    .get(chatId, threadId);
+  res.json({ topic: mapTopicRow(row) });
+});
+
+router.get('/webhook/status', async (req, res, next) => {
+  try {
+    const db = getDb();
+    const token = getTelegramBotToken(db);
+    const secretSet = Boolean(readWebhookSecret(db));
+    const webhookUrl = config.publicBaseUrl
+      ? `${config.publicBaseUrl}/api/telegram/webhook`
+      : '';
+    const payload = {
+      publicBaseUrlConfigured: Boolean(config.publicBaseUrl),
+      webhookUrl,
+      secretSet,
+    };
+    if (token) {
+      payload.telegram = await callTelegram(token, 'getWebhookInfo', {});
+    }
+    res.json(payload);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/webhook/setup', async (req, res, next) => {
+  try {
+    if (!config.publicBaseUrl) {
+      return res.status(400).json({ error: 'PUBLIC_BASE_URL not set' });
+    }
+    const db = getDb();
+    const token = getTelegramBotToken(db);
+    if (!token) {
+      return res.status(400).json({ error: 'Bot token not configured' });
+    }
+    let secret = readWebhookSecret(db);
+    if (!secret) {
+      secret = randomBytes(24).toString('hex');
+      writeWebhookSecret(db, secret);
+    }
+    const webhookUrl = `${config.publicBaseUrl}/api/telegram/webhook`;
+    await callTelegram(token, 'setWebhook', {
+      url: webhookUrl,
+      secret_token: secret,
+      allowed_updates: ['message', 'channel_post', 'my_chat_member'],
+    });
+    res.json({ ok: true, webhookUrl, secretSet: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/webhook/teardown', async (req, res, next) => {
+  try {
+    const db = getDb();
+    const token = getTelegramBotToken(db);
+    if (!token) {
+      return res.status(400).json({ error: 'Bot token not configured' });
+    }
+    await callTelegram(token, 'deleteWebhook', {});
+    res.json({ ok: true, secretSet: Boolean(readWebhookSecret(db)) });
   } catch (err) {
     next(err);
   }

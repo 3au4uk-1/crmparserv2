@@ -61,4 +61,6 @@ export const config = {
   disableAutoParse: ['1', 'true', 'yes'].includes(
     String(process.env.DISABLE_AUTO_PARSE || '').trim().toLowerCase()
   ),
+  /** Public HTTPS origin (no trailing slash) for Telegram webhook URL. */
+  publicBaseUrl: (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, ''),
 };
