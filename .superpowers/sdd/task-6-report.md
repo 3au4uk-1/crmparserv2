@@ -1,63 +1,83 @@
-# Task 6 Report: Rewrite `release-prepare.yml` MinIO optional steps
+# Task 6 Report: Frontend `/telegram` page + nav
 
-**Date:** 2026-07-29  
+**Date:** 2026-07-30  
 **Branch:** `staging`  
-**Status:** DONE
-
-## Commit
-
-| Commit | Message |
-|--------|---------|
-| `d07d793` | feat(ops): release-prepare MinIO steps via Dokploy remote exec |
+**Commit:** `2778fda` — feat(telegram): sidebar page with chat/topic picker
 
 ## Summary
 
-Replaced SSH/SCP MinIO upload and prune-delete steps in `release-prepare.yml` with Dokploy `remote-run.mjs sync|run`. Capture step unchanged (Dokploy API on runner). Optional MinIO steps soft-skip when `DOKPLOY_SCHEDULE_OPS_SYNC` or `DOKPLOY_SCHEDULE_OPS_RUN` is unset — same spirit as the old missing-SSH-key behavior.
+Dedicated sidebar page at `/telegram` with three sections (Bot, Chats, Okleyka destination). Extended `api.js` with chats/topics/webhook hooks. Removed Settings Telegram tab; `/settings?tab=telegram` redirects to `/telegram`.
 
-## Changes
+## Build
 
-| Step | Before | After |
-|------|--------|-------|
-| Upload manifest to MinIO | SCP manifest + SSH `mc cp` | `remote-run.mjs sync` → Python-generated script with base64 manifest → `remote-run.mjs run --script-file` |
-| Delete expired objects | SCP expired.json + SSH heredoc `mc rm` loop | Python-generated script with base64 expired.json → `remote-run.mjs run --script-file` |
-
-Removed: `DOCKER_HOST_SSH_KEY`, `DOCKER_HOST`, `DOCKER_HOST_USER`, all `ssh`/`scp`/`ssh-keyscan`.
-
-## Required secrets / vars (MinIO optional steps)
-
-| Name | Type | Purpose |
-|------|------|---------|
-| `DOKPLOY_URL` | Secret | Dokploy API (already used by capture/prune) |
-| `DOKPLOY_API_KEY` | Secret | Dokploy API |
-| `DOKPLOY_SCHEDULE_OPS_SYNC` | Variable | Schedule ID for ops tree sync (optional — skip if missing) |
-| `DOKPLOY_SCHEDULE_OPS_RUN` | Variable | Schedule ID for remote bash (optional — skip if missing) |
-| `MINIO_MC_ALIAS` | Variable | Default `minio-home` |
-| `MINIO_BUCKET` | Variable | Default `dokploy` |
-
-## Verification
-
-```bash
-rg -n "ssh|scp|DOCKER_HOST_SSH" .github/workflows/release-prepare.yml
-# Expected: no matches (exit 1)
+```
+cd frontend && npm run build
+✓ built in 2.12s
 ```
 
-## Acceptance checklist
+## Files Changed
 
-- [x] Capture remains Dokploy API on runner (unchanged)
-- [x] MinIO upload via `remote-run.mjs sync` + base64 embed + `run --script-file`
-- [x] Prune delete via base64 embed + remote `mc rm` loop
-- [x] Soft-skip when schedule vars missing (`continue-on-error: true`)
-- [x] SSH/SCP/DOCKER_HOST_SSH removed
-- [x] Grep clean
-- [x] Committed per brief
-- [ ] Operator nightly/scheduled release-prepare run with schedule vars set
+| File | Change |
+|------|--------|
+| `frontend/src/pages/Telegram.jsx` | New page: token, webhook, chat list, okleyka picker |
+| `frontend/src/App.jsx` | Nav item + route |
+| `frontend/src/components/ui/Icons.jsx` | `IconTelegram` |
+| `frontend/src/api.js` | 7 new hooks (chats, topics, webhook) |
+| `frontend/src/pages/Settings.jsx` | Removed tab/panel; redirect |
 
-## Concerns / follow-ups
+## Self-Review
 
-- Upload timeout: `REMOTE_TIMEOUT_MS=600000` (10 min) — manifest is small; should be ample.
-- Prune delete does not re-sync ops tree (only `run`); acceptable since step uses `mc` only, not synced bash libs.
-- Large `expired.json` could inflate generated script size; unlikely at current retention policy.
+### Correctness
+- `readOkleykaDest` handles string and object `chatMap['okleyka.send']`.
+- Forum saves `{ chatId, threadId }` with required topic (defaults General `1`); non-forum omits `threadId`.
+- Topic select always includes **General (thread 1)**; cached topics merged without duplicate thread 1.
+- Webhook setup disabled when `PUBLIC_BASE_URL` not configured (matches backend status).
+- Active-only chat list by default; checkbox toggles `active=0`.
 
-## Post-review fix (final branch review)
+### UI / copy
+- Reuses Settings patterns: `Section`, `FieldLabel`, `btn-primary`, `PageHeader`, Russian copy style.
+- Okleyka chat select filters active chats only.
 
-- Delete-expired Python-generated bash used `${{PREFIXES}}` etc.; GHA emptied at parse time. Fixed with `$${PREFIXES}` in workflow YAML (same pattern as upload-manifest step).
+### Scope
+- Only files listed in brief committed.
+
+### Risks / notes
+- Okleyka chat dropdown uses active chats from current list query; if saved destination chat is inactive it may not appear in select until «Показать неактивные» (edge case).
+- Manual topic add in Okleyka section requires chat selected first (by design).
+- No E2E/browser test run; build-only verification.
+
+## Status
+
+**DONE**
+
+---
+
+## Task 6 Review Fixes (2026-07-30)
+
+**Commit:** `fix(telegram): preserve okleyka threadId and saved chat on load`
+
+### Critical — threadId race
+- Settings effect now sets `okleykaThreadId` exactly from `dest.threadId` (no eager `'1'` default).
+- Forum/non-forum sync effect gated on `!chatsLoading && selectedChatResolved && selectedChat` — no clear/default while chats loading or saved chat unresolved.
+- Saved `threadId` preserved until selected chat metadata is known.
+
+### Important — saved inactive chat in dropdown
+- Conditional `useTelegramChats(false, { enabled })` when saved chat missing from active list.
+- `okleykaChatOptions` merges active chats + saved destination; inactive labeled `· неактивен`.
+- `isForum` / topic UI use `allKnownChats` (active + inactive lookup).
+
+### Important — webhook PUBLIC_BASE_URL hint
+- Shows «Загрузка…» while `useTelegramWebhookStatus` is loading; «не задан» only after query settled.
+
+### Build
+
+```
+cd frontend && npm run build
+✓ built in 1.94s
+```
+
+### Files
+- `frontend/src/pages/Telegram.jsx`
+- `frontend/src/api.js` — `useTelegramChats` accepts optional `queryOptions` (for `enabled`)
+
+**Status:** DONE

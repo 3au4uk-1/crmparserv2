@@ -954,13 +954,14 @@ export function useTestTelegramSend() {
   });
 }
 
-export function useTelegramChats(activeOnly = true) {
+export function useTelegramChats(activeOnly = true, queryOptions = {}) {
   return useQuery({
     queryKey: ['telegram-chats', activeOnly],
     queryFn: () =>
       api
         .get('/telegram/chats', { params: { active: activeOnly ? '1' : '0' } })
         .then((r) => r.data),
+    ...queryOptions,
   });
 }
 

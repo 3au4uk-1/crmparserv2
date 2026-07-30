@@ -42,10 +42,11 @@ function readOkleykaDest(chatMap) {
   };
 }
 
-function formatChatLabel(chat) {
+function formatChatLabel(chat, { showInactive = false } = {}) {
   const title = chat.title || chat.username || chat.chatId;
   const suffix = chat.isForum ? ' · форум' : '';
-  return `${title}${suffix}`;
+  const inactiveSuffix = showInactive || chat.active === false ? ' · неактивен' : '';
+  return `${title}${suffix}${inactiveSuffix}`;
 }
 
 function formatTopicLabel(topic) {
@@ -57,7 +58,11 @@ export default function Telegram() {
   const updateTelegramSettings = useUpdateTelegramSettings();
   const testTelegramBot = useTestTelegramBot();
   const testTelegramSend = useTestTelegramSend();
-  const { data: webhookStatus, refetch: refetchWebhook } = useTelegramWebhookStatus();
+  const {
+    data: webhookStatus,
+    refetch: refetchWebhook,
+    isLoading: webhookLoading,
+  } = useTelegramWebhookStatus();
   const setupWebhook = useSetupTelegramWebhook();
   const teardownWebhook = useTeardownTelegramWebhook();
 
@@ -78,8 +83,45 @@ export default function Telegram() {
   const [actionSuccess, setActionSuccess] = useState('');
 
   const chats = chatsData?.chats ?? [];
-  const selectedChat = chats.find((c) => c.chatId === okleykaChatId);
+  const savedChatInActiveList = Boolean(
+    okleykaChatId && chats.some((c) => c.chatId === okleykaChatId),
+  );
+  const needsInactiveLookup = Boolean(
+    okleykaChatId && !chatsLoading && !savedChatInActiveList,
+  );
+  const { data: inactiveChatsData, isLoading: inactiveChatsLoading } = useTelegramChats(
+    false,
+    { enabled: needsInactiveLookup },
+  );
+  const inactiveLookupChats = inactiveChatsData?.chats ?? [];
+
+  const allKnownChats = useMemo(() => {
+    const merged = [...chats];
+    for (const chat of inactiveLookupChats) {
+      if (!merged.some((c) => c.chatId === chat.chatId)) {
+        merged.push(chat);
+      }
+    }
+    return merged;
+  }, [chats, inactiveLookupChats]);
+
+  const selectedChat = allKnownChats.find((c) => c.chatId === okleykaChatId);
+  const inactiveLookupDone = needsInactiveLookup && !inactiveChatsLoading;
+  const selectedChatResolved =
+    !okleykaChatId || savedChatInActiveList || inactiveLookupDone;
   const isForum = Boolean(selectedChat?.isForum);
+
+  const okleykaChatOptions = useMemo(() => {
+    const activeChats = chats.filter((c) => c.active);
+    const options = activeChats.map((chat) => ({ chat, showInactive: false }));
+    if (okleykaChatId && !activeChats.some((c) => c.chatId === okleykaChatId)) {
+      const savedChat = allKnownChats.find((c) => c.chatId === okleykaChatId);
+      if (savedChat) {
+        options.push({ chat: savedChat, showInactive: true });
+      }
+    }
+    return options;
+  }, [chats, allKnownChats, okleykaChatId]);
 
   const { data: topicsData } = useTelegramTopics(isForum ? okleykaChatId : '');
   const cachedTopics = topicsData?.topics ?? [];
@@ -107,17 +149,27 @@ export default function Telegram() {
   useEffect(() => {
     const dest = readOkleykaDest(telegramSettings?.chatMap);
     setOkleykaChatId(dest.chatId);
-    setOkleykaThreadId(dest.threadId || (dest.chatId ? '1' : ''));
+    setOkleykaThreadId(dest.threadId);
   }, [telegramSettings?.chatMap]);
 
   useEffect(() => {
-    if (isForum && !okleykaThreadId) {
-      setOkleykaThreadId('1');
+    if (chatsLoading || !okleykaChatId || !selectedChatResolved || !selectedChat) {
+      return;
     }
-    if (!isForum) {
-      setOkleykaThreadId('');
+    if (selectedChat.isForum) {
+      if (!okleykaThreadId) {
+        setOkleykaThreadId('1');
+      }
+      return;
     }
-  }, [isForum, okleykaChatId, okleykaThreadId]);
+    setOkleykaThreadId('');
+  }, [
+    chatsLoading,
+    okleykaChatId,
+    okleykaThreadId,
+    selectedChat,
+    selectedChatResolved,
+  ]);
 
   async function saveToken() {
     setSaveError('');
@@ -301,7 +353,9 @@ export default function Telegram() {
 
           <div className="pt-2 border-t border-border">
             <FieldLabel>Webhook</FieldLabel>
-            {!webhookStatus?.publicBaseUrlConfigured ? (
+            {webhookLoading ? (
+              <p className="text-sm text-ink-muted">Загрузка…</p>
+            ) : !webhookStatus?.publicBaseUrlConfigured ? (
               <p className="text-sm text-ink-muted">
                 PUBLIC_BASE_URL не задан на сервере — подключение webhook недоступно.
               </p>
@@ -434,15 +488,13 @@ export default function Telegram() {
               className="select-field w-full"
             >
               <option value="">— выберите чат —</option>
-              {chats
-                .filter((c) => c.active)
-                .map((chat) => (
-                  <option key={chat.chatId} value={chat.chatId}>
-                    {formatChatLabel(chat)}
-                  </option>
-                ))}
+              {okleykaChatOptions.map(({ chat, showInactive }) => (
+                <option key={chat.chatId} value={chat.chatId}>
+                  {formatChatLabel(chat, { showInactive })}
+                </option>
+              ))}
             </select>
-            {chats.filter((c) => c.active).length === 0 && (
+            {okleykaChatOptions.length === 0 && (
               <p className="text-xs text-ink-faint mt-1.5">
                 Нет активных чатов — добавьте бота в группу или введите chat_id вручную выше.
               </p>
