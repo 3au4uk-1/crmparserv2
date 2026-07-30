@@ -12,6 +12,12 @@ import {
   useTelegramWebhookStatus,
   useSetupTelegramWebhook,
   useTeardownTelegramWebhook,
+  useTelegramAutoInviteStatus,
+  useTelegramAutoInviteMembers,
+  useAddTelegramAutoInviteMember,
+  useUpdateTelegramAutoInviteMember,
+  useDeleteTelegramAutoInviteMember,
+  useRetryTelegramAutoInviteRun,
 } from '../api';
 
 function Section({ title, description, children }) {
@@ -65,6 +71,16 @@ export default function Telegram() {
   } = useTelegramWebhookStatus();
   const setupWebhook = useSetupTelegramWebhook();
   const teardownWebhook = useTeardownTelegramWebhook();
+  const {
+    data: autoInviteStatus,
+    isLoading: autoInviteStatusLoading,
+  } = useTelegramAutoInviteStatus();
+  const { data: autoInviteMembersData, isLoading: autoInviteMembersLoading } =
+    useTelegramAutoInviteMembers();
+  const addAutoInviteMember = useAddTelegramAutoInviteMember();
+  const updateAutoInviteMember = useUpdateTelegramAutoInviteMember();
+  const deleteAutoInviteMember = useDeleteTelegramAutoInviteMember();
+  const retryAutoInviteRun = useRetryTelegramAutoInviteRun();
 
   const [activeOnly, setActiveOnly] = useState(true);
   const { data: chatsData, isLoading: chatsLoading } = useTelegramChats(activeOnly);
@@ -77,10 +93,17 @@ export default function Telegram() {
   const [okleykaThreadId, setOkleykaThreadId] = useState('');
   const [manualThreadId, setManualThreadId] = useState('');
   const [manualTopicName, setManualTopicName] = useState('');
+  const [autoInviteUsername, setAutoInviteUsername] = useState('');
+  const [autoInviteUserId, setAutoInviteUserId] = useState('');
+  const [autoInviteDisplayName, setAutoInviteDisplayName] = useState('');
+  const [retryChatId, setRetryChatId] = useState('');
 
   const [saveError, setSaveError] = useState('');
   const [actionError, setActionError] = useState('');
   const [actionSuccess, setActionSuccess] = useState('');
+
+  const autoInviteConfigured = Boolean(autoInviteStatus?.configured);
+  const autoInviteMembers = autoInviteMembersData?.members ?? [];
 
   const chats = chatsData?.chats ?? [];
   const savedChatInActiveList = Boolean(
@@ -297,6 +320,80 @@ export default function Telegram() {
     }
   }
 
+  async function onAddAutoInviteMember() {
+    setActionError('');
+    setActionSuccess('');
+    const username = autoInviteUsername.trim();
+    const userId = autoInviteUserId.trim();
+    const displayName = autoInviteDisplayName.trim();
+    if (!username && !userId) {
+      setActionError('Укажите username или user_id');
+      return;
+    }
+    try {
+      await addAutoInviteMember.mutateAsync({
+        username: username || undefined,
+        userId: userId || undefined,
+        displayName: displayName || undefined,
+      });
+      setAutoInviteUsername('');
+      setAutoInviteUserId('');
+      setAutoInviteDisplayName('');
+      setActionSuccess('Участник добавлен');
+    } catch (err) {
+      setActionError(
+        err.response?.data?.error || err.message || 'Не удалось добавить участника',
+      );
+    }
+  }
+
+  async function onToggleAutoInviteMember(member) {
+    setActionError('');
+    setActionSuccess('');
+    try {
+      await updateAutoInviteMember.mutateAsync({
+        id: member.id,
+        active: !member.active,
+      });
+    } catch (err) {
+      setActionError(
+        err.response?.data?.error || err.message || 'Не удалось обновить участника',
+      );
+    }
+  }
+
+  async function onDeleteAutoInviteMember(id) {
+    setActionError('');
+    setActionSuccess('');
+    try {
+      await deleteAutoInviteMember.mutateAsync(id);
+      setActionSuccess('Участник удалён');
+    } catch (err) {
+      setActionError(
+        err.response?.data?.error || err.message || 'Не удалось удалить участника',
+      );
+    }
+  }
+
+  async function onRetryAutoInviteRun() {
+    setActionError('');
+    setActionSuccess('');
+    const chatId = retryChatId.trim();
+    if (!chatId) {
+      setActionError('Введите chat_id');
+      return;
+    }
+    try {
+      const result = await retryAutoInviteRun.mutateAsync(chatId);
+      const status = result?.status || 'done';
+      setActionSuccess(`Повтор запущен: ${status}`);
+    } catch (err) {
+      setActionError(
+        err.response?.data?.error || err.message || 'Не удалось повторить авто-добавление',
+      );
+    }
+  }
+
   const tgWebhook = webhookStatus?.telegram;
   const webhookConnected =
     tgWebhook?.url && webhookStatus?.webhookUrl && tgWebhook.url === webhookStatus.webhookUrl;
@@ -396,6 +493,141 @@ export default function Telegram() {
               </div>
             )}
           </div>
+        </div>
+      </Section>
+
+      <Section
+        title="Авто-добавление"
+        description="User-bot автоматически добавляет команду брендинга в чаты заказов, когда бот туда вступает."
+      >
+        <div className="space-y-4">
+          {autoInviteStatusLoading ? (
+            <p className="text-sm text-ink-muted">Загрузка…</p>
+          ) : !autoInviteConfigured ? (
+            <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md">
+              Задайте TELEGRAM_API_ID / HASH / USER_SESSION на сервере
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-ink-faint leading-relaxed max-w-2xl">
+                Боту в чатах заказов нужны права Invite users и Add new admins; privacy может
+                блокировать инвайт.
+              </p>
+
+              {autoInviteMembersLoading ? (
+                <p className="text-sm text-ink-muted">Загрузка списка…</p>
+              ) : autoInviteMembers.length === 0 ? (
+                <p className="text-sm text-ink-muted">Список участников пуст — добавьте первого ниже.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="data-table w-full">
+                    <thead>
+                      <tr>
+                        <th>username</th>
+                        <th>user_id</th>
+                        <th>Имя</th>
+                        <th>Активен</th>
+                        <th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {autoInviteMembers.map((member) => (
+                        <tr key={member.id} className={!member.active ? 'opacity-60' : undefined}>
+                          <td className="font-mono text-sm">{member.username ? `@${member.username}` : '—'}</td>
+                          <td className="font-mono text-sm">{member.userId || '—'}</td>
+                          <td className="text-sm">{member.displayName || '—'}</td>
+                          <td>
+                            <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={member.active}
+                                onChange={() => onToggleAutoInviteMember(member)}
+                                disabled={updateAutoInviteMember.isPending}
+                                className="rounded border-border"
+                              />
+                              {member.active ? 'да' : 'нет'}
+                            </label>
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              onClick={() => onDeleteAutoInviteMember(member.id)}
+                              disabled={deleteAutoInviteMember.isPending}
+                              className="btn-secondary btn-sm"
+                            >
+                              Удалить
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2 items-end max-w-3xl pt-2">
+                <div className="flex-1 min-w-[8rem]">
+                  <FieldLabel>username</FieldLabel>
+                  <input
+                    type="text"
+                    value={autoInviteUsername}
+                    onChange={(e) => setAutoInviteUsername(e.target.value)}
+                    className="input-field font-mono w-full"
+                    placeholder="@username"
+                  />
+                </div>
+                <div className="flex-1 min-w-[8rem]">
+                  <FieldLabel>user_id</FieldLabel>
+                  <input
+                    type="text"
+                    value={autoInviteUserId}
+                    onChange={(e) => setAutoInviteUserId(e.target.value)}
+                    className="input-field font-mono w-full"
+                    placeholder="123456789"
+                  />
+                </div>
+                <div className="flex-1 min-w-[8rem]">
+                  <FieldLabel>Имя (необяз.)</FieldLabel>
+                  <input
+                    type="text"
+                    value={autoInviteDisplayName}
+                    onChange={(e) => setAutoInviteDisplayName(e.target.value)}
+                    className="input-field w-full"
+                    placeholder="Иван"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={onAddAutoInviteMember}
+                  disabled={addAutoInviteMember.isPending}
+                  className="btn-primary btn-sm"
+                >
+                  {addAutoInviteMember.isPending ? 'Добавление…' : 'Добавить'}
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-2 items-end max-w-xl pt-2 border-t border-border">
+                <div className="flex-1 min-w-[12rem]">
+                  <FieldLabel>Повторить для chat_id</FieldLabel>
+                  <input
+                    type="text"
+                    value={retryChatId}
+                    onChange={(e) => setRetryChatId(e.target.value)}
+                    className="input-field font-mono w-full"
+                    placeholder="-1001234567890"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={onRetryAutoInviteRun}
+                  disabled={retryAutoInviteRun.isPending}
+                  className="btn-secondary btn-sm"
+                >
+                  {retryAutoInviteRun.isPending ? 'Запуск…' : 'Повторить'}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </Section>
 
