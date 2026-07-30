@@ -24,8 +24,31 @@ import {
   deleteAutoInviteMember,
 } from '../telegram/auto-invite-store.js';
 import { isUserbotConfigured } from '../telegram/userbot/client.js';
+import {
+  getAuthStatus,
+  startLogin,
+  submitCode,
+  submitPassword,
+  cancelLogin,
+  logout,
+} from '../telegram/userbot/auth-login.js';
 
 const router = Router();
+
+function handleAuthRoute(handler) {
+  return async (req, res, next) => {
+    try {
+      const db = getDb();
+      const result = await handler(db, req);
+      res.json(result);
+    } catch (err) {
+      if (err?.status) {
+        return res.status(err.status).json({ error: err.message });
+      }
+      next(err);
+    }
+  };
+}
 
 function readChatMap(db) {
   const row = db.prepare(`SELECT value FROM settings WHERE key = 'telegram_chat_map'`).get();
@@ -280,6 +303,35 @@ router.post('/webhook/teardown', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+router.get('/userbot/auth/status', (req, res) => {
+  res.json(getAuthStatus(getDb()));
+});
+
+router.post(
+  '/userbot/auth/start',
+  handleAuthRoute((db, req) => startLogin(db, req.body?.phone)),
+);
+
+router.post(
+  '/userbot/auth/code',
+  handleAuthRoute((db, req) => submitCode(db, req.body?.code)),
+);
+
+router.post(
+  '/userbot/auth/password',
+  handleAuthRoute((db, req) => submitPassword(db, req.body?.password)),
+);
+
+router.post('/userbot/auth/cancel', (req, res) => {
+  cancelLogin();
+  res.json({ ok: true });
+});
+
+router.post('/userbot/auth/logout', (req, res) => {
+  logout(getDb());
+  res.json({ ok: true });
 });
 
 router.get('/auto-invite/status', (req, res) => {
