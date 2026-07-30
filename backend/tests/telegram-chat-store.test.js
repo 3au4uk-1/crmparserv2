@@ -60,4 +60,20 @@ describe('telegram chat-store', () => {
     expect(topics).toHaveLength(1);
     expect(topics[0].name).toBe('Ops2');
   });
+
+  it('preserves existing topic name when upsert sends empty or null name', () => {
+    upsertTelegramChat(db, {
+      chatId: '-100', title: 'A', type: 'supergroup', isForum: true,
+      username: null, active: true, source: 'webhook',
+    });
+    upsertTelegramTopic(db, { chatId: '-100', threadId: 3, name: 'Ops', source: 'webhook' });
+    upsertTelegramTopic(db, { chatId: '-100', threadId: 3, name: '', source: 'webhook' });
+    let topics = listTelegramTopics(db, '-100');
+    expect(topics).toHaveLength(1);
+    expect(topics[0].name).toBe('Ops');
+
+    upsertTelegramTopic(db, { chatId: '-100', threadId: 3, name: null, source: 'webhook' });
+    topics = listTelegramTopics(db, '-100');
+    expect(topics[0].name).toBe('Ops');
+  });
 });
