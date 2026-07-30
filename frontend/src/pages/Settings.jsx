@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   useSettings,
   useUpdateSetting,
@@ -40,10 +41,6 @@ import {
   useActiveRestoreMissingTwentyJob,
   useRestoreMissingTwentyJob,
   fetchRestoreMissingTwentyPreview,
-  useTelegramSettings,
-  useUpdateTelegramSettings,
-  useTestTelegramBot,
-  useTestTelegramSend,
 } from '../api';
 import PageHeader from '../components/ui/PageHeader';
 
@@ -61,7 +58,6 @@ const TABS = [
   { id: 'auth', label: 'Авторизация' },
   { id: 'parsing', label: 'Парсинг' },
   { id: 'integrations', label: 'Интеграции' },
-  { id: 'telegram', label: 'Telegram' },
   { id: 'directories', label: 'Справочники' },
   { id: 'data', label: 'Данные' },
 ];
@@ -446,160 +442,6 @@ function formatPatternAddResult({ added, duplicates, failures }, duplicateLabel)
   return parts.join('. ');
 }
 
-function TelegramSettingsPanel() {
-  const { data: telegramSettings } = useTelegramSettings();
-  const updateTelegramSettings = useUpdateTelegramSettings();
-  const testTelegramBot = useTestTelegramBot();
-  const testTelegramSend = useTestTelegramSend();
-
-  const [tokenInput, setTokenInput] = useState('');
-  const [chatIdInput, setChatIdInput] = useState('');
-  const [saveError, setSaveError] = useState('');
-  const [testError, setTestError] = useState('');
-  const [testSuccess, setTestSuccess] = useState('');
-
-  useEffect(() => {
-    setChatIdInput(telegramSettings?.chatMap?.['okleyka.send'] ?? '');
-  }, [telegramSettings?.chatMap]);
-
-  async function saveToken() {
-    setSaveError('');
-    if (!tokenInput.trim()) {
-      setSaveError('Введите токен бота');
-      return;
-    }
-    try {
-      await updateTelegramSettings.mutateAsync({ token: tokenInput.trim() });
-      setTokenInput('');
-    } catch (err) {
-      setSaveError(err.response?.data?.error || err.message || 'Не удалось сохранить токен');
-    }
-  }
-
-  async function saveChatId() {
-    setSaveError('');
-    if (!chatIdInput.trim()) {
-      setSaveError('Введите chat_id');
-      return;
-    }
-    try {
-      await updateTelegramSettings.mutateAsync({
-        chatMap: { 'okleyka.send': chatIdInput.trim() },
-      });
-    } catch (err) {
-      setSaveError(err.response?.data?.error || err.message || 'Не удалось сохранить chat_id');
-    }
-  }
-
-  async function onTestBot() {
-    setTestError('');
-    setTestSuccess('');
-    try {
-      const result = await testTelegramBot.mutateAsync();
-      setTestSuccess(result.username ? `@${result.username}` : 'Бот доступен');
-    } catch (err) {
-      setTestError(err.response?.data?.error || err.message || 'Не удалось проверить бота');
-    }
-  }
-
-  async function onTestSend() {
-    setTestError('');
-    setTestSuccess('');
-    try {
-      await testTelegramSend.mutateAsync();
-      setTestSuccess('Тестовое сообщение отправлено');
-    } catch (err) {
-      setTestError(err.response?.data?.error || err.message || 'Не удалось отправить тест');
-    }
-  }
-
-  return (
-    <Section
-      title="Telegram"
-      description="Бот для отправки оклейки в групповой чат. Токен хранится на сервере и не отображается полностью."
-    >
-      <div className="space-y-4 max-w-md">
-        {telegramSettings?.tokenSet && (
-          <p className="text-sm text-ink-muted">
-            Текущий токен: <span className="font-mono text-ink">{telegramSettings.tokenPreview}</span>
-          </p>
-        )}
-        <div>
-          <FieldLabel>Токен бота</FieldLabel>
-          <div className="flex gap-2 items-center">
-            <input
-              type="password"
-              value={tokenInput}
-              onChange={(e) => setTokenInput(e.target.value)}
-              className="input-field font-mono flex-1"
-              placeholder="123456789:ABC…"
-              autoComplete="off"
-            />
-            <button
-              type="button"
-              onClick={saveToken}
-              disabled={!tokenInput.trim() || updateTelegramSettings.isPending}
-              className="btn-primary btn-sm shrink-0"
-            >
-              Сохранить
-            </button>
-          </div>
-        </div>
-        <div>
-          <FieldLabel>chat_id для okleyka.send</FieldLabel>
-          <div className="flex gap-2 items-center">
-            <input
-              type="text"
-              value={chatIdInput}
-              onChange={(e) => setChatIdInput(e.target.value)}
-              className="input-field font-mono flex-1"
-              placeholder="-1001234567890"
-            />
-            <button
-              type="button"
-              onClick={saveChatId}
-              disabled={updateTelegramSettings.isPending}
-              className="btn-primary btn-sm shrink-0"
-            >
-              Сохранить
-            </button>
-          </div>
-          <p className="text-xs text-ink-faint mt-1.5 leading-relaxed">
-            Добавьте бота в группу и получите числовой chat_id (например через @userinfobot или getUpdates).
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2 pt-1">
-          <button
-            type="button"
-            onClick={onTestBot}
-            disabled={testTelegramBot.isPending}
-            className="btn-secondary btn-sm"
-          >
-            {testTelegramBot.isPending ? 'Проверка…' : 'Проверить бота'}
-          </button>
-          <button
-            type="button"
-            onClick={onTestSend}
-            disabled={testTelegramSend.isPending}
-            className="btn-secondary btn-sm"
-          >
-            {testTelegramSend.isPending ? 'Отправка…' : 'Тест в чат'}
-          </button>
-        </div>
-        {saveError && (
-          <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md">{saveError}</p>
-        )}
-        {testError && (
-          <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md">{testError}</p>
-        )}
-        {testSuccess && (
-          <p className="text-sm text-pastel-green-text bg-pastel-green-bg px-3 py-2 rounded-md">{testSuccess}</p>
-        )}
-      </div>
-    </Section>
-  );
-}
-
 function TipRulesSection({
   zone,
   rules,
@@ -697,7 +539,13 @@ function TipRulesSection({
 }
 
 export default function Settings() {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('auth');
+
+  useEffect(() => {
+    if (searchParams.get('tab') === 'telegram') navigate('/telegram', { replace: true });
+  }, [searchParams, navigate]);
 
   const { data: settings } = useSettings();
   const { data: keywords } = useKeywords();
@@ -1632,8 +1480,6 @@ export default function Settings() {
           </Section>
         </>
       )}
-
-      {activeTab === 'telegram' && <TelegramSettingsPanel />}
 
       {activeTab === 'directories' && (
         <Section title="Справочник компаний">

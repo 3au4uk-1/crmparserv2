@@ -953,3 +953,66 @@ export function useTestTelegramSend() {
     mutationFn: () => api.post('/telegram/test-send').then((r) => r.data),
   });
 }
+
+export function useTelegramChats(activeOnly = true) {
+  return useQuery({
+    queryKey: ['telegram-chats', activeOnly],
+    queryFn: () =>
+      api
+        .get('/telegram/chats', { params: { active: activeOnly ? '1' : '0' } })
+        .then((r) => r.data),
+  });
+}
+
+export function useTelegramTopics(chatId) {
+  return useQuery({
+    queryKey: ['telegram-topics', chatId],
+    queryFn: () =>
+      api.get(`/telegram/chats/${encodeURIComponent(chatId)}/topics`).then((r) => r.data),
+    enabled: Boolean(chatId),
+  });
+}
+
+export function useAddTelegramChat() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => api.post('/telegram/chats', body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-chats'] }),
+  });
+}
+
+export function useAddTelegramTopic() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ chatId, threadId, name }) =>
+      api
+        .post(`/telegram/chats/${encodeURIComponent(chatId)}/topics`, { threadId, name })
+        .then((r) => r.data),
+    onSuccess: (_data, { chatId }) => {
+      qc.invalidateQueries({ queryKey: ['telegram-topics', chatId] });
+    },
+  });
+}
+
+export function useTelegramWebhookStatus() {
+  return useQuery({
+    queryKey: ['telegram-webhook-status'],
+    queryFn: () => api.get('/telegram/webhook/status').then((r) => r.data),
+  });
+}
+
+export function useSetupTelegramWebhook() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post('/telegram/webhook/setup').then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-webhook-status'] }),
+  });
+}
+
+export function useTeardownTelegramWebhook() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post('/telegram/webhook/teardown').then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-webhook-status'] }),
+  });
+}

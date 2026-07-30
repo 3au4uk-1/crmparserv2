@@ -36,6 +36,20 @@ export function IconSettings({ className = '', size = 18 }) {
   );
 }
 
+export function IconTelegram({ className = '', size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M21 4L3 11l7 2.5M21 4l-2.5 14.5L10 13.5M21 4L10 13.5m0 0V19l3.2-2.4"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function IconLogs({ className = '', size = 18 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
@@ -101,6 +115,7 @@ export const navIcons = {
   '/export': IconExport,
   '/export-twenty': IconExport,
   '/expenses': IconExport,
+  '/telegram': IconTelegram,
   '/settings': IconSettings,
   '/logs': IconLogs,
 };

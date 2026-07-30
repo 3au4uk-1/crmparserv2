@@ -1,0 +1,545 @@
+import { useState, useEffect, useMemo } from 'react';
+import PageHeader from '../components/ui/PageHeader';
+import {
+  useTelegramSettings,
+  useUpdateTelegramSettings,
+  useTestTelegramBot,
+  useTestTelegramSend,
+  useTelegramChats,
+  useTelegramTopics,
+  useAddTelegramChat,
+  useAddTelegramTopic,
+  useTelegramWebhookStatus,
+  useSetupTelegramWebhook,
+  useTeardownTelegramWebhook,
+} from '../api';
+
+function Section({ title, description, children }) {
+  return (
+    <section className="surface p-5 md:p-6 mb-4">
+      <div className="mb-4">
+        <h3 className="text-base font-semibold text-ink">{title}</h3>
+        {description && (
+          <p className="text-sm text-ink-muted mt-1 max-w-2xl leading-relaxed">{description}</p>
+        )}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function FieldLabel({ children }) {
+  return <label className="block text-sm font-medium text-ink-muted mb-1.5">{children}</label>;
+}
+
+function readOkleykaDest(chatMap) {
+  const raw = chatMap?.['okleyka.send'];
+  if (!raw) return { chatId: '', threadId: '' };
+  if (typeof raw === 'string') return { chatId: raw, threadId: '' };
+  return {
+    chatId: raw.chatId || '',
+    threadId: raw.threadId != null ? String(raw.threadId) : '',
+  };
+}
+
+function formatChatLabel(chat) {
+  const title = chat.title || chat.username || chat.chatId;
+  const suffix = chat.isForum ? ' · форум' : '';
+  return `${title}${suffix}`;
+}
+
+function formatTopicLabel(topic) {
+  return topic.name ? topic.name : `#${topic.threadId}`;
+}
+
+export default function Telegram() {
+  const { data: telegramSettings } = useTelegramSettings();
+  const updateTelegramSettings = useUpdateTelegramSettings();
+  const testTelegramBot = useTestTelegramBot();
+  const testTelegramSend = useTestTelegramSend();
+  const { data: webhookStatus, refetch: refetchWebhook } = useTelegramWebhookStatus();
+  const setupWebhook = useSetupTelegramWebhook();
+  const teardownWebhook = useTeardownTelegramWebhook();
+
+  const [activeOnly, setActiveOnly] = useState(true);
+  const { data: chatsData, isLoading: chatsLoading } = useTelegramChats(activeOnly);
+  const addChat = useAddTelegramChat();
+  const addTopic = useAddTelegramTopic();
+
+  const [tokenInput, setTokenInput] = useState('');
+  const [manualChatId, setManualChatId] = useState('');
+  const [okleykaChatId, setOkleykaChatId] = useState('');
+  const [okleykaThreadId, setOkleykaThreadId] = useState('');
+  const [manualThreadId, setManualThreadId] = useState('');
+  const [manualTopicName, setManualTopicName] = useState('');
+
+  const [saveError, setSaveError] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [actionSuccess, setActionSuccess] = useState('');
+
+  const chats = chatsData?.chats ?? [];
+  const selectedChat = chats.find((c) => c.chatId === okleykaChatId);
+  const isForum = Boolean(selectedChat?.isForum);
+
+  const { data: topicsData } = useTelegramTopics(isForum ? okleykaChatId : '');
+  const cachedTopics = topicsData?.topics ?? [];
+
+  const topicOptions = useMemo(() => {
+    if (!isForum) return [];
+    const general = { threadId: '1', name: 'General (thread 1)', synthetic: true };
+    const fromDb = cachedTopics.map((t) => ({
+      threadId: String(t.threadId),
+      name: formatTopicLabel(t),
+      synthetic: false,
+    }));
+    const seen = new Set();
+    const merged = [general];
+    seen.add('1');
+    for (const t of fromDb) {
+      if (!seen.has(t.threadId)) {
+        merged.push(t);
+        seen.add(t.threadId);
+      }
+    }
+    return merged;
+  }, [isForum, cachedTopics]);
+
+  useEffect(() => {
+    const dest = readOkleykaDest(telegramSettings?.chatMap);
+    setOkleykaChatId(dest.chatId);
+    setOkleykaThreadId(dest.threadId || (dest.chatId ? '1' : ''));
+  }, [telegramSettings?.chatMap]);
+
+  useEffect(() => {
+    if (isForum && !okleykaThreadId) {
+      setOkleykaThreadId('1');
+    }
+    if (!isForum) {
+      setOkleykaThreadId('');
+    }
+  }, [isForum, okleykaChatId, okleykaThreadId]);
+
+  async function saveToken() {
+    setSaveError('');
+    if (!tokenInput.trim()) {
+      setSaveError('Введите токен бота');
+      return;
+    }
+    try {
+      await updateTelegramSettings.mutateAsync({ token: tokenInput.trim() });
+      setTokenInput('');
+    } catch (err) {
+      setSaveError(err.response?.data?.error || err.message || 'Не удалось сохранить токен');
+    }
+  }
+
+  async function onTestBot() {
+    setActionError('');
+    setActionSuccess('');
+    try {
+      const result = await testTelegramBot.mutateAsync();
+      setActionSuccess(result.username ? `@${result.username}` : 'Бот доступен');
+    } catch (err) {
+      setActionError(err.response?.data?.error || err.message || 'Не удалось проверить бота');
+    }
+  }
+
+  async function onSetupWebhook() {
+    setActionError('');
+    setActionSuccess('');
+    try {
+      await setupWebhook.mutateAsync();
+      await refetchWebhook();
+      setActionSuccess('Webhook подключён');
+    } catch (err) {
+      setActionError(err.response?.data?.error || err.message || 'Не удалось подключить webhook');
+    }
+  }
+
+  async function onTeardownWebhook() {
+    setActionError('');
+    setActionSuccess('');
+    try {
+      await teardownWebhook.mutateAsync();
+      await refetchWebhook();
+      setActionSuccess('Webhook отключён');
+    } catch (err) {
+      setActionError(err.response?.data?.error || err.message || 'Не удалось отключить webhook');
+    }
+  }
+
+  async function onAddChat() {
+    setActionError('');
+    setActionSuccess('');
+    const chatId = manualChatId.trim();
+    if (!chatId) {
+      setActionError('Введите chat_id или @username');
+      return;
+    }
+    try {
+      await addChat.mutateAsync({ chatId });
+      setManualChatId('');
+      setActionSuccess('Чат добавлен');
+    } catch (err) {
+      setActionError(err.response?.data?.error || err.message || 'Не удалось добавить чат');
+    }
+  }
+
+  async function onAddTopic() {
+    setActionError('');
+    setActionSuccess('');
+    const threadId = Number(manualThreadId);
+    if (!okleykaChatId) {
+      setActionError('Сначала выберите чат');
+      return;
+    }
+    if (!Number.isInteger(threadId) || threadId <= 0) {
+      setActionError('Введите положительный thread_id');
+      return;
+    }
+    try {
+      await addTopic.mutateAsync({
+        chatId: okleykaChatId,
+        threadId,
+        name: manualTopicName.trim() || undefined,
+      });
+      setManualThreadId('');
+      setManualTopicName('');
+      setActionSuccess('Тема добавлена');
+    } catch (err) {
+      setActionError(err.response?.data?.error || err.message || 'Не удалось добавить тему');
+    }
+  }
+
+  async function saveOkleykaDest() {
+    setSaveError('');
+    if (!okleykaChatId) {
+      setSaveError('Выберите чат');
+      return;
+    }
+    if (isForum && !okleykaThreadId) {
+      setSaveError('Выберите тему форума');
+      return;
+    }
+    const entry = isForum
+      ? { chatId: okleykaChatId, threadId: Number(okleykaThreadId || '1') }
+      : { chatId: okleykaChatId };
+    try {
+      await updateTelegramSettings.mutateAsync({
+        chatMap: { 'okleyka.send': entry },
+      });
+      setActionSuccess('Назначение оклейки сохранено');
+    } catch (err) {
+      setSaveError(err.response?.data?.error || err.message || 'Не удалось сохранить назначение');
+    }
+  }
+
+  async function onTestSend() {
+    setActionError('');
+    setActionSuccess('');
+    try {
+      await testTelegramSend.mutateAsync();
+      setActionSuccess('Тестовое сообщение отправлено');
+    } catch (err) {
+      setActionError(err.response?.data?.error || err.message || 'Не удалось отправить тест');
+    }
+  }
+
+  const tgWebhook = webhookStatus?.telegram;
+  const webhookConnected =
+    tgWebhook?.url && webhookStatus?.webhookUrl && tgWebhook.url === webhookStatus.webhookUrl;
+
+  return (
+    <div>
+      <PageHeader
+        title="Telegram"
+        description="Бот для отправки оклейки в групповой чат. Токен хранится на сервере и не отображается полностью."
+      />
+
+      <Section
+        title="Бот"
+        description="Токен, проверка getMe и управление webhook для автоматического обнаружения чатов."
+      >
+        <div className="space-y-4 max-w-2xl">
+          {telegramSettings?.tokenSet && (
+            <p className="text-sm text-ink-muted">
+              Текущий токен:{' '}
+              <span className="font-mono text-ink">{telegramSettings.tokenPreview}</span>
+            </p>
+          )}
+          <div>
+            <FieldLabel>Токен бота</FieldLabel>
+            <div className="flex gap-2 items-center">
+              <input
+                type="password"
+                value={tokenInput}
+                onChange={(e) => setTokenInput(e.target.value)}
+                className="input-field font-mono flex-1"
+                placeholder="123456789:ABC…"
+                autoComplete="off"
+              />
+              <button
+                type="button"
+                onClick={saveToken}
+                disabled={!tokenInput.trim() || updateTelegramSettings.isPending}
+                className="btn-primary btn-sm shrink-0"
+              >
+                Сохранить
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onTestBot}
+              disabled={testTelegramBot.isPending}
+              className="btn-secondary btn-sm"
+            >
+              {testTelegramBot.isPending ? 'Проверка…' : 'Проверить бота'}
+            </button>
+          </div>
+
+          <div className="pt-2 border-t border-border">
+            <FieldLabel>Webhook</FieldLabel>
+            {!webhookStatus?.publicBaseUrlConfigured ? (
+              <p className="text-sm text-ink-muted">
+                PUBLIC_BASE_URL не задан на сервере — подключение webhook недоступно.
+              </p>
+            ) : (
+              <div className="space-y-2 text-sm">
+                <p className="text-ink-muted font-mono text-xs break-all">
+                  {webhookStatus.webhookUrl || '—'}
+                </p>
+                <p className="text-ink-muted">
+                  Секрет: {webhookStatus?.secretSet ? 'задан' : 'не задан'}
+                  {webhookConnected && (
+                    <span className="ml-2 text-pastel-green-text">· подключён</span>
+                  )}
+                  {tgWebhook?.last_error_message && (
+                    <span className="block mt-1 text-pastel-red-text">
+                      Ошибка Telegram: {tgWebhook.last_error_message}
+                    </span>
+                  )}
+                </p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={onSetupWebhook}
+                    disabled={setupWebhook.isPending || !telegramSettings?.tokenSet}
+                    className="btn-primary btn-sm"
+                  >
+                    {setupWebhook.isPending ? 'Подключение…' : 'Подключить webhook'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onTeardownWebhook}
+                    disabled={teardownWebhook.isPending || !telegramSettings?.tokenSet}
+                    className="btn-secondary btn-sm"
+                  >
+                    {teardownWebhook.isPending ? 'Отключение…' : 'Отключить webhook'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </Section>
+
+      <Section
+        title="Чаты"
+        description="Список чатов, где состоит бот. Новые чаты появляются через webhook или ручное добавление."
+      >
+        <div className="space-y-4">
+          <label className="inline-flex items-center gap-2 text-sm text-ink-muted cursor-pointer">
+            <input
+              type="checkbox"
+              checked={!activeOnly}
+              onChange={(e) => setActiveOnly(!e.target.checked)}
+              className="rounded border-border"
+            />
+            Показать неактивные
+          </label>
+
+          {chatsLoading ? (
+            <p className="text-sm text-ink-muted">Загрузка…</p>
+          ) : chats.length === 0 ? (
+            <p className="text-sm text-ink-muted">
+              Чатов пока нет. Добавьте бота в группу и подключите webhook или добавьте chat_id вручную.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="data-table w-full">
+                <thead>
+                  <tr>
+                    <th>Название</th>
+                    <th>chat_id</th>
+                    <th>Тип</th>
+                    <th>Источник</th>
+                    <th>Статус</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {chats.map((chat) => (
+                    <tr key={chat.chatId} className={!chat.active ? 'opacity-60' : undefined}>
+                      <td>
+                        {chat.title || chat.username || '—'}
+                        {chat.isForum && (
+                          <span className="ml-1.5 text-xs text-ink-faint">форум</span>
+                        )}
+                      </td>
+                      <td className="font-mono text-sm">{chat.chatId}</td>
+                      <td className="text-sm text-ink-muted">{chat.type || '—'}</td>
+                      <td className="text-sm text-ink-muted">{chat.source || '—'}</td>
+                      <td className="text-sm">{chat.active ? 'активен' : 'неактивен'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2 items-end max-w-xl pt-2">
+            <div className="flex-1 min-w-[12rem]">
+              <FieldLabel>Добавить чат</FieldLabel>
+              <input
+                type="text"
+                value={manualChatId}
+                onChange={(e) => setManualChatId(e.target.value)}
+                className="input-field font-mono w-full"
+                placeholder="-1001234567890 или @username"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={onAddChat}
+              disabled={addChat.isPending}
+              className="btn-primary btn-sm"
+            >
+              {addChat.isPending ? 'Добавление…' : 'Добавить'}
+            </button>
+          </div>
+        </div>
+      </Section>
+
+      <Section
+        title="Оклейка → отправка"
+        description="Куда бот отправляет сообщения okleyka.send из Twenty."
+      >
+        <div className="space-y-4 max-w-xl">
+          <div>
+            <FieldLabel>Чат</FieldLabel>
+            <select
+              value={okleykaChatId}
+              onChange={(e) => setOkleykaChatId(e.target.value)}
+              className="select-field w-full"
+            >
+              <option value="">— выберите чат —</option>
+              {chats
+                .filter((c) => c.active)
+                .map((chat) => (
+                  <option key={chat.chatId} value={chat.chatId}>
+                    {formatChatLabel(chat)}
+                  </option>
+                ))}
+            </select>
+            {chats.filter((c) => c.active).length === 0 && (
+              <p className="text-xs text-ink-faint mt-1.5">
+                Нет активных чатов — добавьте бота в группу или введите chat_id вручную выше.
+              </p>
+            )}
+          </div>
+
+          {isForum && (
+            <>
+              <div>
+                <FieldLabel>Тема форума</FieldLabel>
+                <select
+                  value={okleykaThreadId}
+                  onChange={(e) => setOkleykaThreadId(e.target.value)}
+                  className="select-field w-full"
+                >
+                  {topicOptions.map((t) => (
+                    <option key={t.threadId} value={t.threadId}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+                {topicOptions.length <= 1 && (
+                  <p className="text-xs text-ink-faint mt-1.5 leading-relaxed">
+                    Другие темы появятся после сообщений в форуме или добавьте thread_id вручную ниже.
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2 items-end">
+                <div className="flex-1 min-w-[6rem]">
+                  <FieldLabel>thread_id</FieldLabel>
+                  <input
+                    type="number"
+                    min="1"
+                    value={manualThreadId}
+                    onChange={(e) => setManualThreadId(e.target.value)}
+                    className="input-field font-mono w-full"
+                    placeholder="2"
+                  />
+                </div>
+                <div className="flex-[2] min-w-[8rem]">
+                  <FieldLabel>Название (необяз.)</FieldLabel>
+                  <input
+                    type="text"
+                    value={manualTopicName}
+                    onChange={(e) => setManualTopicName(e.target.value)}
+                    className="input-field w-full"
+                    placeholder="Оклейка"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={onAddTopic}
+                  disabled={addTopic.isPending}
+                  className="btn-secondary btn-sm"
+                >
+                  Добавить тему
+                </button>
+              </div>
+            </>
+          )}
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            <button
+              type="button"
+              onClick={saveOkleykaDest}
+              disabled={updateTelegramSettings.isPending}
+              className="btn-primary btn-sm"
+            >
+              Сохранить назначение
+            </button>
+            <button
+              type="button"
+              onClick={onTestSend}
+              disabled={testTelegramSend.isPending}
+              className="btn-secondary btn-sm"
+            >
+              {testTelegramSend.isPending ? 'Отправка…' : 'Тест в чат'}
+            </button>
+          </div>
+        </div>
+      </Section>
+
+      {saveError && (
+        <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-4">
+          {saveError}
+        </p>
+      )}
+      {actionError && (
+        <p className="text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md mb-4">
+          {actionError}
+        </p>
+      )}
+      {actionSuccess && (
+        <p className="text-sm text-pastel-green-text bg-pastel-green-bg px-3 py-2 rounded-md mb-4">
+          {actionSuccess}
+        </p>
+      )}
+    </div>
+  );
+}
