@@ -1,0 +1,22 @@
+# STAGING twenty compose: cap each service.
+# Chosen caps (raised after OOM): server 956m, worker 956m, db 300m, redis 128m (initial brief: 700/400/300/128).
+# Neighbors (separate composes, not applied here): n8n 400m, twentydash+staging 128m each.
+services:
+  server:
+    mem_limit: 956m
+  worker:
+    mem_limit: 956m
+  db:
+    mem_limit: 300m
+  redis:
+    mem_limit: 128m
+
+---
+# PROD twenty compose: soft reservation hints (best-effort on non-swarm).
+services:
+  server:
+    mem_reservation: 700m
+  worker:
+    mem_reservation: 500m
+  db:
+    mem_reservation: 400m
