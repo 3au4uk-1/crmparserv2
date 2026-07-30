@@ -1,0 +1,26 @@
+# Deploy to LXC 100 /etc/dokploy/traefik/dynamic/ (public edge Traefik).
+# Only NEW high-priority assets routers — main routers stay in dokploy-apps.yml / twenty-brand-staging.yml.
+http:
+  routers:
+    dokploy-twenty-dosugmayak-ru-assets:
+      rule: Host(`twenty.dosugmayak.ru`) && PathPrefix(`/assets`)
+      entryPoints:
+        - websecure
+      middlewares:
+        - assets-cache@file
+        - compress@file
+      service: dokploy-twenty-dosugmayak-ru-svc
+      priority: 100
+      tls:
+        certResolver: letsencrypt
+    twenty-staging-assets:
+      rule: Host(`twenty-staging.dosugmayak.ru`) && PathPrefix(`/assets`)
+      entryPoints:
+        - websecure
+      middlewares:
+        - assets-cache@file
+        - compress@file
+      service: twenty-staging-svc
+      priority: 100
+      tls:
+        certResolver: letsencrypt
