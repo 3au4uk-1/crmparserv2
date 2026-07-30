@@ -453,10 +453,14 @@ export default function Telegram() {
       return;
     }
     try {
-      await userbotAuthCode.mutateAsync(code);
+      const result = await userbotAuthCode.mutateAsync(code);
       setUserbotCode('');
       setUserbotPassword('');
-      setActionSuccess('User-bot подключён');
+      if (result?.pending === 'password') {
+        setActionSuccess('Нужен пароль 2FA');
+      } else {
+        setActionSuccess('User-bot подключён');
+      }
     } catch (err) {
       setActionError(
         err.response?.data?.error || err.message || 'Не удалось подтвердить код',
