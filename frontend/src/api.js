@@ -1017,3 +1017,51 @@ export function useTeardownTelegramWebhook() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-webhook-status'] }),
   });
 }
+
+export function useTelegramAutoInviteStatus() {
+  return useQuery({
+    queryKey: ['telegram-auto-invite-status'],
+    queryFn: () => api.get('/telegram/auto-invite/status').then((r) => r.data),
+  });
+}
+
+export function useTelegramAutoInviteMembers() {
+  return useQuery({
+    queryKey: ['telegram-auto-invite-members'],
+    queryFn: () => api.get('/telegram/auto-invite/members').then((r) => r.data),
+  });
+}
+
+export function useAddTelegramAutoInviteMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => api.post('/telegram/auto-invite/members', body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-auto-invite-members'] }),
+  });
+}
+
+export function useUpdateTelegramAutoInviteMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...patch }) =>
+      api.patch(`/telegram/auto-invite/members/${id}`, patch).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-auto-invite-members'] }),
+  });
+}
+
+export function useDeleteTelegramAutoInviteMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => api.delete(`/telegram/auto-invite/members/${id}`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-auto-invite-members'] }),
+  });
+}
+
+export function useRetryTelegramAutoInviteRun() {
+  return useMutation({
+    mutationFn: (chatId) =>
+      api
+        .post(`/telegram/auto-invite/runs/${encodeURIComponent(chatId)}/retry`)
+        .then((r) => r.data),
+  });
+}

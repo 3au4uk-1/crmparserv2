@@ -16,6 +16,14 @@ import {
 } from '../telegram/chat-store.js';
 import { sendOkleykaToTelegram } from '../telegram/outbound.js';
 import { handleTelegramWebhook } from '../telegram/inbound.js';
+import { runAutoInviteForChat } from '../telegram/auto-invite.js';
+import {
+  listAutoInviteMembers,
+  upsertAutoInviteMember,
+  updateAutoInviteMember,
+  deleteAutoInviteMember,
+} from '../telegram/auto-invite-store.js';
+import { isUserbotConfigured } from '../telegram/userbot/client.js';
 
 const router = Router();
 
@@ -269,6 +277,73 @@ router.post('/webhook/teardown', async (req, res, next) => {
     }
     await callTelegram(token, 'deleteWebhook', {});
     res.json({ ok: true, secretSet: Boolean(readWebhookSecret(db)) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/auto-invite/status', (req, res) => {
+  res.json({ configured: isUserbotConfigured() });
+});
+
+router.get('/auto-invite/members', (req, res) => {
+  const db = getDb();
+  const members = listAutoInviteMembers(db, { activeOnly: false });
+  res.json({ members });
+});
+
+router.post('/auto-invite/members', (req, res, next) => {
+  try {
+    const db = getDb();
+    const { username, userId, displayName } = req.body ?? {};
+    const member = upsertAutoInviteMember(db, { username, userId, displayName });
+    res.status(201).json({ member });
+  } catch (err) {
+    if (err.message?.includes('required')) {
+      return res.status(400).json({ error: err.message });
+    }
+    next(err);
+  }
+});
+
+router.patch('/auto-invite/members/:id', (req, res, next) => {
+  try {
+    const db = getDb();
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: 'invalid id' });
+    }
+    const member = updateAutoInviteMember(db, id, req.body ?? {});
+    if (!member) {
+      return res.status(404).json({ error: 'not found' });
+    }
+    res.json({ member });
+  } catch (err) {
+    if (err.message?.includes('required')) {
+      return res.status(400).json({ error: err.message });
+    }
+    next(err);
+  }
+});
+
+router.delete('/auto-invite/members/:id', (req, res) => {
+  const db = getDb();
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: 'invalid id' });
+  }
+  const deleted = deleteAutoInviteMember(db, id);
+  if (!deleted) {
+    return res.status(404).json({ error: 'not found' });
+  }
+  res.json({ ok: true });
+});
+
+router.post('/auto-invite/runs/:chatId/retry', async (req, res, next) => {
+  try {
+    const db = getDb();
+    const result = await runAutoInviteForChat(db, req.params.chatId, { force: true });
+    res.json(result);
   } catch (err) {
     next(err);
   }

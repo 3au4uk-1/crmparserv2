@@ -1,9 +1,13 @@
 import { getDb } from '../db/connection.js';
 import { upsertTelegramChat, upsertTelegramTopic } from './chat-store.js';
+import { scheduleAutoInvite as defaultScheduleAutoInvite } from './auto-invite.js';
 
 const MEMBER_OK = new Set(['member', 'administrator', 'creator']);
+const GROUP_TYPES = new Set(['group', 'supergroup']);
 
-export function processTelegramUpdate(db, update) {
+export function processTelegramUpdate(db, update, deps = {}) {
+  const scheduleAutoInvite = deps.scheduleAutoInvite ?? defaultScheduleAutoInvite;
+
   if (update.my_chat_member) {
     const m = update.my_chat_member;
     const chat = m.chat;
@@ -17,6 +21,9 @@ export function processTelegramUpdate(db, update) {
       active: MEMBER_OK.has(status),
       source: 'webhook',
     });
+    if (MEMBER_OK.has(status) && GROUP_TYPES.has(chat.type)) {
+      scheduleAutoInvite(db, String(chat.id));
+    }
     return;
   }
   const msg = update.message || update.channel_post;
