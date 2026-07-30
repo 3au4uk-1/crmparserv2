@@ -348,5 +348,33 @@ export function migrate() {
   // Production freza queue spreadsheet — empty until cycle is wired; fill in Settings UI.
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('freza_sheet_id', '')").run();
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS telegram_send_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event TEXT NOT NULL,
+      line_item_id TEXT NOT NULL,
+      opportunity_id TEXT,
+      chat_id TEXT,
+      sent_by TEXT,
+      payload_hash TEXT,
+      telegram_message_ids TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_telegram_send_log_event_line
+     ON telegram_send_log(event, line_item_id);`,
+  );
+
+  const telegramDefaults = [
+    ['telegram_bot_token', ''],
+    ['telegram_chat_map', '{"okleyka.send":""}'],
+    ['telegram_webhook_secret', ''],
+  ];
+  const upsertSetting = db.prepare(
+    `INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`,
+  );
+  for (const [key, value] of telegramDefaults) upsertSetting.run(key, value);
+
   console.log('Database migrated successfully');
 }

@@ -926,3 +926,30 @@ export async function downloadTwentyExportFile(jobId, from, to) {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+export function useTelegramSettings() {
+  return useQuery({
+    queryKey: ['telegram-settings'],
+    queryFn: () => api.get('/telegram/settings').then((r) => r.data),
+  });
+}
+
+export function useUpdateTelegramSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => api.put('/telegram/settings', body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-settings'] }),
+  });
+}
+
+export function useTestTelegramBot() {
+  return useMutation({
+    mutationFn: () => api.post('/telegram/test-bot').then((r) => r.data),
+  });
+}
+
+export function useTestTelegramSend() {
+  return useMutation({
+    mutationFn: () => api.post('/telegram/test-send').then((r) => r.data),
+  });
+}
