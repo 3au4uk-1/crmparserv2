@@ -44,6 +44,18 @@ function parseExistingDetail(existing) {
   }
 }
 
+const ALREADY_PARTICIPANT_PATTERNS = [
+  'USER_ALREADY_PARTICIPANT',
+  'USER_ALREADY_INVITED',
+  'ALREADY_PARTICIPANT',
+  'ALREADY_IN_CHAT',
+];
+
+function isAlreadyParticipantError(err) {
+  const message = String(err?.message ?? err ?? '').toLowerCase();
+  return ALREADY_PARTICIPANT_PATTERNS.some((pattern) => message.includes(pattern.toLowerCase()));
+}
+
 /**
  * @param {import('better-sqlite3').Database} db
  * @param {string | number} chatId
@@ -116,13 +128,23 @@ export async function runAutoInviteForChat(db, chatId, { force = false, deps: de
         status: 'invited',
       });
     } catch (err) {
-      memberResults.push({
-        memberId: member.id,
-        username: member.username,
-        userId: member.userId,
-        status: 'failed',
-        error: err?.message || String(err),
-      });
+      if (isAlreadyParticipantError(err)) {
+        memberResults.push({
+          memberId: member.id,
+          username: member.username,
+          userId: member.userId,
+          status: 'skipped',
+          reason: 'already_participant',
+        });
+      } else {
+        memberResults.push({
+          memberId: member.id,
+          username: member.username,
+          userId: member.userId,
+          status: 'failed',
+          error: err?.message || String(err),
+        });
+      }
     }
   }
 

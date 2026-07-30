@@ -132,6 +132,28 @@ describe('runAutoInviteForChat', () => {
     expect(row.user_id).toBe('333');
   });
 
+  it('skips already-participant invite errors and finishes success', async () => {
+    upsertAutoInviteMember(db, { username: 'alice' });
+
+    const deps = makeDeps({
+      inviteUser: vi.fn(async () => {
+        throw new Error('USER_ALREADY_PARTICIPANT');
+      }),
+    });
+
+    const result = await runAutoInviteForChat(db, '-1003a', { deps });
+
+    expect(result.status).toBe('success');
+    expect(result.detail.members).toHaveLength(1);
+    expect(result.detail.members[0]).toMatchObject({
+      status: 'skipped',
+      reason: 'already_participant',
+    });
+
+    const run = getAutoInviteRun(db, '-1003a');
+    expect(run.status).toBe('success');
+  });
+
   it('returns partial when a member invite fails (privacy)', async () => {
     upsertAutoInviteMember(db, { username: 'alice' });
     upsertAutoInviteMember(db, { username: 'private_user' });
