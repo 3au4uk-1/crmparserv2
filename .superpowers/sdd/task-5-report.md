@@ -1,108 +1,103 @@
-# Task 5 Report: Telegram HTTP API routes (chats, webhook admin, settings shape)
+# Task 5 Report: Auto-invite webhook trigger + HTTP API + frontend hooks
 
 **Date:** 2026-07-30  
 **Branch:** `staging`  
-**Commit:** `e7b399a` — feat(telegram): chats API and webhook setup/teardown endpoints
+**Commit:** `c8efd14` — feat(telegram): auto-invite webhook trigger and API
 
 ## Summary
 
-Added Telegram Bot API client, REST routes for chat/topic listing and manual add, webhook setup/teardown/status with `PUBLIC_BASE_URL`, and `mergeChatMapEntry` for object-shaped `okleyka.send` on settings PUT. TDD: merge tests GREEN → routes → telegram suite GREEN.
+Wired `scheduleAutoInvite` on `my_chat_member` join for group/supergroup chats (non-blocking via existing `setImmediate`), added REST CRUD + status + retry routes under `/api/telegram/auto-invite/*`, and added React Query hooks in `frontend/src/api.js`. TDD: 14 new tests RED → implement → GREEN.
 
 ## TDD Evidence
 
-### mergeChatMapEntry (Step 1)
+### RED (Step 1)
+
+Command: `cd backend && npm test -- tests/telegram-auto-invite-routes.test.js`
 
 ```
-cd backend && npm test -- telegram-chat-map-merge.test.js
- Test Files  1 passed (1)
-      Tests  2 passed (2)
+Tests  9 failed | 5 passed (14)
+- inbound schedule not wired (404 on routes)
 ```
 
-### Full telegram suite (Step 3)
+### GREEN (Step 3)
+
+Command: `cd backend && npm test -- tests/telegram-auto-invite-routes.test.js tests/telegram-inbound.test.js`
 
 ```
-cd backend && npm test -- telegram
- Test Files  8 passed (8)
-      Tests  28 passed (28)
+ Test Files  2 passed (2)
+      Tests  20 passed (20)
 ```
 
-Full `npm test`: 9 pre-existing failures in `migrate-deal-identity` / `decor-mk-lists` (unrelated to this task).
+Command: `cd backend && npm test -- telegram`
+
+```
+ Test Files  13 passed (13)
+      Tests  81 passed (81)
+```
 
 ## Files Changed
 
 | File | Change |
 |------|--------|
-| `backend/src/telegram/api-client.js` | `callTelegram(token, method, body)` |
-| `backend/src/routes/telegram.js` | chats/topics CRUD, webhook admin, settings merge |
-| `backend/src/telegram/settings.js` | `mergeChatMapEntry` |
-| `backend/src/config.js` | `publicBaseUrl` from `PUBLIC_BASE_URL` |
-| `.env.example` | `PUBLIC_BASE_URL` documented |
-| `docker-compose.yml` | pass `PUBLIC_BASE_URL` |
-| `backend/tests/telegram-chat-map-merge.test.js` | unit tests |
+| `backend/src/telegram/inbound.js` | `processTelegramUpdate` accepts optional `{ scheduleAutoInvite }`; schedules on group/supergroup join |
+| `backend/src/routes/telegram.js` | auto-invite status, members CRUD, retry run |
+| `backend/tests/telegram-auto-invite-routes.test.js` | 14 tests (inbound trigger + HTTP routes) |
+| `frontend/src/api.js` | 6 React Query hooks |
 
 ## API Endpoints
 
 | Method | Path | Notes |
 |--------|------|-------|
-| GET | `/api/telegram/chats?active=1` | `active=0` lists all |
-| GET | `/api/telegram/chats/:chatId/topics` | |
-| POST | `/api/telegram/chats` | `{ chatId }` → getChat + manual upsert |
-| POST | `/api/telegram/chats/:chatId/topics` | `{ threadId, name? }` |
-| GET | `/api/telegram/webhook/status` | local config + optional getWebhookInfo |
-| POST | `/api/telegram/webhook/setup` | 400 if no PUBLIC_BASE_URL; generates secret |
-| POST | `/api/telegram/webhook/teardown` | deleteWebhook; keeps secret |
-| PUT | `/api/telegram/settings` | uses `mergeChatMapEntry` for chat map |
+| GET | `/api/telegram/auto-invite/status` | `{ configured: boolean }` only — no session/api_hash |
+| GET | `/api/telegram/auto-invite/members` | `{ members: [...] }` camelCase, includes inactive |
+| POST | `/api/telegram/auto-invite/members` | `{ username?, userId?, displayName? }` → 201 `{ member }` |
+| PATCH | `/api/telegram/auto-invite/members/:id` | partial patch → `{ member }` |
+| DELETE | `/api/telegram/auto-invite/members/:id` | `{ ok: true }` |
+| POST | `/api/telegram/auto-invite/runs/:chatId/retry` | `runAutoInviteForChat(..., { force: true })` |
+
+## Inbound Trigger Rules
+
+- Event: `my_chat_member` after `upsertTelegramChat`
+- Schedule when: `new_chat_member.status` ∈ `{ member, administrator, creator }` AND `chat.type` ∈ `{ group, supergroup }`
+- Skip: `private`, `channel`, left/kicked statuses, regular messages
+- Non-blocking: uses existing `scheduleAutoInvite` → `setImmediate` + `unref`
+
+## Frontend Hooks
+
+| Hook | Type |
+|------|------|
+| `useTelegramAutoInviteStatus` | query |
+| `useTelegramAutoInviteMembers` | query |
+| `useAddTelegramAutoInviteMember` | mutation |
+| `useUpdateTelegramAutoInviteMember` | mutation |
+| `useDeleteTelegramAutoInviteMember` | mutation |
+| `useRetryTelegramAutoInviteRun` | mutation |
 
 ## Self-Review
 
 ### Correctness
-- Webhook setup requires `config.publicBaseUrl`; returns `{ error: 'PUBLIC_BASE_URL not set' }` on 400.
-- Secret auto-generated via `randomBytes(24)` when empty; persisted before `setWebhook`.
-- `allowed_updates`: `message`, `channel_post`, `my_chat_member` per spec.
-- `mergeChatMapEntry` normalizes legacy string → `{ chatId }`; preserves `threadId` when set; omits null threadId.
-- Manual chat add calls Telegram `getChat`; maps response to chat-store upsert.
+- Webhook response not blocked — schedule is fire-and-forget via `setImmediate`.
+- Status endpoint exposes only `configured` boolean from `isUserbotConfigured()`.
+- Member routes delegate to store layer; validation errors → 400, missing → 404.
+- Retry route awaits orchestration result (admin action, acceptable latency).
 
 ### Test coverage
-- Unit: merge object + legacy string (2 tests).
-- No integration tests for new HTTP routes (brief scope); chat-store/inbound/outbound already covered.
-- Route handlers follow existing `next(err)` pattern for Telegram 502 errors.
+- Inbound: supergroup join, admin/creator, private/channel skip, left skip, message skip.
+- Routes: status shape, members list camelCase, CRUD, retry with force mock.
 
 ### Scope
-- No React page (Task 6). Only files listed in brief committed.
-
-### Risks / notes
-- Route responses use camelCase mappers (`mapChatRow` / `mapTopicRow`); frontend Task 6 should align.
-- `POST /chats/:chatId/topics` does not verify chat exists in DB (manual add can create topic for any chatId string).
-- Full backend suite has unrelated failures; telegram subset is clean.
+- No UI page changes (Task 6). Hooks only in `api.js`.
 
 ## Status
 
 **DONE**
 
----
+## Tests one-liner
 
-## Task 5 Review Fixes (2026-07-30)
+`npm test -- telegram` → **81/81 pass**
 
-### 1. Exempt Telegram webhook from APP_PASSWORD auth
-`appAuthMiddleware` now bypasses session auth for `POST /telegram/webhook` (Telegram uses `X-Telegram-Bot-Api-Secret-Token` instead).
+## Concerns
 
-### 2. Allow clearing `okleyka.send` via `mergeChatMapEntry`
-Empty string or `null` patch values persist `''`, which `normalizeOkleykaDestination` treats as unset.
-
-### Test evidence
-
-```
-cd backend && npm test -- telegram-chat-map-merge.test.js
- Test Files  1 passed (1)
-      Tests  3 passed (3)
-
-cd backend && npm test -- app-auth-import.test.js
- Test Files  1 passed (1)
-      Tests  5 passed (5)
-
-cd backend && npm test -- telegram
- Test Files  8 passed (8)
-      Tests  29 passed (29)
-```
-
-**Commit:** `fix(telegram): exempt webhook auth and allow clearing okleyka destination`
+1. **Retry route is synchronous** — long-running userbot work blocks HTTP until complete; acceptable for admin retry but may need async job pattern if timeouts appear in prod.
+2. **GET members lists inactive** — UI may want filter toggle; store supports `activeOnly` if needed later.
+3. **No run history endpoint** — retry returns orchestration result but no GET for past runs; Task 6 UI may need run status per chat.
