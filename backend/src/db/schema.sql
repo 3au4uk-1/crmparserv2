@@ -222,6 +222,21 @@ CREATE TABLE IF NOT EXISTS telegram_topics (
   last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (chat_id, thread_id)
 );
+CREATE TABLE IF NOT EXISTS telegram_auto_invite_members (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT,
+  user_id TEXT,
+  display_name TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS telegram_auto_invite_runs (
+  chat_id TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  finished_at TEXT,
+  detail_json TEXT
+);
 
 INSERT OR IGNORE INTO companies (code, full_name) VALUES ('ПРО', 'ProInteractive');
 INSERT OR IGNORE INTO companies (code, full_name) VALUES ('АРТ', 'Art-Active');
