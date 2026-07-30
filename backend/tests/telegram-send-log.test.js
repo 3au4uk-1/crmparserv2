@@ -1,6 +1,10 @@
 import Database from 'better-sqlite3';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { getTelegramBotToken, getTelegramChatId } from '../src/telegram/settings.js';
+import {
+  getTelegramBotToken,
+  getTelegramChatId,
+  getTelegramDestination,
+} from '../src/telegram/settings.js';
 import { findLastSend, insertSendLog } from '../src/telegram/send-log.js';
 
 function memoryDb() {
@@ -42,6 +46,25 @@ describe('telegram settings + send-log', () => {
     expect(getTelegramBotToken(db)).toBe('tok-1');
     expect(getTelegramChatId(db, 'okleyka.send')).toBe('-100123');
     expect(getTelegramChatId(db, 'other')).toBe('');
+  });
+
+  it('reads destination with legacy string map entry', () => {
+    expect(getTelegramDestination(db, 'okleyka.send')).toEqual({
+      chatId: '-100123',
+      threadId: null,
+    });
+    expect(getTelegramDestination(db, 'other')).toBeNull();
+  });
+
+  it('reads destination with threadId from object map entry', () => {
+    db.prepare(`UPDATE settings SET value = ? WHERE key = 'telegram_chat_map'`).run(
+      JSON.stringify({ 'okleyka.send': { chatId: '-100123', threadId: 42 } }),
+    );
+    expect(getTelegramDestination(db, 'okleyka.send')).toEqual({
+      chatId: '-100123',
+      threadId: 42,
+    });
+    expect(getTelegramChatId(db, 'okleyka.send')).toBe('-100123');
   });
 
   it('tracks last send per event+lineItem', () => {
