@@ -132,6 +132,27 @@ describe('runAutoInviteForChat', () => {
     expect(row.user_id).toBe('333');
   });
 
+  it('continues when joinInvite throws USER_ALREADY_PARTICIPANT', async () => {
+    upsertAutoInviteMember(db, { username: 'alice' });
+
+    const deps = makeDeps({
+      joinInvite: vi.fn(async () => {
+        throw new Error('USER_ALREADY_PARTICIPANT');
+      }),
+    });
+
+    const result = await runAutoInviteForChat(db, '-1003b', { deps });
+
+    expect(result.status).toBe('success');
+    expect(deps.getSelfUserId).toHaveBeenCalled();
+    expect(deps.promote).toHaveBeenCalledWith('bot-token', '-1003b', '999');
+    expect(deps.inviteUser).toHaveBeenCalledTimes(1);
+    expect(result.detail.members[0].status).toBe('invited');
+
+    const run = getAutoInviteRun(db, '-1003b');
+    expect(run.status).toBe('success');
+  });
+
   it('skips already-participant invite errors and finishes success', async () => {
     upsertAutoInviteMember(db, { username: 'alice' });
 
@@ -229,7 +250,9 @@ describe('runAutoInviteForChat', () => {
     expect(deps.createInviteLink).not.toHaveBeenCalled();
   });
 
-  it('fails when setup steps throw before member invites', async () => {
+  it('continues member invites when promote fails and finishes partial', async () => {
+    upsertAutoInviteMember(db, { username: 'alice' });
+
     const deps = makeDeps({
       promote: vi.fn(async () => {
         throw new Error('not enough rights');
@@ -238,9 +261,34 @@ describe('runAutoInviteForChat', () => {
 
     const result = await runAutoInviteForChat(db, '-1008', { deps });
 
-    expect(result.status).toBe('failed');
-    expect(result.detail.error).toBe('not enough rights');
-    expect(deps.inviteUser).not.toHaveBeenCalled();
+    expect(result.status).toBe('partial');
+    expect(result.detail.promoteError).toBe('not enough rights');
+    expect(result.detail.members).toHaveLength(1);
+    expect(result.detail.members[0].status).toBe('invited');
+    expect(deps.inviteUser).toHaveBeenCalledTimes(1);
+
+    const run = getAutoInviteRun(db, '-1008');
+    expect(run.status).toBe('partial');
+  });
+
+  it('sets clear promoteError for basic group / admin-required failures', async () => {
+    upsertAutoInviteMember(db, { username: 'alice' });
+
+    const deps = makeDeps({
+      promote: vi.fn(async () => {
+        throw new Error('Bad Request: CHAT_ADMIN_REQUIRED');
+      }),
+      inviteUser: vi.fn(async () => {
+        throw new Error('USER_PRIVACY_RESTRICTED');
+      }),
+    });
+
+    const result = await runAutoInviteForChat(db, '-1008b', { deps });
+
+    expect(result.status).toBe('partial');
+    expect(result.detail.promoteError).toMatch(/supergroup/i);
+    expect(result.detail.members[0].status).toBe('failed');
+    expect(deps.inviteUser).toHaveBeenCalledTimes(1);
   });
 });
 

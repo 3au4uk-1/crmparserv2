@@ -56,6 +56,25 @@ function isAlreadyParticipantError(err) {
   return ALREADY_PARTICIPANT_PATTERNS.some((pattern) => message.includes(pattern.toLowerCase()));
 }
 
+const PROMOTE_NOT_SUPPORTED_PATTERNS = [
+  'CHAT_ADMIN_REQUIRED',
+  'PEER_ID_INVALID',
+  'NOT_SUPERGROUP',
+  'NOT A SUPERGROUP',
+];
+
+function isPromoteNotSupportedError(err) {
+  const message = String(err?.message ?? err ?? '').toUpperCase();
+  return PROMOTE_NOT_SUPPORTED_PATTERNS.some((pattern) => message.includes(pattern));
+}
+
+function formatPromoteError(err) {
+  if (isPromoteNotSupportedError(err)) {
+    return 'Order chats must be a supergroup with the bot as admin (Invite users via link + Add new admins).';
+  }
+  return err?.message || String(err);
+}
+
 /**
  * @param {import('better-sqlite3').Database} db
  * @param {string | number} chatId
@@ -93,12 +112,23 @@ export async function runAutoInviteForChat(db, chatId, { force = false, deps: de
   }
 
   let client;
+  let promoteError = null;
   try {
     const { inviteLink } = await deps.createInviteLink(token, chatId);
     client = await deps.getClient();
-    await deps.joinInvite(client, inviteLink);
+    try {
+      await deps.joinInvite(client, inviteLink);
+    } catch (err) {
+      if (!isAlreadyParticipantError(err)) {
+        throw err;
+      }
+    }
     const selfId = await deps.getSelfUserId(client);
-    await deps.promote(token, chatId, selfId);
+    try {
+      await deps.promote(token, chatId, selfId);
+    } catch (err) {
+      promoteError = formatPromoteError(err);
+    }
   } catch (err) {
     return finishFailed({ error: err?.message || String(err) });
   }
@@ -149,7 +179,12 @@ export async function runAutoInviteForChat(db, chatId, { force = false, deps: de
   }
 
   const detail = { members: memberResults };
-  const status = memberResults.some((r) => r.status === 'failed') ? 'partial' : 'success';
+  if (promoteError) {
+    detail.promoteError = promoteError;
+  }
+
+  const hasMemberFailures = memberResults.some((r) => r.status === 'failed');
+  const status = promoteError || hasMemberFailures ? 'partial' : 'success';
   finishAutoInviteRun(db, chatId, { status, detail });
   return { status, detail };
 }

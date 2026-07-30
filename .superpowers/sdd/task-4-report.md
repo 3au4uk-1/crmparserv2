@@ -125,3 +125,30 @@ Command: `cd backend && npm test -- tests/telegram-auto-invite.test.js`
 ```
 
 New test: `skips already-participant invite errors and finishes success` — mocks `inviteUser` throwing `Error('USER_ALREADY_PARTICIPANT')`, asserts member `skipped` + run `success`.
+
+## Review Fix: Rejoin + Promote Failure (2026-07-30)
+
+**Findings (final review):**
+1. **Important** — `joinInvite` throwing `USER_ALREADY_PARTICIPANT` failed the whole run; should continue to promote + member invites.
+2. **Important** — `promote` failure aborted before member invites; basic groups / missing admin rights need clear guidance and invite attempts should still run.
+
+**Fix commit:** `fix(telegram): tolerate rejoin and promote failure in auto-invite`
+
+### Changes
+- `joinInvite`: catch already-participant errors via `isAlreadyParticipantError`, continue setup.
+- `promote`: non-fatal — capture `detail.promoteError`, still invite members; aggregate `partial` when promote failed or any member failed.
+- `formatPromoteError`: `CHAT_ADMIN_REQUIRED` / `PEER_ID_INVALID` / `NOT_SUPERGROUP` → clear message that order chats must be a **supergroup** with bot admin (Invite + Add admins).
+
+### Test evidence
+
+Command: `cd backend && npm test -- tests/telegram-auto-invite.test.js`
+
+```
+ Test Files  1 passed (1)
+      Tests  13 passed (13)
+```
+
+New tests:
+- `continues when joinInvite throws USER_ALREADY_PARTICIPANT`
+- `continues member invites when promote fails and finishes partial`
+- `sets clear promoteError for basic group / admin-required failures`
