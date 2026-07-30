@@ -1,4 +1,4 @@
-import { getTelegramBotToken, getTelegramChatId } from './settings.js';
+import { getTelegramBotToken, getTelegramDestination } from './settings.js';
 import {
   findLastSend,
   hashOkleykaPayload,
@@ -46,10 +46,11 @@ export async function handleOkleykaSend(db, body, deps = {}) {
   }
 
   const token = getTelegramBotToken(db);
-  const chatId = getTelegramChatId(db, event);
-  if (!token || !chatId) {
+  const dest = getTelegramDestination(db, event);
+  if (!token || !dest?.chatId) {
     throw configError('Telegram не настроен');
   }
+  const { chatId, threadId } = dest;
 
   const existing = findLastSend(db, event, lineItemId);
   if (existing && !force) {
@@ -63,6 +64,7 @@ export async function handleOkleykaSend(db, body, deps = {}) {
   const sendResult = await sendOkleyka({
     token,
     chatId,
+    threadId,
     text,
     fileUrls,
   });

@@ -74,4 +74,28 @@ describe('handleOkleykaSend', () => {
     expect(send).toHaveBeenCalledOnce();
     expect(patch).toHaveBeenCalledOnce();
   });
+
+  it('passes threadId from destination to send', async () => {
+    const db = memoryDb();
+    db.prepare(`UPDATE settings SET value = ? WHERE key = 'telegram_chat_map'`).run(
+      JSON.stringify({ 'okleyka.send': { chatId: '-1001', threadId: 42 } }),
+    );
+    const send = vi.fn(async () => ({ messageIds: [7] }));
+    const patch = vi.fn(async () => {});
+    await handleOkleykaSend(
+      db,
+      {
+        event: 'okleyka.send',
+        lineItemId: 'li-3',
+        text: 'Заказ: t',
+        fileUrls: [],
+        force: false,
+      },
+      { sendOkleykaToTelegram: send, patchOkleykaTelegramFields: patch },
+    );
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      chatId: '-1001',
+      threadId: 42,
+    }));
+  });
 });

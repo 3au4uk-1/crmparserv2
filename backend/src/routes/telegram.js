@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getDb } from '../db/connection.js';
-import { getTelegramBotToken, getTelegramChatId } from '../telegram/settings.js';
+import { getTelegramBotToken, getTelegramDestination } from '../telegram/settings.js';
 import { sendOkleykaToTelegram } from '../telegram/outbound.js';
 import { handleTelegramWebhook } from '../telegram/inbound.js';
 
@@ -87,16 +87,18 @@ router.post('/test-send', async (req, res, next) => {
   try {
     const db = getDb();
     const token = getTelegramBotToken(db);
-    const chatId = getTelegramChatId(db, 'okleyka.send');
+    const dest = getTelegramDestination(db, 'okleyka.send');
     if (!token) {
       return res.status(400).json({ ok: false, error: 'Bot token not configured' });
     }
-    if (!chatId) {
+    if (!dest?.chatId) {
       return res.status(400).json({ ok: false, error: 'okleyka.send chat_id not configured' });
     }
+    const { chatId, threadId } = dest;
     await sendOkleykaToTelegram({
       token,
       chatId,
+      threadId,
       text: 'Тест из crmparser',
       fileUrls: [],
     });

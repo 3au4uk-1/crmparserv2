@@ -20,18 +20,29 @@ async function callTelegram(token, method, fetchImpl, init) {
   return data;
 }
 
-async function sendTextMessage(token, chatId, text, fetchImpl) {
+function appendThreadId(payload, threadId) {
+  if (Number.isInteger(threadId) && threadId > 0) {
+    payload.message_thread_id = threadId;
+  }
+  return payload;
+}
+
+async function sendTextMessage(token, chatId, text, fetchImpl, threadId) {
+  const body = appendThreadId({ chat_id: chatId, text }, threadId);
   const data = await callTelegram(token, 'sendMessage', fetchImpl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text }),
+    body: JSON.stringify(body),
   });
   return data.result.message_id;
 }
 
-async function sendPhotoAlbum(token, chatId, buffers, caption, fetchImpl) {
+async function sendPhotoAlbum(token, chatId, buffers, caption, fetchImpl, threadId) {
   const form = new FormData();
   form.append('chat_id', chatId);
+  if (Number.isInteger(threadId) && threadId > 0) {
+    form.append('message_thread_id', String(threadId));
+  }
   const media = buffers.map((_, index) => ({
     type: 'photo',
     media: `attach://file${index}`,
@@ -59,6 +70,7 @@ async function downloadFile(url, fetchImpl) {
 export async function sendOkleykaToTelegram({
   token,
   chatId,
+  threadId,
   text,
   fileUrls = [],
   fetchImpl = globalThis.fetch,
@@ -80,11 +92,11 @@ export async function sendOkleykaToTelegram({
   if (buffers.length === 0) {
     const messageText = text ?? '';
     if (messageText.trim()) {
-      messageIds.push(await sendTextMessage(token, chatId, messageText, fetchImpl));
+      messageIds.push(await sendTextMessage(token, chatId, messageText, fetchImpl, threadId));
     }
   } else {
     if (separateMessage) {
-      messageIds.push(await sendTextMessage(token, chatId, separateMessage, fetchImpl));
+      messageIds.push(await sendTextMessage(token, chatId, separateMessage, fetchImpl, threadId));
     }
     const albumIds = await sendPhotoAlbum(
       token,
@@ -92,6 +104,7 @@ export async function sendOkleykaToTelegram({
       buffers,
       caption,
       fetchImpl,
+      threadId,
     );
     messageIds.push(...albumIds);
   }
