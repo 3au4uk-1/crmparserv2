@@ -63,4 +63,8 @@ export const config = {
   ),
   /** Public HTTPS origin (no trailing slash) for Telegram webhook URL. */
   publicBaseUrl: (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, ''),
+  /** GramJS user-bot credentials (my.telegram.org + StringSession). */
+  telegramApiId: process.env.TELEGRAM_API_ID || '',
+  telegramApiHash: process.env.TELEGRAM_API_HASH || '',
+  telegramUserSession: process.env.TELEGRAM_USER_SESSION || '',
 };
