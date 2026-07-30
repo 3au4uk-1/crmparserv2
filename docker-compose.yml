@@ -37,6 +37,9 @@ services:
       - TWENTY_APP_CORS_ORIGIN=${TWENTY_APP_CORS_ORIGIN}
       - DISABLE_AUTO_PARSE=${DISABLE_AUTO_PARSE:-false}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
+      - TELEGRAM_API_ID=${TELEGRAM_API_ID}
+      - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
+      - TELEGRAM_USER_SESSION=${TELEGRAM_USER_SESSION}
     networks:
       - twenty
     restart: unless-stopped
