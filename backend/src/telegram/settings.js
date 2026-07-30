@@ -41,13 +41,17 @@ export function mergeChatMapEntry(existing, incoming) {
   const result = { ...existing };
   for (const [key, raw] of Object.entries(incoming)) {
     if (key === 'okleyka.send') {
-      const normalized = normalizeOkleykaDestination(raw);
-      if (normalized) {
-        const entry = { chatId: normalized.chatId };
-        if (normalized.threadId != null) {
-          entry.threadId = normalized.threadId;
+      if (raw == null || raw === '') {
+        result[key] = '';
+      } else {
+        const normalized = normalizeOkleykaDestination(raw);
+        if (normalized) {
+          const entry = { chatId: normalized.chatId };
+          if (normalized.threadId != null) {
+            entry.threadId = normalized.threadId;
+          }
+          result[key] = entry;
         }
-        result[key] = entry;
       }
     } else {
       result[key] = raw;

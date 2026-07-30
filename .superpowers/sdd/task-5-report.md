@@ -1,96 +1,108 @@
-# Task 5 Report: Rewrite prod rollback workflows for Dokploy remote exec
+# Task 5 Report: Telegram HTTP API routes (chats, webhook admin, settings shape)
 
-**Date:** 2026-07-29  
+**Date:** 2026-07-30  
 **Branch:** `staging`  
-**Status:** DONE
-
-## Commit
-
-| Commit | Message |
-|--------|---------|
-| `413d865` | feat(ops): prod rollback workflows via Dokploy remote exec |
+**Commit:** `e7b399a` — feat(telegram): chats API and webhook setup/teardown endpoints
 
 ## Summary
 
-Replaced SSH/SCP restore paths in `rollback-data.yml` and `rollback-release.yml` with the Task 4 pattern: Dokploy schedule preflight → `remote-run.mjs sync` → remote `mc cp` + host-side `assertManifest` + `restore-host.sh --target prod`. Kept `confirm=RESTORE_PROD` gate. Release rollback retains pin/dispatch steps (no SSH).
+Added Telegram Bot API client, REST routes for chat/topic listing and manual add, webhook setup/teardown/status with `PUBLIC_BASE_URL`, and `mergeChatMapEntry` for object-shaped `okleyka.send` on settings PUT. TDD: merge tests GREEN → routes → telegram suite GREEN.
 
-## Changes
+## TDD Evidence
 
-| Workflow | Before | After |
-|----------|--------|-------|
-| `rollback-data.yml` | SSH fetch manifest → runner validate → SCP restore bundle | Sync → single remote restore (mc cp, host assertManifest, restore-host) |
-| `rollback-release.yml` | Same SSH fetch/validate/restore | Same remote restore; post-restore base64 fetch of manifest for pin + dispatch outputs |
+### mergeChatMapEntry (Step 1)
 
-Removed from both: `DOCKER_HOST_SSH_KEY`, `DOCKER_HOST`, `DOCKER_HOST_USER`, all `ssh`/`scp`/`ssh-keyscan`.
-
-## Required secrets / vars
-
-| Name | Type | Purpose |
-|------|------|---------|
-| `DOKPLOY_URL` | Secret | Dokploy API base URL |
-| `DOKPLOY_API_KEY` | Secret | Dokploy API key |
-| `DOKPLOY_SCHEDULE_OPS_SYNC` | Variable | Schedule ID for ops tree sync |
-| `DOKPLOY_SCHEDULE_OPS_RUN` | Variable | Schedule ID for remote bash |
-| `MINIO_MC_ALIAS` | Variable | Default `minio-home` |
-| `MINIO_BUCKET` | Variable | Default `dokploy` |
-| `DOKPLOY_CRMPARSER_COMPOSE_ID` | Variable | Release rollback image pin (unchanged) |
-| `BRANDING_TWENTYVIEW_DISPATCH_TOKEN` | Secret | Twenty app rollback dispatch (unchanged) |
-
-## Verification
-
-```bash
-rg -n "ssh|scp|DOCKER_HOST_SSH" .github/workflows/rollback-data.yml .github/workflows/rollback-release.yml
-# Expected: no matches (exit 1)
+```
+cd backend && npm test -- telegram-chat-map-merge.test.js
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
 ```
 
-## Acceptance checklist
+### Full telegram suite (Step 3)
 
-- [x] SSH/SCP removed; Dokploy `remote-run.mjs sync|run` wired
-- [x] `RESTORE_PROD` confirmation gate preserved
-- [x] Host-side `assertManifest` via synced `lib/manifest.js`
-- [x] Release pin + BrandingTwentyView dispatch unchanged (non-SSH)
-- [x] Grep clean for ssh/scp/DOCKER_HOST_SSH
-- [x] Committed per brief
-- [ ] Operator prod data rollback drill
-- [ ] Operator prod release rollback drill
+```
+cd backend && npm test -- telegram
+ Test Files  8 passed (8)
+      Tests  28 passed (28)
+```
 
-## Concerns / follow-ups
+Full `npm test`: 9 pre-existing failures in `migrate-deal-identity` / `decor-mk-lists` (unrelated to this task).
 
-- ~~Release rollback fetches manifest via remote `base64 -w0`; log noise may require `tail -n1` tuning on first live run.~~ **Fixed:** post-restore manifest fetch now uses `mc cat …/manifest.json | base64 -w0` (workdir is deleted by `restore-host.sh`).
-- Restore timeout: `REMOTE_TIMEOUT_MS=2700000` (45 min) on prod restore step.
-- Host `node` required for assertManifest (same as staging refresh).
-- README still documents SSH-based prod rollback — update in docs pass (Task 7).
+## Files Changed
+
+| File | Change |
+|------|--------|
+| `backend/src/telegram/api-client.js` | `callTelegram(token, method, body)` |
+| `backend/src/routes/telegram.js` | chats/topics CRUD, webhook admin, settings merge |
+| `backend/src/telegram/settings.js` | `mergeChatMapEntry` |
+| `backend/src/config.js` | `publicBaseUrl` from `PUBLIC_BASE_URL` |
+| `.env.example` | `PUBLIC_BASE_URL` documented |
+| `docker-compose.yml` | pass `PUBLIC_BASE_URL` |
+| `backend/tests/telegram-chat-map-merge.test.js` | unit tests |
+
+## API Endpoints
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/api/telegram/chats?active=1` | `active=0` lists all |
+| GET | `/api/telegram/chats/:chatId/topics` | |
+| POST | `/api/telegram/chats` | `{ chatId }` → getChat + manual upsert |
+| POST | `/api/telegram/chats/:chatId/topics` | `{ threadId, name? }` |
+| GET | `/api/telegram/webhook/status` | local config + optional getWebhookInfo |
+| POST | `/api/telegram/webhook/setup` | 400 if no PUBLIC_BASE_URL; generates secret |
+| POST | `/api/telegram/webhook/teardown` | deleteWebhook; keeps secret |
+| PUT | `/api/telegram/settings` | uses `mergeChatMapEntry` for chat map |
+
+## Self-Review
+
+### Correctness
+- Webhook setup requires `config.publicBaseUrl`; returns `{ error: 'PUBLIC_BASE_URL not set' }` on 400.
+- Secret auto-generated via `randomBytes(24)` when empty; persisted before `setWebhook`.
+- `allowed_updates`: `message`, `channel_post`, `my_chat_member` per spec.
+- `mergeChatMapEntry` normalizes legacy string → `{ chatId }`; preserves `threadId` when set; omits null threadId.
+- Manual chat add calls Telegram `getChat`; maps response to chat-store upsert.
+
+### Test coverage
+- Unit: merge object + legacy string (2 tests).
+- No integration tests for new HTTP routes (brief scope); chat-store/inbound/outbound already covered.
+- Route handlers follow existing `next(err)` pattern for Telegram 502 errors.
+
+### Scope
+- No React page (Task 6). Only files listed in brief committed.
+
+### Risks / notes
+- Route responses use camelCase mappers (`mapChatRow` / `mapTopicRow`); frontend Task 6 should align.
+- `POST /chats/:chatId/topics` does not verify chat exists in DB (manual add can create topic for any chatId string).
+- Full backend suite has unrelated failures; telegram subset is clean.
+
+## Status
+
+**DONE**
 
 ---
 
-## Fix: post-restore manifest fetch (review finding)
+## Task 5 Review Fixes (2026-07-30)
 
-**Date:** 2026-07-29  
-**Commit:** `fix(ops): fetch release-rollback manifest from MinIO after restore`
+### 1. Exempt Telegram webhook from APP_PASSWORD auth
+`appAuthMiddleware` now bypasses session auth for `POST /telegram/webhook` (Telegram uses `X-Telegram-Bot-Api-Secret-Token` instead).
 
-### Problem
+### 2. Allow clearing `okleyka.send` via `mergeChatMapEntry`
+Empty string or `null` patch values persist `''`, which `normalizeOkleykaDestination` treats as unset.
 
-`restore-host.sh` removes `--workdir` on success. The release-rollback workflow’s “Fetch manifest for release pin” step still read `$WORKDIR/manifest.json`, so pin/dispatch failed after a successful restore.
+### Test evidence
 
-### Change
+```
+cd backend && npm test -- telegram-chat-map-merge.test.js
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
 
-In `rollback-release.yml`, fetch step now runs on the host:
+cd backend && npm test -- app-auth-import.test.js
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
 
-```bash
-mc cat "${MC_ALIAS}/${BUCKET}/full-snapshots/${SNAP}/manifest.json" | base64 -w0
+cd backend && npm test -- telegram
+ Test Files  8 passed (8)
+      Tests  29 passed (29)
 ```
 
-Runner-side `assertManifest`, snapshotId check, and `GITHUB_OUTPUT` for pin/dispatch unchanged.
-
-### Verification
-
-```bash
-rg -n "ssh|scp|DOCKER_HOST_SSH" .github/workflows/rollback-data.yml .github/workflows/rollback-release.yml
-# no matches
-
-rg -n "base64 -w0.*WORKDIR" .github/workflows/rollback-release.yml
-# no matches (fetch no longer reads deleted workdir)
-
-rg -n "mc cat.*manifest" .github/workflows/rollback-release.yml
-# 127: mc cat .../manifest.json | base64 -w0
-```
+**Commit:** `fix(telegram): exempt webhook auth and allow clearing okleyka destination`

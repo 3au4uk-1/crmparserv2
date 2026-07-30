@@ -51,6 +51,11 @@ export function appAuthMiddleware(req, res, next) {
     return res.status(401).json({ ok: false, error: 'Unauthorized' });
   }
 
+  // Telegram Bot API → inbound webhook (uses X-Telegram-Bot-Api-Secret-Token, not UI session)
+  if (req.path === '/telegram/webhook' && req.method === 'POST') {
+    return next();
+  }
+
   if (!isAuthRequired()) return next();
 
   if (verifySessionToken(token)) return next();

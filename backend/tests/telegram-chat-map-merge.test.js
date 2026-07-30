@@ -12,4 +12,13 @@ describe('mergeChatMapEntry', () => {
       'okleyka.send': { chatId: '-100' },
     });
   });
+  it('clears okleyka.send when patch is empty or null', () => {
+    const existing = { 'okleyka.send': { chatId: '-100', threadId: 1 } };
+    expect(mergeChatMapEntry(existing, { 'okleyka.send': '' })).toEqual({
+      'okleyka.send': '',
+    });
+    expect(mergeChatMapEntry(existing, { 'okleyka.send': null })).toEqual({
+      'okleyka.send': '',
+    });
+  });
 });
