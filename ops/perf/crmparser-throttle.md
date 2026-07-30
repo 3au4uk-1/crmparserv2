@@ -17,7 +17,7 @@ Time-aware parse scheduling is already implemented (`backend/src/services/parse-
 
 | Variable | Before (prod) | After | Rationale |
 |----------|---------------|-------|-----------|
-| `FETCH_CONCURRENCY` | `8` | `2` | Halve parallel deal fetch/sync workers; prod was above repo default. |
+| `FETCH_CONCURRENCY` | `8` | `2` | Reduce parallel deal fetch/sync workers; prod was above repo default. |
 | `TWENTY_API_RATE_LIMIT_MAX` | `95` | `40` | Leave ~55 req/min headroom in the 60s window for CRM UI/API users. |
 | `TONY_REQUEST_DELAY_MS` | `350` | `500` | Slow Tony CRM reads slightly to spread load. |
 | `TWENTY_API_RATE_LIMIT_WINDOW_MS` | `60000` | *(unchanged)* | Keep existing window. |
@@ -67,4 +67,4 @@ Re-run the verify command above after rollback.
 
 ## Measurement
 
-During-parse baseline (`ops/perf/baseline.sh prod`) is optional when no parse is active. Compare a future during-parse sample to pre-throttle reports under `ops/perf/reports/` (e.g. `20260730T201725Z-prod-before.txt`).
+During-parse baseline (`ops/perf/baseline.sh prod`) is required when a parse is active; if idle, capture post-throttle idle baseline and re-run during next parse. Compare a future during-parse sample to pre-throttle reports under `ops/perf/reports/` (e.g. `20260730T201725Z-prod-before.txt`).
