@@ -36,6 +36,32 @@ export function upsertAutoInviteMember(db, { username, userId, displayName, acti
     throw new Error('username or userId is required');
   }
 
+  let existing = null;
+  if (normalizedUsername) {
+    existing = db.prepare(`SELECT * FROM telegram_auto_invite_members WHERE username = ?`).get(normalizedUsername);
+  }
+  if (!existing && normalizedUserId) {
+    existing = db.prepare(`SELECT * FROM telegram_auto_invite_members WHERE user_id = ?`).get(normalizedUserId);
+  }
+
+  if (existing) {
+    const nextUsername = normalizedUsername ?? existing.username;
+    const nextUserId = normalizedUserId ?? existing.user_id;
+    db.prepare(`
+      UPDATE telegram_auto_invite_members
+      SET username = ?, user_id = ?, display_name = ?, active = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(
+      nextUsername,
+      nextUserId,
+      displayName ?? null,
+      active ? 1 : 0,
+      existing.id,
+    );
+    const row = db.prepare(`SELECT * FROM telegram_auto_invite_members WHERE id = ?`).get(existing.id);
+    return rowToMember(row);
+  }
+
   const result = db.prepare(`
     INSERT INTO telegram_auto_invite_members
       (username, user_id, display_name, active, updated_at)
@@ -104,47 +130,57 @@ function isPendingStale(startedAt) {
 
 export function tryBeginAutoInviteRun(db, chatId) {
   const key = String(chatId);
-  const existing = db.prepare(`SELECT * FROM telegram_auto_invite_runs WHERE chat_id = ?`).get(key);
+  db.prepare('BEGIN IMMEDIATE').run();
+  try {
+    const existing = db.prepare(`SELECT * FROM telegram_auto_invite_runs WHERE chat_id = ?`).get(key);
 
-  if (!existing) {
-    db.prepare(`
-      INSERT INTO telegram_auto_invite_runs (chat_id, status, started_at, finished_at, detail_json)
-      VALUES (?, 'pending', datetime('now'), NULL, NULL)
-    `).run(key);
-    return { started: true };
-  }
+    if (!existing) {
+      db.prepare(`
+        INSERT INTO telegram_auto_invite_runs (chat_id, status, started_at, finished_at, detail_json)
+        VALUES (?, 'pending', datetime('now'), NULL, NULL)
+      `).run(key);
+      db.prepare('COMMIT').run();
+      return { started: true };
+    }
 
-  if (existing.status === 'failed') {
-    db.prepare(`
-      UPDATE telegram_auto_invite_runs
-      SET status = 'pending', started_at = datetime('now'), finished_at = NULL, detail_json = NULL
-      WHERE chat_id = ?
-    `).run(key);
-    return { started: true };
-  }
+    if (existing.status === 'failed') {
+      db.prepare(`
+        UPDATE telegram_auto_invite_runs
+        SET status = 'pending', started_at = datetime('now'), finished_at = NULL, detail_json = NULL
+        WHERE chat_id = ?
+      `).run(key);
+      db.prepare('COMMIT').run();
+      return { started: true };
+    }
 
-  if (existing.status === 'pending' && isPendingStale(existing.started_at)) {
-    db.prepare(`
-      UPDATE telegram_auto_invite_runs
-      SET status = 'pending', started_at = datetime('now'), finished_at = NULL, detail_json = NULL
-      WHERE chat_id = ?
-    `).run(key);
-    return { started: true };
-  }
+    if (existing.status === 'pending' && isPendingStale(existing.started_at)) {
+      db.prepare(`
+        UPDATE telegram_auto_invite_runs
+        SET status = 'pending', started_at = datetime('now'), finished_at = NULL, detail_json = NULL
+        WHERE chat_id = ?
+      `).run(key);
+      db.prepare('COMMIT').run();
+      return { started: true };
+    }
 
-  if (existing.status === 'success' || existing.status === 'partial' || existing.status === 'pending') {
+    db.prepare('COMMIT').run();
+    if (existing.status === 'success' || existing.status === 'partial' || existing.status === 'pending') {
+      return {
+        started: false,
+        reason: existing.status,
+        existing: rowToRun(existing),
+      };
+    }
+
     return {
       started: false,
       reason: existing.status,
       existing: rowToRun(existing),
     };
+  } catch (err) {
+    db.prepare('ROLLBACK').run();
+    throw err;
   }
-
-  return {
-    started: false,
-    reason: existing.status,
-    existing: rowToRun(existing),
-  };
 }
 
 export function finishAutoInviteRun(db, chatId, { status, detail }) {
