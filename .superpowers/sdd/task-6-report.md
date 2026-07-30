@@ -1,101 +1,34 @@
-# Task 6 Report: Frontend `/telegram` page + nav
+# Task 6 report: Profile GraphQL + deals-board front-components
 
-**Date:** 2026-07-30  
-**Branch:** `staging`  
-**Commit:** `2778fda` — feat(telegram): sidebar page with chat/topic picker
-
-## Summary
-
-Dedicated sidebar page at `/telegram` with three sections (Bot, Chats, Okleyka destination). Extended `api.js` with chats/topics/webhook hooks. Removed Settings Telegram tab; `/settings?tab=telegram` redirects to `/telegram`.
-
-## Build
-
-```
-cd frontend && npm run build
-✓ built in 2.12s
-```
-
-## Files Changed
-
-| File | Change |
-|------|--------|
-| `frontend/src/pages/Telegram.jsx` | New page: token, webhook, chat list, okleyka picker |
-| `frontend/src/App.jsx` | Nav item + route |
-| `frontend/src/components/ui/Icons.jsx` | `IconTelegram` |
-| `frontend/src/api.js` | 7 new hooks (chats, topics, webhook) |
-| `frontend/src/pages/Settings.jsx` | Removed tab/panel; redirect |
-
-## Self-Review
-
-### Correctness
-- `readOkleykaDest` handles string and object `chatMap['okleyka.send']`.
-- Forum saves `{ chatId, threadId }` with required topic (defaults General `1`); non-forum omits `threadId`.
-- Topic select always includes **General (thread 1)**; cached topics merged without duplicate thread 1.
-- Webhook setup disabled when `PUBLIC_BASE_URL` not configured (matches backend status).
-- Active-only chat list by default; checkbox toggles `active=0`.
-
-### UI / copy
-- Reuses Settings patterns: `Section`, `FieldLabel`, `btn-primary`, `PageHeader`, Russian copy style.
-- Okleyka chat select filters active chats only.
-
-### Scope
-- Only files listed in brief committed.
-
-### Risks / notes
-- Okleyka chat dropdown uses active chats from current list query; if saved destination chat is inactive it may not appear in select until «Показать неактивные» (edge case).
-- Manual topic add in Okleyka section requires chat selected first (by design).
-- No E2E/browser test run; build-only verification.
+**Date:** 2026-07-31 (UTC+3)  
+**Author:** 3au4uk-1
 
 ## Status
 
-**DONE**
+**Done.** Cold pg_stat_statements captured; deals-board static review complete; four front-component fixes shipped; findings committed.
 
----
+## Commits
 
-## Task 6 Review Fixes (2026-07-30)
+| Repo | Commit message | Files |
+|------|----------------|-------|
+| crmparserv2 | `perf: profiling findings (pg_stat_statements + deals-board front-components)` | `ops/perf/findings-profiling.md` |
+| BrandingTwentyView | `perf(deals-board): skip redundant refetch on edit and SSE patch` | `apply-object-record-event.ts`, `useLineItems.ts`, `useUpdateRecord.ts`, `DealsBoard.tsx`, test |
 
-**Commit:** `fix(telegram): preserve okleyka threadId and saved chat on load`
+## Top findings (summary)
 
-### Critical — threadId race
-- Settings effect now sets `okleykaThreadId` exactly from `dest.threadId` (no eager `'1'` default).
-- Forum/non-forum sync effect gated on `!chatsLoading && selectedChatResolved && selectedChat` — no clear/default while chats loading or saved chat unresolved.
-- Saved `threadId` preserved until selected chat metadata is known.
+1. **Cold PG stats** — postmaster restarted ~3 h before capture; metadata + app-registration sync dominate, dealLineItem queries ~2 ms mean / 40 calls. No index action yet (`RESERVE-SCOPE`).
+2. **Inline edit refetch (P1)** — fixed: invalidate queries only on mutation error.
+3. **SSE double-fetch (P2)** — fixed: no `deals-board-page` invalidation after successful opportunity cache patch.
+4. **Rashod prefetch (P3)** — fixed: REST enrichment deferred until analytics pane opens.
+5. **Browser trace** — skipped (no easy staging auth).
 
-### Important — saved inactive chat in dropdown
-- Conditional `useTelegramChats(false, { enabled })` when saved chat missing from active list.
-- `okleykaChatOptions` merges active chats + saved destination; inactive labeled `· неактивен`.
-- `isForum` / topic UI use `allKnownChats` (active + inactive lookup).
+## Concerns
 
-### Important — webhook PUBLIC_BASE_URL hint
-- Shows «Загрузка…» while `useTelegramWebhookStatus` is loading; «не задан» only after query settled.
+- pg_stat_statements needs **≥24 h warm window** before index promotion.
+- P6 (`syncDealStage` cache-first) left for follow-up — medium impact, needs tests.
+- Unit tests not run locally (`yarn`/deps unavailable in agent shell); test updated for P2 behavior.
 
-### Build
+## Artifacts
 
-```
-cd frontend && npm run build
-✓ built in 1.94s
-```
-
-### Files
-- `frontend/src/pages/Telegram.jsx`
-- `frontend/src/api.js` — `useTelegramChats` accepts optional `queryOptions` (for `enabled`)
-
-**Status:** DONE
-
----
-
-## Okleyka threadId reset on chat change (2026-07-30)
-
-**Commit:** `fix(telegram): reset okleyka threadId when changing chat`
-
-### Fix
-- Okleyka chat `<select>` onChange now resets `okleykaThreadId` to `''` so the forum sync effect can default to General (`'1'`) when switching between forum chats.
-
-### Build
-
-```
-cd frontend && npm run build
-✓ built in 2.31s
-```
-
-**Status:** DONE
+- Findings: `ops/perf/findings-profiling.md`
+- Report: `.superpowers/sdd/task-6-report.md`
