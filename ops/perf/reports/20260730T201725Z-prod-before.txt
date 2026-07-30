@@ -1,0 +1,43 @@
+=== BASELINE prod @ 2026-07-30T20:17:25Z ===
+--- NODE ---
+[loadavg] 1.42 0.84 0.69 1/3092 2285520
+               total        used        free      shared  buff/cache   available
+Mem:            11Gi       9.4Gi       411Mi       223Mi       2.4Gi       2.0Gi
+Swap:          7.1Gi       6.8Gi       373Mi
+[swap]
+NAME      TYPE      SIZE USED PRIO
+/dev/dm-0 partition 7.1G 6.8G   -2
+[vmstat 1 3]
+procs -----------memory---------- ---swap-- -----io---- -system-- -------cpu-------
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st gu
+ 1  0 7088880 421752   8996 2541252   56   68   758   894 4743   23  9  5 85  0  0  1
+ 0  0 7088876 425024   8996 2541532    0    0     0  3856 5465 9694  3 11 85  1  0  0
+ 0  0 7088868 424580   8996 2541584   12    0    16   312 4306 8903  3  2 95  0  0  0
+--- LXC103 (top mem) ---
+9.934MiB / 5GiB	0.19%	0.00%	mini-qr
+865.3MiB / 5GiB	16.90%	0.04%	twenty-staging-server
+788KiB / 5GiB	0.02%	0.00%	nginx-proxy
+7.332MiB / 5GiB	0.14%	0.00%	brandogram-postgres-1
+72.82MiB / 5GiB	1.42%	0.11%	n8n
+676.1MiB / 5GiB	13.21%	2.80%	twenty-server
+64.25MiB / 5GiB	1.25%	5.59%	twenty-postgres
+472.8MiB / 5GiB	9.23%	0.40%	twenty-worker
+466.3MiB / 5GiB	9.11%	0.34%	twenty-staging-worker
+46.24MiB / 5GiB	0.90%	0.05%	cyberbot-worker
+42.32MiB / 5GiB	0.83%	0.50%	twenty-redis
+39.32MiB / 5GiB	0.77%	0.15%	brandingteam-app-1
+38.62MiB / 5GiB	0.75%	0.08%	twenty-staging-postgres
+32.12MiB / 5GiB	0.63%	0.00%	crmparser-staging
+30.86MiB / 5GiB	0.60%	0.50%	twenty-staging-redis
+23.68MiB / 5GiB	0.46%	0.10%	dokploy-traefik
+23.03MiB / 96MiB	23.99%	0.21%	monitoring-promtail-twenty
+21.72MiB / 5GiB	0.42%	0.05%	cyberbot-bot
+21.41MiB / 5GiB	0.42%	0.06%	cyberbot-api
+21.01MiB / 5GiB	0.41%	0.00%	brandogram-service-1
+--- PG (prod) ---
+cache_hit_ratio|99.99
+128MB
+4
+--- FRONTEND (https://twenty.dosugmayak.ru) ---
+[html] HTTP/2 200  cache-control: public, max-age=0 http=2 ttfb=0.344154s total=0.390295s 
+[main-js /assets/index-BPFStZql.js] cache-control: public, max-age=0 size=2511983 total=0.393583s 

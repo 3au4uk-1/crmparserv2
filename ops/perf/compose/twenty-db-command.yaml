@@ -1,0 +1,26 @@
+# Merge into services.db and services.redis of the Twenty compose.
+services:
+  db:
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=768MB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+  redis:
+    command:
+      - redis-server
+      - --maxmemory-policy
+      - noeviction
+      - --maxmemory
+      - 256mb

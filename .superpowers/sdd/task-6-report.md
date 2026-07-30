@@ -1,63 +1,34 @@
-# Task 6 Report: Rewrite `release-prepare.yml` MinIO optional steps
+# Task 6 report: Profile GraphQL + deals-board front-components
 
-**Date:** 2026-07-29  
-**Branch:** `staging`  
-**Status:** DONE
+**Date:** 2026-07-31 (UTC+3)  
+**Author:** 3au4uk-1
 
-## Commit
+## Status
 
-| Commit | Message |
-|--------|---------|
-| `d07d793` | feat(ops): release-prepare MinIO steps via Dokploy remote exec |
+**Done.** Cold pg_stat_statements captured; deals-board static review complete; four front-component fixes shipped; findings committed.
 
-## Summary
+## Commits
 
-Replaced SSH/SCP MinIO upload and prune-delete steps in `release-prepare.yml` with Dokploy `remote-run.mjs sync|run`. Capture step unchanged (Dokploy API on runner). Optional MinIO steps soft-skip when `DOKPLOY_SCHEDULE_OPS_SYNC` or `DOKPLOY_SCHEDULE_OPS_RUN` is unset — same spirit as the old missing-SSH-key behavior.
+| Repo | Commit message | Files |
+|------|----------------|-------|
+| crmparserv2 | `perf: profiling findings (pg_stat_statements + deals-board front-components)` | `ops/perf/findings-profiling.md` |
+| BrandingTwentyView | `perf(deals-board): skip redundant refetch on edit and SSE patch` | `apply-object-record-event.ts`, `useLineItems.ts`, `useUpdateRecord.ts`, `DealsBoard.tsx`, test |
 
-## Changes
+## Top findings (summary)
 
-| Step | Before | After |
-|------|--------|-------|
-| Upload manifest to MinIO | SCP manifest + SSH `mc cp` | `remote-run.mjs sync` → Python-generated script with base64 manifest → `remote-run.mjs run --script-file` |
-| Delete expired objects | SCP expired.json + SSH heredoc `mc rm` loop | Python-generated script with base64 expired.json → `remote-run.mjs run --script-file` |
+1. **Cold PG stats** — postmaster restarted ~3 h before capture; metadata + app-registration sync dominate, dealLineItem queries ~2 ms mean / 40 calls. No index action yet (`RESERVE-SCOPE`).
+2. **Inline edit refetch (P1)** — fixed: invalidate queries only on mutation error.
+3. **SSE double-fetch (P2)** — fixed: no `deals-board-page` invalidation after successful opportunity cache patch.
+4. **Rashod prefetch (P3)** — fixed: REST enrichment deferred until analytics pane opens.
+5. **Browser trace** — skipped (no easy staging auth).
 
-Removed: `DOCKER_HOST_SSH_KEY`, `DOCKER_HOST`, `DOCKER_HOST_USER`, all `ssh`/`scp`/`ssh-keyscan`.
+## Concerns
 
-## Required secrets / vars (MinIO optional steps)
+- pg_stat_statements needs **≥24 h warm window** before index promotion.
+- P6 (`syncDealStage` cache-first) left for follow-up — medium impact, needs tests.
+- Unit tests not run locally (`yarn`/deps unavailable in agent shell); test updated for P2 behavior.
 
-| Name | Type | Purpose |
-|------|------|---------|
-| `DOKPLOY_URL` | Secret | Dokploy API (already used by capture/prune) |
-| `DOKPLOY_API_KEY` | Secret | Dokploy API |
-| `DOKPLOY_SCHEDULE_OPS_SYNC` | Variable | Schedule ID for ops tree sync (optional — skip if missing) |
-| `DOKPLOY_SCHEDULE_OPS_RUN` | Variable | Schedule ID for remote bash (optional — skip if missing) |
-| `MINIO_MC_ALIAS` | Variable | Default `minio-home` |
-| `MINIO_BUCKET` | Variable | Default `dokploy` |
+## Artifacts
 
-## Verification
-
-```bash
-rg -n "ssh|scp|DOCKER_HOST_SSH" .github/workflows/release-prepare.yml
-# Expected: no matches (exit 1)
-```
-
-## Acceptance checklist
-
-- [x] Capture remains Dokploy API on runner (unchanged)
-- [x] MinIO upload via `remote-run.mjs sync` + base64 embed + `run --script-file`
-- [x] Prune delete via base64 embed + remote `mc rm` loop
-- [x] Soft-skip when schedule vars missing (`continue-on-error: true`)
-- [x] SSH/SCP/DOCKER_HOST_SSH removed
-- [x] Grep clean
-- [x] Committed per brief
-- [ ] Operator nightly/scheduled release-prepare run with schedule vars set
-
-## Concerns / follow-ups
-
-- Upload timeout: `REMOTE_TIMEOUT_MS=600000` (10 min) — manifest is small; should be ample.
-- Prune delete does not re-sync ops tree (only `run`); acceptable since step uses `mc` only, not synced bash libs.
-- Large `expired.json` could inflate generated script size; unlikely at current retention policy.
-
-## Post-review fix (final branch review)
-
-- Delete-expired Python-generated bash used `${{PREFIXES}}` etc.; GHA emptied at parse time. Fixed with `$${PREFIXES}` in workflow YAML (same pattern as upload-manifest step).
+- Findings: `ops/perf/findings-profiling.md`
+- Report: `.superpowers/sdd/task-6-report.md`

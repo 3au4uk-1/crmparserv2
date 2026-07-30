@@ -10,3 +10,5 @@ skills-lock.json
 backend/scripts/debug-*.mjs
 backend/scripts/count-events.mjs
 .worktrees/
+ops/perf/compose/*.full.yaml
+ops/perf/compose/*.full.yaml.orig

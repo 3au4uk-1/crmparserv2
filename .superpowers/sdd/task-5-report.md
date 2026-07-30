@@ -1,96 +1,103 @@
-# Task 5 Report: Rewrite prod rollback workflows for Dokploy remote exec
+# Task 5 Report: Auto-invite webhook trigger + HTTP API + frontend hooks
 
-**Date:** 2026-07-29  
+**Date:** 2026-07-30  
 **Branch:** `staging`  
-**Status:** DONE
-
-## Commit
-
-| Commit | Message |
-|--------|---------|
-| `413d865` | feat(ops): prod rollback workflows via Dokploy remote exec |
+**Commit:** `c8efd14` — feat(telegram): auto-invite webhook trigger and API
 
 ## Summary
 
-Replaced SSH/SCP restore paths in `rollback-data.yml` and `rollback-release.yml` with the Task 4 pattern: Dokploy schedule preflight → `remote-run.mjs sync` → remote `mc cp` + host-side `assertManifest` + `restore-host.sh --target prod`. Kept `confirm=RESTORE_PROD` gate. Release rollback retains pin/dispatch steps (no SSH).
+Wired `scheduleAutoInvite` on `my_chat_member` join for group/supergroup chats (non-blocking via existing `setImmediate`), added REST CRUD + status + retry routes under `/api/telegram/auto-invite/*`, and added React Query hooks in `frontend/src/api.js`. TDD: 14 new tests RED → implement → GREEN.
 
-## Changes
+## TDD Evidence
 
-| Workflow | Before | After |
-|----------|--------|-------|
-| `rollback-data.yml` | SSH fetch manifest → runner validate → SCP restore bundle | Sync → single remote restore (mc cp, host assertManifest, restore-host) |
-| `rollback-release.yml` | Same SSH fetch/validate/restore | Same remote restore; post-restore base64 fetch of manifest for pin + dispatch outputs |
+### RED (Step 1)
 
-Removed from both: `DOCKER_HOST_SSH_KEY`, `DOCKER_HOST`, `DOCKER_HOST_USER`, all `ssh`/`scp`/`ssh-keyscan`.
+Command: `cd backend && npm test -- tests/telegram-auto-invite-routes.test.js`
 
-## Required secrets / vars
-
-| Name | Type | Purpose |
-|------|------|---------|
-| `DOKPLOY_URL` | Secret | Dokploy API base URL |
-| `DOKPLOY_API_KEY` | Secret | Dokploy API key |
-| `DOKPLOY_SCHEDULE_OPS_SYNC` | Variable | Schedule ID for ops tree sync |
-| `DOKPLOY_SCHEDULE_OPS_RUN` | Variable | Schedule ID for remote bash |
-| `MINIO_MC_ALIAS` | Variable | Default `minio-home` |
-| `MINIO_BUCKET` | Variable | Default `dokploy` |
-| `DOKPLOY_CRMPARSER_COMPOSE_ID` | Variable | Release rollback image pin (unchanged) |
-| `BRANDING_TWENTYVIEW_DISPATCH_TOKEN` | Secret | Twenty app rollback dispatch (unchanged) |
-
-## Verification
-
-```bash
-rg -n "ssh|scp|DOCKER_HOST_SSH" .github/workflows/rollback-data.yml .github/workflows/rollback-release.yml
-# Expected: no matches (exit 1)
+```
+Tests  9 failed | 5 passed (14)
+- inbound schedule not wired (404 on routes)
 ```
 
-## Acceptance checklist
+### GREEN (Step 3)
 
-- [x] SSH/SCP removed; Dokploy `remote-run.mjs sync|run` wired
-- [x] `RESTORE_PROD` confirmation gate preserved
-- [x] Host-side `assertManifest` via synced `lib/manifest.js`
-- [x] Release pin + BrandingTwentyView dispatch unchanged (non-SSH)
-- [x] Grep clean for ssh/scp/DOCKER_HOST_SSH
-- [x] Committed per brief
-- [ ] Operator prod data rollback drill
-- [ ] Operator prod release rollback drill
+Command: `cd backend && npm test -- tests/telegram-auto-invite-routes.test.js tests/telegram-inbound.test.js`
 
-## Concerns / follow-ups
-
-- ~~Release rollback fetches manifest via remote `base64 -w0`; log noise may require `tail -n1` tuning on first live run.~~ **Fixed:** post-restore manifest fetch now uses `mc cat …/manifest.json | base64 -w0` (workdir is deleted by `restore-host.sh`).
-- Restore timeout: `REMOTE_TIMEOUT_MS=2700000` (45 min) on prod restore step.
-- Host `node` required for assertManifest (same as staging refresh).
-- README still documents SSH-based prod rollback — update in docs pass (Task 7).
-
----
-
-## Fix: post-restore manifest fetch (review finding)
-
-**Date:** 2026-07-29  
-**Commit:** `fix(ops): fetch release-rollback manifest from MinIO after restore`
-
-### Problem
-
-`restore-host.sh` removes `--workdir` on success. The release-rollback workflow’s “Fetch manifest for release pin” step still read `$WORKDIR/manifest.json`, so pin/dispatch failed after a successful restore.
-
-### Change
-
-In `rollback-release.yml`, fetch step now runs on the host:
-
-```bash
-mc cat "${MC_ALIAS}/${BUCKET}/full-snapshots/${SNAP}/manifest.json" | base64 -w0
+```
+ Test Files  2 passed (2)
+      Tests  20 passed (20)
 ```
 
-Runner-side `assertManifest`, snapshotId check, and `GITHUB_OUTPUT` for pin/dispatch unchanged.
+Command: `cd backend && npm test -- telegram`
 
-### Verification
-
-```bash
-rg -n "ssh|scp|DOCKER_HOST_SSH" .github/workflows/rollback-data.yml .github/workflows/rollback-release.yml
-# no matches
-
-rg -n "base64 -w0.*WORKDIR" .github/workflows/rollback-release.yml
-# no matches (fetch no longer reads deleted workdir)
-
-rg -n "mc cat.*manifest" .github/workflows/rollback-release.yml
-# 127: mc cat .../manifest.json | base64 -w0
 ```
+ Test Files  13 passed (13)
+      Tests  81 passed (81)
+```
+
+## Files Changed
+
+| File | Change |
+|------|--------|
+| `backend/src/telegram/inbound.js` | `processTelegramUpdate` accepts optional `{ scheduleAutoInvite }`; schedules on group/supergroup join |
+| `backend/src/routes/telegram.js` | auto-invite status, members CRUD, retry run |
+| `backend/tests/telegram-auto-invite-routes.test.js` | 14 tests (inbound trigger + HTTP routes) |
+| `frontend/src/api.js` | 6 React Query hooks |
+
+## API Endpoints
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/api/telegram/auto-invite/status` | `{ configured: boolean }` only — no session/api_hash |
+| GET | `/api/telegram/auto-invite/members` | `{ members: [...] }` camelCase, includes inactive |
+| POST | `/api/telegram/auto-invite/members` | `{ username?, userId?, displayName? }` → 201 `{ member }` |
+| PATCH | `/api/telegram/auto-invite/members/:id` | partial patch → `{ member }` |
+| DELETE | `/api/telegram/auto-invite/members/:id` | `{ ok: true }` |
+| POST | `/api/telegram/auto-invite/runs/:chatId/retry` | `runAutoInviteForChat(..., { force: true })` |
+
+## Inbound Trigger Rules
+
+- Event: `my_chat_member` after `upsertTelegramChat`
+- Schedule when: `new_chat_member.status` ∈ `{ member, administrator, creator }` AND `chat.type` ∈ `{ group, supergroup }`
+- Skip: `private`, `channel`, left/kicked statuses, regular messages
+- Non-blocking: uses existing `scheduleAutoInvite` → `setImmediate` + `unref`
+
+## Frontend Hooks
+
+| Hook | Type |
+|------|------|
+| `useTelegramAutoInviteStatus` | query |
+| `useTelegramAutoInviteMembers` | query |
+| `useAddTelegramAutoInviteMember` | mutation |
+| `useUpdateTelegramAutoInviteMember` | mutation |
+| `useDeleteTelegramAutoInviteMember` | mutation |
+| `useRetryTelegramAutoInviteRun` | mutation |
+
+## Self-Review
+
+### Correctness
+- Webhook response not blocked — schedule is fire-and-forget via `setImmediate`.
+- Status endpoint exposes only `configured` boolean from `isUserbotConfigured()`.
+- Member routes delegate to store layer; validation errors → 400, missing → 404.
+- Retry route awaits orchestration result (admin action, acceptable latency).
+
+### Test coverage
+- Inbound: supergroup join, admin/creator, private/channel skip, left skip, message skip.
+- Routes: status shape, members list camelCase, CRUD, retry with force mock.
+
+### Scope
+- No UI page changes (Task 6). Hooks only in `api.js`.
+
+## Status
+
+**DONE**
+
+## Tests one-liner
+
+`npm test -- telegram` → **81/81 pass**
+
+## Concerns
+
+1. **Retry route is synchronous** — long-running userbot work blocks HTTP until complete; acceptable for admin retry but may need async job pattern if timeouts appear in prod.
+2. **GET members lists inactive** — UI may want filter toggle; store supports `activeOnly` if needed later.
+3. **No run history endpoint** — retry returns orchestration result but no GET for past runs; Task 6 UI may need run status per chat.

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   useSettings,
   useUpdateSetting,
@@ -538,7 +539,13 @@ function TipRulesSection({
 }
 
 export default function Settings() {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('auth');
+
+  useEffect(() => {
+    if (searchParams.get('tab') === 'telegram') navigate('/telegram', { replace: true });
+  }, [searchParams, navigate]);
 
   const { data: settings } = useSettings();
   const { data: keywords } = useKeywords();

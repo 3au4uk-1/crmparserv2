@@ -21,6 +21,7 @@ import exportTwentyRouter from './routes/export-twenty.js';
 import expensesRouter from './routes/expenses.js';
 import authRouter from './routes/auth.js';
 import twentyRouter from './routes/twenty.js';
+import telegramRouter from './routes/telegram.js';
 import { appAuthMiddleware } from './middleware/app-auth.js';
 import { initScheduler } from './services/scheduler.js';
 import { initPrintSheetCron } from './services/print-sheet-cron.js';
@@ -28,6 +29,7 @@ import { initExpenseSyncCron } from './services/expense-sync-cron.js';
 import { recoverStaleParseRuns } from './services/parser.js';
 import { recoverStaleRestoreMissingTwentyJobs } from './services/restore-missing-twenty-jobs.js';
 import { getDb } from './db/connection.js';
+import { registerDefaultTelegramHooks } from './telegram/register-default-hooks.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -61,6 +63,7 @@ app.use('/api/tip-rules', tipRulesRouter);
 app.use('/api/export/twenty', exportTwentyRouter);
 app.use('/api/export', exportRouter);
 app.use('/api/expenses', expensesRouter);
+app.use('/api/telegram', telegramRouter);
 
 app.use(express.static(path.join(__dirname, '../public')));
 
@@ -73,6 +76,7 @@ app.use(errorHandler);
 async function start() {
   initDb();
   migrate();
+  registerDefaultTelegramHooks();
   recoverStaleParseRuns(getDb());
   recoverStaleRestoreMissingTwentyJobs(getDb());
   initScheduler();

@@ -348,5 +348,69 @@ export function migrate() {
   // Production freza queue spreadsheet — empty until cycle is wired; fill in Settings UI.
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('freza_sheet_id', '')").run();
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS telegram_send_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event TEXT NOT NULL,
+      line_item_id TEXT NOT NULL,
+      opportunity_id TEXT,
+      chat_id TEXT,
+      sent_by TEXT,
+      payload_hash TEXT,
+      telegram_message_ids TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_telegram_send_log_event_line
+     ON telegram_send_log(event, line_item_id);`,
+  );
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS telegram_chats (
+      chat_id TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      type TEXT NOT NULL DEFAULT '',
+      is_forum INTEGER NOT NULL DEFAULT 0,
+      username TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      source TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS telegram_topics (
+      chat_id TEXT NOT NULL,
+      thread_id INTEGER NOT NULL,
+      name TEXT,
+      source TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (chat_id, thread_id)
+    );
+    CREATE TABLE IF NOT EXISTS telegram_auto_invite_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT,
+      user_id TEXT,
+      display_name TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS telegram_auto_invite_runs (
+      chat_id TEXT PRIMARY KEY,
+      status TEXT NOT NULL,
+      started_at TEXT NOT NULL DEFAULT (datetime('now')),
+      finished_at TEXT,
+      detail_json TEXT
+    );
+  `);
+
+  const telegramDefaults = [
+    ['telegram_bot_token', ''],
+    ['telegram_chat_map', '{"okleyka.send":""}'],
+    ['telegram_webhook_secret', ''],
+  ];
+  const upsertSetting = db.prepare(
+    `INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`,
+  );
+  for (const [key, value] of telegramDefaults) upsertSetting.run(key, value);
+
   console.log('Database migrated successfully');
 }

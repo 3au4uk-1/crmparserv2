@@ -189,6 +189,55 @@ CREATE TABLE IF NOT EXISTS restore_missing_twenty_runs (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS telegram_send_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event TEXT NOT NULL,
+  line_item_id TEXT NOT NULL,
+  opportunity_id TEXT,
+  chat_id TEXT,
+  sent_by TEXT,
+  payload_hash TEXT,
+  telegram_message_ids TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_telegram_send_log_event_line
+  ON telegram_send_log(event, line_item_id);
+
+CREATE TABLE IF NOT EXISTS telegram_chats (
+  chat_id TEXT PRIMARY KEY,
+  title TEXT NOT NULL DEFAULT '',
+  type TEXT NOT NULL DEFAULT '',
+  is_forum INTEGER NOT NULL DEFAULT 0,
+  username TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  source TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS telegram_topics (
+  chat_id TEXT NOT NULL,
+  thread_id INTEGER NOT NULL,
+  name TEXT,
+  source TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (chat_id, thread_id)
+);
+CREATE TABLE IF NOT EXISTS telegram_auto_invite_members (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT,
+  user_id TEXT,
+  display_name TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS telegram_auto_invite_runs (
+  chat_id TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  finished_at TEXT,
+  detail_json TEXT
+);
+
 INSERT OR IGNORE INTO companies (code, full_name) VALUES ('ПРО', 'ProInteractive');
 INSERT OR IGNORE INTO companies (code, full_name) VALUES ('АРТ', 'Art-Active');
 INSERT OR IGNORE INTO companies (code, full_name) VALUES ('АРЕНДА', 'Arenda');
@@ -212,3 +261,7 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('expense_sheet_milling', '1f
 INSERT OR IGNORE INTO settings (key, value) VALUES ('expense_sheet_logistics', '1MtGMGzsSS-0ci1HVwdjXcapQQrkaC6qOdI8MdH2mTFM');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('expense_sheet_beznal', '');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('expense_sync_schedule', '0 6 * * *');
+
+INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_bot_token', '');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_chat_map', '{"okleyka.send":""}');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_webhook_secret', '');

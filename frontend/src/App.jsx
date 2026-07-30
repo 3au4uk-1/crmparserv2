@@ -7,6 +7,7 @@ import Export from './pages/Export';
 import ExportTwenty from './pages/ExportTwenty';
 import Expenses from './pages/Expenses';
 import Settings from './pages/Settings';
+import Telegram from './pages/Telegram';
 import Logs from './pages/Logs';
 import Login from './pages/Login';
 import { useAuthStatus, useParsingStatus, setAuthToken } from './api';
@@ -19,6 +20,7 @@ const navItems = [
   { to: '/export', label: 'Выгрузка', end: true },
   { to: '/export-twenty', label: 'Выгрузка Twenty' },
   { to: '/expenses', label: 'Расходы' },
+  { to: '/telegram', label: 'Telegram' },
   { to: '/settings', label: 'Настройки' },
   { to: '/logs', label: 'Логи' },
 ];
@@ -159,6 +161,7 @@ export default function App() {
               <Route path="/export" element={<Export />} />
               <Route path="/export-twenty" element={<ExportTwenty />} />
               <Route path="/expenses" element={<Expenses />} />
+              <Route path="/telegram" element={<Telegram />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/logs" element={<Logs />} />
             </Routes>

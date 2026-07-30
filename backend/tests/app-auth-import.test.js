@@ -64,6 +64,17 @@ describe('appAuthMiddleware import-by-booking', () => {
     expect(nextCalled).toBe(false);
     expect(res.statusCode).toBe(401);
   });
+
+  it('allows POST /telegram/webhook without session token', () => {
+    const req = mockReq('/telegram/webhook', 'POST');
+    const res = mockRes();
+    let nextCalled = false;
+    appAuthMiddleware(req, res, () => {
+      nextCalled = true;
+    });
+    expect(nextCalled).toBe(true);
+    expect(res.statusCode).toBe(200);
+  });
 });
 
 describe('verifyImportSecret', () => {

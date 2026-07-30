@@ -926,3 +926,197 @@ export async function downloadTwentyExportFile(jobId, from, to) {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+export function useTelegramSettings() {
+  return useQuery({
+    queryKey: ['telegram-settings'],
+    queryFn: () => api.get('/telegram/settings').then((r) => r.data),
+  });
+}
+
+export function useUpdateTelegramSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => api.put('/telegram/settings', body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-settings'] }),
+  });
+}
+
+export function useTestTelegramBot() {
+  return useMutation({
+    mutationFn: () => api.post('/telegram/test-bot').then((r) => r.data),
+  });
+}
+
+export function useTestTelegramSend() {
+  return useMutation({
+    mutationFn: () => api.post('/telegram/test-send').then((r) => r.data),
+  });
+}
+
+export function useTelegramChats(activeOnly = true, queryOptions = {}) {
+  return useQuery({
+    queryKey: ['telegram-chats', activeOnly],
+    queryFn: () =>
+      api
+        .get('/telegram/chats', { params: { active: activeOnly ? '1' : '0' } })
+        .then((r) => r.data),
+    ...queryOptions,
+  });
+}
+
+export function useTelegramTopics(chatId) {
+  return useQuery({
+    queryKey: ['telegram-topics', chatId],
+    queryFn: () =>
+      api.get(`/telegram/chats/${encodeURIComponent(chatId)}/topics`).then((r) => r.data),
+    enabled: Boolean(chatId),
+  });
+}
+
+export function useAddTelegramChat() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => api.post('/telegram/chats', body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-chats'] }),
+  });
+}
+
+export function useAddTelegramTopic() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ chatId, threadId, name }) =>
+      api
+        .post(`/telegram/chats/${encodeURIComponent(chatId)}/topics`, { threadId, name })
+        .then((r) => r.data),
+    onSuccess: (_data, { chatId }) => {
+      qc.invalidateQueries({ queryKey: ['telegram-topics', chatId] });
+    },
+  });
+}
+
+export function useTelegramWebhookStatus() {
+  return useQuery({
+    queryKey: ['telegram-webhook-status'],
+    queryFn: () => api.get('/telegram/webhook/status').then((r) => r.data),
+  });
+}
+
+export function useSetupTelegramWebhook() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post('/telegram/webhook/setup').then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-webhook-status'] }),
+  });
+}
+
+export function useTeardownTelegramWebhook() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post('/telegram/webhook/teardown').then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-webhook-status'] }),
+  });
+}
+
+export function useTelegramAutoInviteStatus() {
+  return useQuery({
+    queryKey: ['telegram-auto-invite-status'],
+    queryFn: () => api.get('/telegram/auto-invite/status').then((r) => r.data),
+  });
+}
+
+export function useTelegramAutoInviteMembers() {
+  return useQuery({
+    queryKey: ['telegram-auto-invite-members'],
+    queryFn: () => api.get('/telegram/auto-invite/members').then((r) => r.data),
+  });
+}
+
+export function useAddTelegramAutoInviteMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => api.post('/telegram/auto-invite/members', body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-auto-invite-members'] }),
+  });
+}
+
+export function useUpdateTelegramAutoInviteMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...patch }) =>
+      api.patch(`/telegram/auto-invite/members/${id}`, patch).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-auto-invite-members'] }),
+  });
+}
+
+export function useDeleteTelegramAutoInviteMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => api.delete(`/telegram/auto-invite/members/${id}`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-auto-invite-members'] }),
+  });
+}
+
+export function useRetryTelegramAutoInviteRun() {
+  return useMutation({
+    mutationFn: (chatId) =>
+      api
+        .post(`/telegram/auto-invite/runs/${encodeURIComponent(chatId)}/retry`)
+        .then((r) => r.data),
+  });
+}
+
+function invalidateTelegramUserbotAuth(qc) {
+  qc.invalidateQueries({ queryKey: ['telegram-userbot-auth-status'] });
+  qc.invalidateQueries({ queryKey: ['telegram-auto-invite-status'] });
+}
+
+export function useTelegramUserbotAuthStatus() {
+  return useQuery({
+    queryKey: ['telegram-userbot-auth-status'],
+    queryFn: () => api.get('/telegram/userbot/auth/status').then((r) => r.data),
+  });
+}
+
+export function useTelegramUserbotAuthStart() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (phone) =>
+      api.post('/telegram/userbot/auth/start', { phone }).then((r) => r.data),
+    onSuccess: () => invalidateTelegramUserbotAuth(qc),
+  });
+}
+
+export function useTelegramUserbotAuthCode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (code) =>
+      api.post('/telegram/userbot/auth/code', { code }).then((r) => r.data),
+    onSuccess: () => invalidateTelegramUserbotAuth(qc),
+  });
+}
+
+export function useTelegramUserbotAuthPassword() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (password) =>
+      api.post('/telegram/userbot/auth/password', { password }).then((r) => r.data),
+    onSuccess: () => invalidateTelegramUserbotAuth(qc),
+  });
+}
+
+export function useTelegramUserbotAuthCancel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post('/telegram/userbot/auth/cancel').then((r) => r.data),
+    onSuccess: () => invalidateTelegramUserbotAuth(qc),
+  });
+}
+
+export function useTelegramUserbotAuthLogout() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post('/telegram/userbot/auth/logout').then((r) => r.data),
+    onSuccess: () => invalidateTelegramUserbotAuth(qc),
+  });
+}

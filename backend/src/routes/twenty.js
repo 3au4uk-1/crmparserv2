@@ -13,6 +13,7 @@ import {
 import { lockDealItemAmount } from '../services/deal-item-amount-lock.js';
 import { scheduleListChangeResync } from '../services/list-change-resync.js';
 import { syncDealToTwenty } from '../services/twenty-sync.js';
+import { handleOkleykaSend } from '../telegram/handle-okleyka-send.js';
 
 const router = Router();
 router.use(twentyAppAuthMiddleware);
@@ -88,6 +89,21 @@ router.post('/line-items/:twentyLineItemId/archive', (req, res, next) => {
     archiveManualTwentyLineItem(db, req.params.twentyLineItemId);
     res.json({ success: true });
   } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/telegram/events', async (req, res, next) => {
+  try {
+    const db = getDb();
+    const body = req.body ?? {};
+    if (body.event !== 'okleyka.send') {
+      return res.status(400).json({ error: `Unsupported event: ${body.event}` });
+    }
+    const result = await handleOkleykaSend(db, body);
+    return res.status(200).json(result);
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);
   }
 });

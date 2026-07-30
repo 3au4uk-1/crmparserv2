@@ -1,0 +1,31 @@
+# Prod — merge into services.server.labels (keep existing labels).
+# Staging — same pattern; public traffic is file-routed on LXC 100 (twenty-brand-staging.yml).
+prod:
+  - traefik.http.routers.twenty-11-websecure.middlewares=redirect-to-https@file,compress@file
+  - traefik.http.routers.twenty-11-assets.rule=Host(`twenty.dosugmayak.ru`) && PathPrefix(`/assets`)
+  - traefik.http.routers.twenty-11-assets.entrypoints=websecure
+  - traefik.http.routers.twenty-11-assets.tls.certresolver=letsencrypt
+  - traefik.http.routers.twenty-11-assets.service=twenty-11-websecure
+  - traefik.http.routers.twenty-11-assets.priority=100
+  - traefik.http.routers.twenty-11-assets.middlewares=assets-cache@file,compress@file
+
+staging:
+  - traefik.http.routers.twenty-staging-web.rule=Host(`twenty-staging.dosugmayak.ru`)
+  - traefik.http.routers.twenty-staging-web.entrypoints=web
+  - traefik.http.services.twenty-staging-web.loadbalancer.server.port=3000
+  - traefik.http.routers.twenty-staging-web.service=twenty-staging-web
+  - traefik.http.routers.twenty-staging-web.middlewares=redirect-to-https@file
+  - traefik.http.routers.twenty-staging-websecure.rule=Host(`twenty-staging.dosugmayak.ru`)
+  - traefik.http.routers.twenty-staging-websecure.entrypoints=websecure
+  - traefik.http.services.twenty-staging-websecure.loadbalancer.server.port=3000
+  - traefik.http.routers.twenty-staging-websecure.service=twenty-staging-websecure
+  - traefik.http.routers.twenty-staging-websecure.tls.certresolver=letsencrypt
+  - traefik.http.routers.twenty-staging-websecure.middlewares=redirect-to-https@file,compress@file
+  - traefik.http.routers.twenty-staging-assets.rule=Host(`twenty-staging.dosugmayak.ru`) && PathPrefix(`/assets`)
+  - traefik.http.routers.twenty-staging-assets.entrypoints=websecure
+  - traefik.http.routers.twenty-staging-assets.tls.certresolver=letsencrypt
+  - traefik.http.routers.twenty-staging-assets.service=twenty-staging-websecure
+  - traefik.http.routers.twenty-staging-assets.priority=100
+  - traefik.http.routers.twenty-staging-assets.middlewares=assets-cache@file,compress@file
+  - traefik.docker.network=dokploy-network
+  - traefik.enable=true
