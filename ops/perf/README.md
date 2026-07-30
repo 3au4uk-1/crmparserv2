@@ -27,7 +27,7 @@ Override SSH target: `SSH_HOST=proxmox bash ops/perf/baseline.sh prod`.
 | **1** | Move swap to NVMe + lower swappiness | `host/swap-to-nvme.sh`, `host/sysctl-perf.conf` |
 | **2** | Tune Postgres (staging → prod) | `compose/twenty-db-command.yaml`, `apply-compose.mjs` |
 | **3** | Memory limits / reservations | `compose/twenty-mem-limits.yaml`, `apply-compose.mjs` |
-| **4** | Traefik asset caching + compression | `traefik/perf-middlewares.yml`, `compose/twenty-traefik-labels.yaml`, `apply-compose.mjs` |
+| **4** | Traefik asset caching + compression | `traefik/perf-middlewares.yml`, `traefik/twenty-public-assets-routes.yml`, `compose/twenty-traefik-labels.yaml`, `apply-compose.mjs` |
 | **5** | crmparser background throttle | `crmparser-throttle.md`, Dokploy env on crmparser compose |
 | **6** | GraphQL + deals-board profiling | `findings-profiling.md` |
 | **7** | Final verification vs targets | `results.md`, `reports/*-after.txt` |
@@ -41,7 +41,7 @@ After each infra task, re-run `baseline.sh` for the affected env and compare aga
 | **1** | `ssh proxmox 'bash /root/perf/swap-to-nvme.sh --rollback'`; revert `/etc/fstab` swap lines |
 | **2** | Re-apply pre-edit `*.full.yaml` via `node ops/perf/apply-compose.mjs <composeId> --set-compose <saved.yaml> --deploy` |
 | **3** | Re-apply pre-edit `*.full.yaml` (remove `mem_limit` / `mem_reservation` fragments) |
-| **4** | Remove `/etc/dokploy/traefik/dynamic/perf-middlewares.yml` on LXC 103; re-apply pre-edit compose |
+| **4** | On LXC **100** (public edge): remove `perf-middlewares.yml` + `twenty-public-assets-routes.yml` under `/etc/dokploy/traefik/dynamic/`; mirror cleanup on LXC 103 if present; re-apply pre-edit Twenty compose |
 | **5** | Restore prior crmparser env values documented in `crmparser-throttle.md`; redeploy crmparser |
 | **6** | N/A (findings only; code fixes revert via git in BrandingTwentyView) |
 | **7** | N/A (measurement doc only) |
