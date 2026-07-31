@@ -113,7 +113,7 @@ If the host cannot reach Telegram directly, run the **xray** sidecar (VLESS clie
 
 Only `api.telegram.org` requests go through the HTTP proxy (`backend/src/telegram/proxy.js`); internal file downloads stay direct. Empty vars = direct connection (default).
 
-**Webhook caveat:** incoming webhook delivery (Telegram → `PUBLIC_BASE_URL`) does not go through this proxy. If inbound is also blocked, webhook updates stop arriving — check `getWebhookInfo` `last_error_*`; long-polling через прокси would be a separate change.
+**Webhook caveat:** incoming webhook delivery (Telegram → `PUBLIC_BASE_URL`) does not go through this proxy. If inbound is also blocked (`getWebhookInfo` shows `last_error_message: Connection timed out`), set `TELEGRAM_POLLING=true` — the backend deletes the webhook on start and long-polls `getUpdates` through the same proxy (`backend/src/telegram/polling.js`). Do not use the webhook setup UI while polling is enabled.
 
 ## Security
 

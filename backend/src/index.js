@@ -26,6 +26,7 @@ import { appAuthMiddleware } from './middleware/app-auth.js';
 import { initScheduler } from './services/scheduler.js';
 import { initPrintSheetCron } from './services/print-sheet-cron.js';
 import { initExpenseSyncCron } from './services/expense-sync-cron.js';
+import { initTelegramPolling } from './telegram/polling.js';
 import { recoverStaleParseRuns } from './services/parser.js';
 import { recoverStaleRestoreMissingTwentyJobs } from './services/restore-missing-twenty-jobs.js';
 import { getDb } from './db/connection.js';
@@ -82,6 +83,7 @@ async function start() {
   initScheduler();
   initPrintSheetCron();
   initExpenseSyncCron();
+  initTelegramPolling();
   app.listen(config.port, () => {
     console.log(`CRM Parser running on port ${config.port}`);
   });

@@ -43,6 +43,8 @@ services:
       # Optional proxy for Telegram traffic (see xray sidecar); empty = direct.
       - TELEGRAM_PROXY_URL=${TELEGRAM_PROXY_URL}
       - TELEGRAM_HTTP_PROXY_URL=${TELEGRAM_HTTP_PROXY_URL}
+      # Long polling instead of webhook when inbound from Telegram is blocked.
+      - TELEGRAM_POLLING=${TELEGRAM_POLLING}
     networks:
       - twenty
     restart: unless-stopped
