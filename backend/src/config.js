@@ -75,4 +75,6 @@ export const config = {
   telegramPolling: ['1', 'true', 'yes'].includes(
     String(process.env.TELEGRAM_POLLING || '').trim().toLowerCase()
   ),
+  /** User-bot dialog reconcile interval (ms). Discovery + auto-invite trigger. */
+  telegramReconcileIntervalMs: parseInt(process.env.TELEGRAM_RECONCILE_INTERVAL_MS || '30000', 10),
 };

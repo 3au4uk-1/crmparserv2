@@ -1,5 +1,3 @@
-import { telegramFetch } from './proxy.js';
-
 const CAPTION_MAX = 1024;
 
 export function splitCaption(text) {
@@ -10,57 +8,6 @@ export function splitCaption(text) {
   return { caption: null, separateMessage: value };
 }
 
-async function callTelegram(token, method, fetchImpl, init) {
-  const url = `https://api.telegram.org/bot${token}/${method}`;
-  const resp = await fetchImpl(url, init);
-  const data = typeof resp.json === 'function' ? await resp.json() : resp;
-  if (!data.ok) {
-    const err = new Error(data.description || 'Telegram API error');
-    err.status = 502;
-    throw err;
-  }
-  return data;
-}
-
-function appendThreadId(payload, threadId) {
-  if (Number.isInteger(threadId) && threadId > 0) {
-    payload.message_thread_id = threadId;
-  }
-  return payload;
-}
-
-async function sendTextMessage(token, chatId, text, fetchImpl, threadId) {
-  const body = appendThreadId({ chat_id: chatId, text }, threadId);
-  const data = await callTelegram(token, 'sendMessage', fetchImpl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  return data.result.message_id;
-}
-
-async function sendPhotoAlbum(token, chatId, buffers, caption, fetchImpl, threadId) {
-  const form = new FormData();
-  form.append('chat_id', chatId);
-  if (Number.isInteger(threadId) && threadId > 0) {
-    form.append('message_thread_id', String(threadId));
-  }
-  const media = buffers.map((_, index) => ({
-    type: 'photo',
-    media: `attach://file${index}`,
-    ...(index === 0 && caption ? { caption } : {}),
-  }));
-  form.append('media', JSON.stringify(media));
-  for (let index = 0; index < buffers.length; index += 1) {
-    form.append(`file${index}`, new Blob([buffers[index]]), `photo${index}.jpg`);
-  }
-  const data = await callTelegram(token, 'sendMediaGroup', fetchImpl, {
-    method: 'POST',
-    body: form,
-  });
-  return data.result.map((message) => message.message_id);
-}
-
 async function downloadFile(url, fetchImpl) {
   const resp = await fetchImpl(url);
   if (!resp.ok) {
@@ -69,14 +16,39 @@ async function downloadFile(url, fetchImpl) {
   return Buffer.from(await resp.arrayBuffer());
 }
 
+function extractMessageIds(result) {
+  if (!result) return [];
+  if (Array.isArray(result)) {
+    return result.map((m) => Number(m.id ?? m.message_id)).filter((n) => Number.isFinite(n));
+  }
+  const id = Number(result.id ?? result.message_id);
+  return Number.isFinite(id) ? [id] : [];
+}
+
+/**
+ * Send okleyka payload via GramJS user-bot (MTProto).
+ *
+ * @param {{
+ *   client: { sendMessage: Function, sendFile: Function },
+ *   chatId: string | number,
+ *   threadId?: number | null,
+ *   text?: string,
+ *   fileUrls?: string[],
+ *   fetchImpl?: typeof fetch,
+ * }} opts
+ */
 export async function sendOkleykaToTelegram({
-  token,
+  client,
   chatId,
   threadId,
   text,
   fileUrls = [],
-  fetchImpl = telegramFetch,
+  fetchImpl = globalThis.fetch,
 }) {
+  if (!client) {
+    throw new Error('userbot client required');
+  }
+
   const { caption, separateMessage } = splitCaption(text ?? '');
   const warnings = [];
   const buffers = [];
@@ -89,26 +61,32 @@ export async function sendOkleykaToTelegram({
     }
   }
 
+  const replyTo = Number.isInteger(threadId) && threadId > 0 ? threadId : undefined;
   const messageIds = [];
 
   if (buffers.length === 0) {
     const messageText = text ?? '';
     if (messageText.trim()) {
-      messageIds.push(await sendTextMessage(token, chatId, messageText, fetchImpl, threadId));
+      const result = await client.sendMessage(chatId, {
+        message: messageText,
+        ...(replyTo ? { replyTo } : {}),
+      });
+      messageIds.push(...extractMessageIds(result));
     }
   } else {
     if (separateMessage) {
-      messageIds.push(await sendTextMessage(token, chatId, separateMessage, fetchImpl, threadId));
+      const result = await client.sendMessage(chatId, {
+        message: separateMessage,
+        ...(replyTo ? { replyTo } : {}),
+      });
+      messageIds.push(...extractMessageIds(result));
     }
-    const albumIds = await sendPhotoAlbum(
-      token,
-      chatId,
-      buffers,
-      caption,
-      fetchImpl,
-      threadId,
-    );
-    messageIds.push(...albumIds);
+    const result = await client.sendFile(chatId, {
+      file: buffers.length === 1 ? buffers[0] : buffers,
+      caption: caption || undefined,
+      ...(replyTo ? { replyTo } : {}),
+    });
+    messageIds.push(...extractMessageIds(result));
   }
 
   return {

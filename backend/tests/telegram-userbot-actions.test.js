@@ -7,6 +7,7 @@ import {
   joinChatByInviteLink,
   inviteUserToChat,
   getSelfUserId,
+  canInviteToChat,
 } from '../src/telegram/userbot/actions.js';
 import { isUserbotConfigured } from '../src/telegram/userbot/client.js';
 
@@ -117,5 +118,49 @@ describe('getSelfUserId', () => {
   it('returns string id from getMe', async () => {
     const client = { getMe: vi.fn(async () => ({ id: 777888999n })) };
     await expect(getSelfUserId(client)).resolves.toBe('777888999');
+  });
+});
+
+describe('canInviteToChat', () => {
+  it('ok when admin has inviteUsers', async () => {
+    const client = {
+      getEntity: vi.fn(async () => ({
+        adminRights: { inviteUsers: true },
+        defaultBannedRights: { inviteUsers: true },
+      })),
+    };
+    await expect(canInviteToChat(client, '-1001')).resolves.toEqual({ ok: true });
+  });
+
+  it('ok when invites are not banned for members', async () => {
+    const client = {
+      getEntity: vi.fn(async () => ({
+        defaultBannedRights: { inviteUsers: false },
+      })),
+    };
+    await expect(canInviteToChat(client, '-1002')).resolves.toEqual({ ok: true });
+  });
+
+  it('fails when invites are banned and self is not inviting admin', async () => {
+    const client = {
+      getEntity: vi.fn(async () => ({
+        defaultBannedRights: { inviteUsers: true },
+      })),
+    };
+    const result = await canInviteToChat(client, '-1003');
+    expect(result.ok).toBe(false);
+    expect(result.reason).toMatch(/cannot invite/i);
+  });
+
+  it('fails when admin lacks inviteUsers', async () => {
+    const client = {
+      getEntity: vi.fn(async () => ({
+        adminRights: { inviteUsers: false },
+        defaultBannedRights: { inviteUsers: false },
+      })),
+    };
+    const result = await canInviteToChat(client, '-1004');
+    expect(result.ok).toBe(false);
+    expect(result.reason).toMatch(/without inviteUsers/i);
   });
 });

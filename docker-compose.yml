@@ -45,6 +45,7 @@ services:
       - TELEGRAM_HTTP_PROXY_URL=${TELEGRAM_HTTP_PROXY_URL}
       # Long polling instead of webhook when inbound from Telegram is blocked.
       - TELEGRAM_POLLING=${TELEGRAM_POLLING}
+      - TELEGRAM_RECONCILE_INTERVAL_MS=${TELEGRAM_RECONCILE_INTERVAL_MS:-30000}
     networks:
       - twenty
     restart: unless-stopped

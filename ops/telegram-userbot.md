@@ -1,6 +1,6 @@
-# Telegram user-bot session setup (auto-invite)
+# Telegram user-bot (auto-invite + okleyka + discovery)
 
-Operator runbook for the GramJS **user-bot** used by crmparser auto-invite (join group via invite link, promote members). The bot token path is unchanged; this account is a separate **service identity**.
+Operator runbook for the GramJS **user-bot** used by crmparser. Working flows (auto-invite, okleyka send, chat/topic discovery) run **only through the user account** — `@brandingxbot` is no longer required in order chats.
 
 Secrets live in Dokploy env and the SQLite data volume — **never** commit `TELEGRAM_USER_SESSION`, `TELEGRAM_API_HASH`, or real phone numbers in git.
 
@@ -10,125 +10,93 @@ Secrets live in Dokploy env and the SQLite data volume — **never** commit `TEL
 |------|-------------|
 | `TELEGRAM_API_ID` | Dokploy env — https://my.telegram.org → API development tools |
 | `TELEGRAM_API_HASH` | Dokploy env — same |
-| User session | **Preferred:** login via `/telegram` User-bot wizard → stored in SQLite (`crmparser-data` volume) |
-| `TELEGRAM_USER_SESSION` | **Optional legacy fallback** — env StringSession if set; DB session takes precedence |
+| User session | **Preferred:** login via `/telegram` User-bot wizard → SQLite (`crmparser-data`) |
+| `TELEGRAM_USER_SESSION` | Optional legacy env fallback; DB session takes precedence |
+| Discovery | Background reconcile (`getDialogs` every ~30s) + `POST /api/telegram/chats/refresh` |
+| Auto-invite | When reconcile sees a **new** group dialog → invite up to **5** list members with **5–15s** random delay |
+| Okleyka | User-bot `sendMessage` / `sendFile` to configured chat/topic |
 
-Backend reads API credentials in `backend/src/config.js`. Session resolution prefers the DB value, then falls back to `TELEGRAM_USER_SESSION` env (`backend/src/telegram/userbot/session-store.js`).
+Bot API token / webhook remain in the UI as **deprecated** (optional legacy).
 
 ## 1. Obtain API credentials
 
-1. Sign in at https://my.telegram.org with the **service** Telegram account (not a personal day-to-day phone if avoidable).
-2. Open **API development tools** and create an app.
-3. Note `api_id` and `api_hash`.
+1. Sign in at https://my.telegram.org (any account that can create an app; credentials work with the service phone later).
+2. **API development tools** → create an app → note `api_id` / `api_hash`.
 
-## 2. Dokploy: API credentials + compose passthrough
-
-Set **at minimum** these two values in Dokploy environment for **crmparser-staging** (then production when ready):
+## 2. Dokploy env + compose passthrough
 
 | Key | Value |
 |-----|-------|
-| `TELEGRAM_API_ID` | integer from my.telegram.org |
-| `TELEGRAM_API_HASH` | hash string |
+| `TELEGRAM_API_ID` | integer |
+| `TELEGRAM_API_HASH` | hash |
+| `TELEGRAM_PROXY_URL` | `socks5://xray:1080` when host cannot reach Telegram |
+| `TELEGRAM_HTTP_PROXY_URL` | optional (legacy Bot API only) |
+| `TELEGRAM_RECONCILE_INTERVAL_MS` | default `30000` |
+| `TELEGRAM_POLLING` | can be `false` / unset — bot polling not needed for user-bot flows |
 
-`TELEGRAM_USER_SESSION` is **not required** when using the UI login flow.
+Compose `environment` must list these vars (same pitfall as `PUBLIC_BASE_URL`).
 
-### PUBLIC_BASE_URL pitfall (same for user-bot vars)
-
-Dokploy stores env values, but the **raw compose** must pass them into the container `environment` block. If a var is set in Dokploy UI but missing from compose, the process sees an empty value.
-
-Repo `docker-compose.yml` includes (mirror of `PUBLIC_BASE_URL`):
-
-```yaml
-- TELEGRAM_API_ID=${TELEGRAM_API_ID}
-- TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
-- TELEGRAM_USER_SESSION=${TELEGRAM_USER_SESSION}
-```
-
-**Operator follow-up:** Update Dokploy raw compose for `crmparser-staging` (and prod) to include the same three lines if not already present. This task does not apply Dokploy live changes — controller/operator verifies after deploy.
-
-## 3. Login via UI (preferred)
-
-After redeploy with API credentials set:
+## 3. Login via UI
 
 1. Open `/telegram` → **Авто-добавление** → **User-bot**.
-2. Enter service phone → confirm SMS/Telegram code → 2FA password if enabled.
-3. UI shows **User-bot подключён** when session is fully saved.
+2. Phone → code → 2FA if enabled → **User-bot подключён**.
+3. Session stored in SQLite (`telegram_user_session`).
 
-Session is written to SQLite on the `crmparser-data` volume (`settings` key `telegram_user_session`). No manual copy/paste of StringSession needed.
+Pending login is in-memory — restart mid-wizard → start from phone again.
 
-**Pending login is in-memory** — if the server restarts mid-wizard, restart from the phone step.
+## 4. Ops model (no bot in chats)
 
-## 4. CLI script (emergency fallback only)
+1. Configure auto-invite members on `/telegram` (≤5 people in practice).
+2. Logistics creates an order **supergroup** and adds the **user-bot account** as a member (or admin).
+3. User-bot must be able to invite: either group allows member invites, or user-bot is admin with **Invite users**.
+4. Within ~30s (or after **Обновить чаты из user-bot**), reconcile discovers the chat and runs auto-invite.
+5. Remove `@brandingxbot` from existing order groups if it was added earlier.
 
-Use only when UI login is unavailable (e.g. locked out of web UI, disaster recovery).
+## 5. Okleyka destination
 
-Run **once** on a machine you trust. Do not run inside production containers or CI logs.
+On `/telegram` → **Оклейка → отправка**: pick chat (and forum topic if needed). Twenty calls `okleyka.send`; crmparser sends via user-bot MTProto (user-bot must already be in that chat).
+
+## 6. CLI login (emergency only)
 
 ```bash
-# From crmparserv2 repo root — either export or put in .env (never commit real values):
-# TELEGRAM_API_ID=12345678
-# TELEGRAM_API_HASH=...
-
 node backend/scripts/telegram-userbot-login.mjs
 ```
 
-The script prompts for phone, code, and 2FA password if enabled. It prints a **StringSession** line — paste into Dokploy as `TELEGRAM_USER_SESSION` and redeploy.
+Paste StringSession into `TELEGRAM_USER_SESSION` only if UI login is unavailable.
 
-Prefer UI login for normal operations; env session is a fallback when DB is empty.
+## 7. Logout
 
-## 5. Logout / full disconnect
+- UI **Выйти** clears DB session.
+- Also clear `TELEGRAM_USER_SESSION` env if set.
 
-- **UI «Выйти»** clears the DB session (`telegram_user_session` row deleted).
-- If `TELEGRAM_USER_SESSION` is also set in Dokploy env, the user-bot remains connected via env fallback — **clear that env var too** to fully disconnect.
-- DB session wins over env when both exist; logout only removes DB.
+## 8. Staging checklist
 
-## 6. Redeploy
+1. [ ] API id/hash (+ proxy) set; compose passthrough OK.
+2. [ ] UI login → user-bot connected; auto-invite `configured=true`.
+3. [ ] Add members (≤5).
+4. [ ] Add **user-bot** to a test supergroup (with invite capability).
+5. [ ] Refresh chats / wait reconcile → members invited (privacy may block some).
+6. [ ] Repeat → idempotent (no duplicate run spam).
+7. [ ] Okleyka test-send to configured chat/topic.
+8. [ ] Manually remove branding bot from groups if present.
 
-Redeploy crmparser after changing API credentials or env session. UI-logged sessions persist across redeploys in the SQLite volume.
+## 9. Proxy (RKN)
 
-## 7. Staging verification checklist
-
-1. [ ] `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` set on Dokploy; compose `environment` includes all three telegram vars (same pitfall as `PUBLIC_BASE_URL`).
-2. [ ] Redeploy staging crmparser.
-3. [ ] Open `/telegram` → User-bot wizard (no “Задайте TELEGRAM_API_ID / HASH” warning).
-4. [ ] Complete login via UI → **User-bot подключён**.
-5. [ ] Auto-invite section shows configured; add 1–2 test members (username and/or user_id).
-6. [ ] Create a test group; add the **bot** as admin with **Invite users via link** and **Add new admins**.
-7. [ ] Trigger auto-invite (bot join event or retry API/UI) → user-bot joins group; listed members are invited (modulo privacy blocks).
-8. [ ] Check run status in UI / retry API — expect `success` or `partial` with clear per-member errors if privacy blocked.
-9. [ ] Re-add bot / repeat event → **no duplicate** invites (idempotent).
-
-## 8. Proxy when Telegram is blocked (RKN etc.)
-
-If the host cannot reach Telegram directly, run the **xray** sidecar (VLESS client) and point crmparser at it:
-
-1. Create `ops/xray/config.json` from `ops/xray/config.example.json` (fill VLESS server host/port/uuid/reality params from the `vless://` link). The real config is gitignored; on Dokploy it is provided as a file mount.
-2. Start the sidecar: repo compose profile `proxy` (`docker compose --profile proxy up -d`) or an `xray` service in the Dokploy raw compose.
-3. Set env on crmparser:
-
-| Key | Value |
-|-----|-------|
-| `TELEGRAM_PROXY_URL` | `socks5://xray:1080` — GramJS MTProto (user-bot) |
-| `TELEGRAM_HTTP_PROXY_URL` | `http://xray:1081` — Bot API `api.telegram.org` fetch |
-
-Only `api.telegram.org` requests go through the HTTP proxy (`backend/src/telegram/proxy.js`); internal file downloads stay direct. Empty vars = direct connection (default).
-
-**Webhook caveat:** incoming webhook delivery (Telegram → `PUBLIC_BASE_URL`) does not go through this proxy. If inbound is also blocked (`getWebhookInfo` shows `last_error_message: Connection timed out`), set `TELEGRAM_POLLING=true` — the backend deletes the webhook on start and long-polls `getUpdates` through the same proxy (`backend/src/telegram/polling.js`). Do not use the webhook setup UI while polling is enabled.
+See xray sidecar: `TELEGRAM_PROXY_URL=socks5://xray:1080`. User-bot MTProto goes through SOCKS5. Bot long-polling (`TELEGRAM_POLLING`) is unused for the user-bot-only path.
 
 ## Security
 
-- StringSession equals full Telegram account access — treat Dokploy secrets, SQLite data, and backups as confidential.
-- **SQLite backups** (`crmparser-data` volume / DB file) contain the session string — restrict access like a password vault.
-- Use a dedicated service account; rotate by logging out in UI and re-authenticating (or re-run CLI + update env if using fallback).
-- Member CRUD remains behind existing app auth (`APP_PASSWORD` / session cookie).
+- StringSession = full account access (Dokploy + SQLite + backups).
+- Prefer a dedicated service account.
+- Invite delays (5–15s) and cap (5) reduce anti-spam risk; still treat mass invites carefully.
 
 ## Related code
 
 | Path | Role |
 |------|------|
-| `backend/scripts/telegram-userbot-login.mjs` | Emergency CLI login → print session |
-| `backend/src/telegram/userbot/session-store.js` | DB session read/write/clear |
-| `backend/src/telegram/userbot/auth-login.js` | UI login flow (start/code/password/logout) |
-| `backend/src/telegram/userbot/client.js` | Lazy GramJS client |
-| `frontend/src/pages/Telegram.jsx` | Auto-invite UI + User-bot wizard |
-| `.env.example` | Documented var names (placeholders only) |
+| `backend/src/telegram/userbot/reconcile.js` | Dialog discovery + auto-invite trigger |
+| `backend/src/telegram/auto-invite.js` | Capability check, cap 5, delays, invites |
+| `backend/src/telegram/outbound.js` | Okleyka via GramJS |
+| `backend/src/telegram/userbot/client.js` | Lazy GramJS client + proxy |
+| `frontend/src/pages/Telegram.jsx` | UI |
+| `ops/xray/` | VLESS proxy sidecar config |

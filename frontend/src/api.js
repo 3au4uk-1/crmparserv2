@@ -982,6 +982,17 @@ export function useAddTelegramChat() {
   });
 }
 
+export function useRefreshTelegramChats() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post('/telegram/chats/refresh').then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['telegram-chats'] });
+      qc.invalidateQueries({ queryKey: ['telegram-topics'] });
+    },
+  });
+}
+
 export function useAddTelegramTopic() {
   const qc = useQueryClient();
   return useMutation({

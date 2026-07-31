@@ -1,4 +1,4 @@
-import { getTelegramBotToken, getTelegramDestination } from './settings.js';
+import { getTelegramDestination } from './settings.js';
 import {
   findLastSend,
   hashOkleykaPayload,
@@ -6,6 +6,7 @@ import {
 } from './send-log.js';
 import { sendOkleykaToTelegram } from './outbound.js';
 import { patchOkleykaTelegramFields } from './crm-log.js';
+import { getUserbotClient, isUserbotConfigured } from './userbot/client.js';
 
 function resolveSentBy(sentBy) {
   if (!sentBy) return null;
@@ -28,6 +29,8 @@ function configError(message) {
 export async function handleOkleykaSend(db, body, deps = {}) {
   const sendOkleyka = deps.sendOkleykaToTelegram ?? sendOkleykaToTelegram;
   const patchFields = deps.patchOkleykaTelegramFields ?? patchOkleykaTelegramFields;
+  const configured = deps.isUserbotConfigured ?? (() => isUserbotConfigured(db));
+  const getClient = deps.getUserbotClient ?? (() => getUserbotClient(db));
 
   const event = body?.event;
   const lineItemId = body?.lineItemId;
@@ -45,10 +48,9 @@ export async function handleOkleykaSend(db, body, deps = {}) {
     throw validationError('text required');
   }
 
-  const token = getTelegramBotToken(db);
   const dest = getTelegramDestination(db, event);
-  if (!token || !dest?.chatId) {
-    throw configError('Telegram не настроен');
+  if (!configured() || !dest?.chatId) {
+    throw configError('Telegram не настроен (нужен user-bot и чат оклейки)');
   }
   const { chatId, threadId } = dest;
 
@@ -61,8 +63,9 @@ export async function handleOkleykaSend(db, body, deps = {}) {
     };
   }
 
+  const client = await getClient();
   const sendResult = await sendOkleyka({
-    token,
+    client,
     chatId,
     threadId,
     text,

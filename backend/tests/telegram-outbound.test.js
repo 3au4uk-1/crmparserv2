@@ -11,32 +11,66 @@ describe('splitCaption', () => {
   });
 });
 
-describe('sendOkleykaToTelegram', () => {
-  it('sends text-only when no fileUrls', async () => {
-    const fetchImpl = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ ok: true, result: { message_id: 42 } }),
-    }));
+describe('sendOkleykaToTelegram (userbot)', () => {
+  it('sends text-only via sendMessage when no fileUrls', async () => {
+    const client = {
+      sendMessage: vi.fn(async () => ({ id: 42 })),
+      sendFile: vi.fn(),
+    };
     const result = await sendOkleykaToTelegram({
-      token: 't',
+      client,
       chatId: '-1',
       text: 'Заказ: 1',
       fileUrls: [],
-      fetchImpl,
     });
     expect(result.messageIds).toEqual([42]);
-    expect(String(fetchImpl.mock.calls[0][0])).toContain('sendMessage');
+    expect(client.sendMessage).toHaveBeenCalledWith('-1', { message: 'Заказ: 1' });
+    expect(client.sendFile).not.toHaveBeenCalled();
   });
 
-  it('passes message_thread_id when threadId set', async () => {
+  it('passes replyTo when threadId set', async () => {
+    const client = {
+      sendMessage: vi.fn(async () => ({ id: 1 })),
+      sendFile: vi.fn(),
+    };
+    await sendOkleykaToTelegram({
+      client,
+      chatId: '-1',
+      threadId: 9,
+      text: 'hi',
+      fileUrls: [],
+    });
+    expect(client.sendMessage).toHaveBeenCalledWith('-1', {
+      message: 'hi',
+      replyTo: 9,
+    });
+  });
+
+  it('sends album via sendFile and downloads files', async () => {
     const fetchImpl = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ ok: true, result: { message_id: 1 } }),
+      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
     }));
-    await sendOkleykaToTelegram({
-      token: 't', chatId: '-1', threadId: 9, text: 'hi', fileUrls: [], fetchImpl,
+    const client = {
+      sendMessage: vi.fn(),
+      sendFile: vi.fn(async () => [{ id: 10 }, { id: 11 }]),
+    };
+    const result = await sendOkleykaToTelegram({
+      client,
+      chatId: '-100',
+      threadId: 5,
+      text: 'cap',
+      fileUrls: ['https://example.com/a.jpg', 'https://example.com/b.jpg'],
+      fetchImpl,
     });
-    const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
-    expect(body.message_thread_id).toBe(9);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(client.sendFile).toHaveBeenCalledWith(
+      '-100',
+      expect.objectContaining({
+        caption: 'cap',
+        replyTo: 5,
+      }),
+    );
+    expect(result.messageIds).toEqual([10, 11]);
   });
 });

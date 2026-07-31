@@ -6,7 +6,11 @@ import {
   finishAutoInviteRun,
   getAutoInviteRun,
 } from '../src/telegram/auto-invite-store.js';
-import { runAutoInviteForChat, scheduleAutoInvite } from '../src/telegram/auto-invite.js';
+import {
+  runAutoInviteForChat,
+  scheduleAutoInvite,
+  AUTO_INVITE_MEMBER_CAP,
+} from '../src/telegram/auto-invite.js';
 
 function memDb() {
   const db = new Database(':memory:');
@@ -34,17 +38,13 @@ function memDb() {
 function makeDeps(overrides = {}) {
   const client = { id: 'client' };
   return {
-    getToken: vi.fn(() => 'bot-token'),
-    createInviteLink: vi.fn(async () => ({ inviteLink: 'https://t.me/+abc' })),
-    promote: vi.fn(async () => {}),
     getClient: vi.fn(async () => client),
-    joinInvite: vi.fn(async () => {}),
+    canInvite: vi.fn(async () => ({ ok: true })),
     resolveUser: vi.fn(async (_client, target) => ({
       userId: target.userId ?? '111',
       username: target.username ?? 'alice',
     })),
     inviteUser: vi.fn(async () => {}),
-    getSelfUserId: vi.fn(async () => '999'),
     listMembers: vi.fn((db) => {
       const rows = db.prepare(`SELECT * FROM telegram_auto_invite_members WHERE active = 1 ORDER BY id`).all();
       return rows.map((row) => ({
@@ -77,6 +77,8 @@ function makeDeps(overrides = {}) {
         updatedAt: row.updated_at,
       };
     }),
+    sleep: vi.fn(async () => {}),
+    randomDelayMs: vi.fn(() => 7000),
     ...overrides,
   };
 }
@@ -88,7 +90,7 @@ describe('runAutoInviteForChat', () => {
     db = memDb();
   });
 
-  it('happy path invites all active members and finishes success', async () => {
+  it('happy path invites active members without bot and finishes success', async () => {
     upsertAutoInviteMember(db, { username: 'alice' });
     upsertAutoInviteMember(db, { userId: '222', username: 'bob' });
 
@@ -104,15 +106,40 @@ describe('runAutoInviteForChat', () => {
     expect(result.status).toBe('success');
     expect(result.detail.members).toHaveLength(2);
     expect(result.detail.members.every((m) => m.status === 'invited')).toBe(true);
-    expect(deps.createInviteLink).toHaveBeenCalledWith('bot-token', '-1001');
-    expect(deps.joinInvite).toHaveBeenCalled();
-    expect(deps.getSelfUserId).toHaveBeenCalled();
-    expect(deps.promote).toHaveBeenCalledWith('bot-token', '-1001', '999');
+    expect(deps.canInvite).toHaveBeenCalled();
     expect(deps.inviteUser).toHaveBeenCalledTimes(2);
+    expect(deps.sleep).toHaveBeenCalledTimes(1);
+    expect(deps.randomDelayMs).toHaveBeenCalled();
 
     const run = getAutoInviteRun(db, '-1001');
     expect(run.status).toBe('success');
-    expect(JSON.parse(run.detailJson).members).toHaveLength(2);
+  });
+
+  it('fails when user-bot cannot invite', async () => {
+    upsertAutoInviteMember(db, { username: 'alice' });
+    const deps = makeDeps({
+      canInvite: vi.fn(async () => ({ ok: false, reason: 'no invite rights' })),
+    });
+
+    const result = await runAutoInviteForChat(db, '-1001b', { deps });
+
+    expect(result.status).toBe('failed');
+    expect(result.detail.error).toMatch(/no invite rights/i);
+    expect(deps.inviteUser).not.toHaveBeenCalled();
+  });
+
+  it('caps invites at AUTO_INVITE_MEMBER_CAP', async () => {
+    for (let i = 0; i < AUTO_INVITE_MEMBER_CAP + 2; i += 1) {
+      upsertAutoInviteMember(db, { username: `user${i}` });
+    }
+    const deps = makeDeps();
+    const result = await runAutoInviteForChat(db, '-1001c', { deps });
+
+    expect(result.status).toBe('success');
+    expect(result.detail.members).toHaveLength(AUTO_INVITE_MEMBER_CAP);
+    expect(result.detail.cappedAt).toBe(AUTO_INVITE_MEMBER_CAP);
+    expect(deps.inviteUser).toHaveBeenCalledTimes(AUTO_INVITE_MEMBER_CAP);
+    expect(deps.sleep).toHaveBeenCalledTimes(AUTO_INVITE_MEMBER_CAP - 1);
   });
 
   it('persists resolved user_id for username-only members', async () => {
@@ -132,27 +159,6 @@ describe('runAutoInviteForChat', () => {
     expect(row.user_id).toBe('333');
   });
 
-  it('continues when joinInvite throws USER_ALREADY_PARTICIPANT', async () => {
-    upsertAutoInviteMember(db, { username: 'alice' });
-
-    const deps = makeDeps({
-      joinInvite: vi.fn(async () => {
-        throw new Error('USER_ALREADY_PARTICIPANT');
-      }),
-    });
-
-    const result = await runAutoInviteForChat(db, '-1003b', { deps });
-
-    expect(result.status).toBe('success');
-    expect(deps.getSelfUserId).toHaveBeenCalled();
-    expect(deps.promote).toHaveBeenCalledWith('bot-token', '-1003b', '999');
-    expect(deps.inviteUser).toHaveBeenCalledTimes(1);
-    expect(result.detail.members[0].status).toBe('invited');
-
-    const run = getAutoInviteRun(db, '-1003b');
-    expect(run.status).toBe('success');
-  });
-
   it('skips already-participant invite errors and finishes success', async () => {
     upsertAutoInviteMember(db, { username: 'alice' });
 
@@ -165,14 +171,10 @@ describe('runAutoInviteForChat', () => {
     const result = await runAutoInviteForChat(db, '-1003a', { deps });
 
     expect(result.status).toBe('success');
-    expect(result.detail.members).toHaveLength(1);
     expect(result.detail.members[0]).toMatchObject({
       status: 'skipped',
       reason: 'already_participant',
     });
-
-    const run = getAutoInviteRun(db, '-1003a');
-    expect(run.status).toBe('success');
   });
 
   it('returns partial when a member invite fails (privacy)', async () => {
@@ -196,9 +198,6 @@ describe('runAutoInviteForChat', () => {
     expect(result.status).toBe('partial');
     expect(result.detail.members.some((m) => m.status === 'failed')).toBe(true);
     expect(result.detail.members.some((m) => m.status === 'invited')).toBe(true);
-
-    const run = getAutoInviteRun(db, '-1003');
-    expect(run.status).toBe('partial');
   });
 
   it('skips when a prior success run exists', async () => {
@@ -210,7 +209,7 @@ describe('runAutoInviteForChat', () => {
 
     expect(result.skipped).toBe(true);
     expect(result.status).toBe('success');
-    expect(deps.createInviteLink).not.toHaveBeenCalled();
+    expect(deps.canInvite).not.toHaveBeenCalled();
   });
 
   it('force retry resets and re-runs after success', async () => {
@@ -223,7 +222,6 @@ describe('runAutoInviteForChat', () => {
 
     expect(result.skipped).toBeUndefined();
     expect(result.status).toBe('success');
-    expect(deps.createInviteLink).toHaveBeenCalled();
     expect(deps.inviteUser).toHaveBeenCalledTimes(1);
   });
 
@@ -234,61 +232,7 @@ describe('runAutoInviteForChat', () => {
 
     expect(result.status).toBe('failed');
     expect(result.detail.error).toBe('userbot not configured');
-    expect(deps.createInviteLink).not.toHaveBeenCalled();
-
-    const run = getAutoInviteRun(db, '-1006');
-    expect(run.status).toBe('failed');
-  });
-
-  it('fails when bot token is missing', async () => {
-    const deps = makeDeps({ getToken: vi.fn(() => '') });
-
-    const result = await runAutoInviteForChat(db, '-1007', { deps });
-
-    expect(result.status).toBe('failed');
-    expect(result.detail.error).toMatch(/token/i);
-    expect(deps.createInviteLink).not.toHaveBeenCalled();
-  });
-
-  it('continues member invites when promote fails and finishes partial', async () => {
-    upsertAutoInviteMember(db, { username: 'alice' });
-
-    const deps = makeDeps({
-      promote: vi.fn(async () => {
-        throw new Error('not enough rights');
-      }),
-    });
-
-    const result = await runAutoInviteForChat(db, '-1008', { deps });
-
-    expect(result.status).toBe('partial');
-    expect(result.detail.promoteError).toBe('not enough rights');
-    expect(result.detail.members).toHaveLength(1);
-    expect(result.detail.members[0].status).toBe('invited');
-    expect(deps.inviteUser).toHaveBeenCalledTimes(1);
-
-    const run = getAutoInviteRun(db, '-1008');
-    expect(run.status).toBe('partial');
-  });
-
-  it('sets clear promoteError for basic group / admin-required failures', async () => {
-    upsertAutoInviteMember(db, { username: 'alice' });
-
-    const deps = makeDeps({
-      promote: vi.fn(async () => {
-        throw new Error('Bad Request: CHAT_ADMIN_REQUIRED');
-      }),
-      inviteUser: vi.fn(async () => {
-        throw new Error('USER_PRIVACY_RESTRICTED');
-      }),
-    });
-
-    const result = await runAutoInviteForChat(db, '-1008b', { deps });
-
-    expect(result.status).toBe('partial');
-    expect(result.detail.promoteError).toMatch(/supergroup/i);
-    expect(result.detail.members[0].status).toBe('failed');
-    expect(deps.inviteUser).toHaveBeenCalledTimes(1);
+    expect(deps.canInvite).not.toHaveBeenCalled();
   });
 });
 

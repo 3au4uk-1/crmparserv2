@@ -74,7 +74,7 @@ describe('processTelegramUpdate auto-invite trigger', () => {
     scheduleAutoInvite = vi.fn();
   });
 
-  it('schedules auto-invite when bot joins a supergroup as member', () => {
+  it('upserts chat on join but does not schedule auto-invite (userbot reconcile owns that)', () => {
     processTelegramUpdate(
       db,
       {
@@ -85,12 +85,12 @@ describe('processTelegramUpdate auto-invite trigger', () => {
       },
       { scheduleAutoInvite },
     );
-    expect(scheduleAutoInvite).toHaveBeenCalledOnce();
-    expect(scheduleAutoInvite).toHaveBeenCalledWith(db, '-100123');
+    expect(scheduleAutoInvite).not.toHaveBeenCalled();
     expect(listTelegramChats(db, { activeOnly: false })).toHaveLength(1);
+    expect(listTelegramChats(db, { activeOnly: false })[0].chat_id).toBe('-100123');
   });
 
-  it('schedules auto-invite for administrator and creator statuses', () => {
+  it('does not schedule for administrator/creator either', () => {
     for (const status of ['administrator', 'creator']) {
       scheduleAutoInvite.mockReset();
       processTelegramUpdate(
@@ -103,7 +103,7 @@ describe('processTelegramUpdate auto-invite trigger', () => {
         },
         { scheduleAutoInvite },
       );
-      expect(scheduleAutoInvite).toHaveBeenCalledOnce();
+      expect(scheduleAutoInvite).not.toHaveBeenCalled();
     }
   });
 
