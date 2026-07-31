@@ -7,6 +7,17 @@ import { resolveSession } from './session-store.js';
 /** @type {Promise<import('telegram').TelegramClient> | undefined} */
 let clientPromise;
 
+/** @type {Array<(client: import('telegram').TelegramClient) => void>} */
+const readyHooks = [];
+
+/**
+ * Runs fn after every client connect, including re-creation after re-login.
+ * @param {(client: import('telegram').TelegramClient) => void} fn
+ */
+export function onUserbotClientReady(fn) {
+  readyHooks.push(fn);
+}
+
 /**
  * @param {{ telegramApiId?: string | number, telegramApiHash?: string }} cfg
  */
@@ -38,7 +49,16 @@ export async function getUserbotClient(db) {
       config.telegramApiHash,
       { connectionRetries: 3, ...(getGramjsProxy() ? { proxy: getGramjsProxy(), useWSS: false } : {}) },
     );
-    clientPromise = client.connect().then(() => client);
+    clientPromise = client.connect().then(() => {
+      for (const fn of readyHooks) {
+        try {
+          fn(client);
+        } catch (err) {
+          console.error('[telegram] userbot ready hook error:', err.message);
+        }
+      }
+      return client;
+    });
   }
   return clientPromise;
 }

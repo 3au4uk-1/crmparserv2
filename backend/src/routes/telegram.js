@@ -8,6 +8,8 @@ import {
   getTelegramBotToken,
   getTelegramDestination,
   mergeChatMapEntry,
+  getMentionForwardSettings,
+  setMentionForwardSettings,
 } from '../telegram/settings.js';
 import {
   listTelegramChats,
@@ -184,6 +186,22 @@ router.post('/test-send', async (req, res, next) => {
     });
     res.json({ ok: true });
   } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/mention-forward', (req, res) => {
+  res.json({ settings: getMentionForwardSettings(getDb()) });
+});
+
+router.put('/mention-forward', (req, res, next) => {
+  try {
+    const settings = setMentionForwardSettings(getDb(), req.body ?? {});
+    res.json({ settings });
+  } catch (err) {
+    if (err?.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
     next(err);
   }
 });

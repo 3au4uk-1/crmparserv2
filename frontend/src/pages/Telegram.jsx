@@ -13,6 +13,8 @@ import {
   useTelegramWebhookStatus,
   useSetupTelegramWebhook,
   useTeardownTelegramWebhook,
+  useTelegramMentionForward,
+  useSaveTelegramMentionForward,
   useTelegramAutoInviteStatus,
   useTelegramAutoInviteMembers,
   useAddTelegramAutoInviteMember,
@@ -130,6 +132,11 @@ export default function Telegram() {
   const [actionError, setActionError] = useState('');
   const [actionSuccess, setActionSuccess] = useState('');
 
+  const { data: mentionForwardData } = useTelegramMentionForward();
+  const saveMentionForward = useSaveTelegramMentionForward();
+  const [mentionChatId, setMentionChatId] = useState('');
+  const [mentionTopicId, setMentionTopicId] = useState('');
+
   const autoInviteConfigured = Boolean(autoInviteStatus?.configured);
   const autoInviteMembers = autoInviteMembersData?.members ?? [];
   const userbotApiConfigured = Boolean(userbotAuthStatus?.apiConfigured);
@@ -206,6 +213,20 @@ export default function Telegram() {
     setOkleykaChatId(dest.chatId);
     setOkleykaThreadId(dest.threadId);
   }, [telegramSettings?.chatMap]);
+
+  useEffect(() => {
+    const s = mentionForwardData?.settings;
+    if (!s) return;
+    setMentionChatId(s.chatId || '');
+    setMentionTopicId(s.topicId != null ? String(s.topicId) : '');
+  }, [mentionForwardData?.settings]);
+
+  const mentionForumChats = useMemo(
+    () => chats.filter((c) => c.isForum && c.active),
+    [chats],
+  );
+  const { data: mentionTopicsData } = useTelegramTopics(mentionChatId);
+  const mentionTopics = mentionTopicsData?.topics ?? [];
 
   useEffect(() => {
     if (chatsLoading || !okleykaChatId || !selectedChatResolved || !selectedChat) {
@@ -364,6 +385,29 @@ export default function Telegram() {
       setActionSuccess('Тестовое сообщение отправлено');
     } catch (err) {
       setActionError(err.response?.data?.error || err.message || 'Не удалось отправить тест');
+    }
+  }
+
+  async function onSaveMentionForward() {
+    setSaveError('');
+    setActionError('');
+    setActionSuccess('');
+    if (mentionChatId && !mentionTopicId) {
+      setSaveError('Выберите топик для упоминаний');
+      return;
+    }
+    try {
+      await saveMentionForward.mutateAsync({
+        chatId: mentionChatId,
+        topicId: mentionTopicId ? Number(mentionTopicId) : null,
+      });
+      setActionSuccess(
+        mentionChatId ? 'Пересылка упоминаний включена' : 'Пересылка упоминаний выключена',
+      );
+    } catch (err) {
+      setSaveError(
+        err.response?.data?.error || err.message || 'Не удалось сохранить настройки',
+      );
     }
   }
 
@@ -1089,6 +1133,68 @@ export default function Telegram() {
               {testTelegramSend.isPending ? 'Отправка…' : 'Тест в чат'}
             </button>
           </div>
+        </div>
+      </Section>
+
+      <Section
+        title="Пересылка упоминаний"
+        description="Когда user-bot тегают в рабочем чате, сообщение пересылается в выбранный топик общей беседы. Пока чат и топик не выбраны — функция выключена."
+      >
+        <div className="space-y-4 max-w-xl">
+          <div>
+            <FieldLabel>Общая беседа (форум)</FieldLabel>
+            <select
+              value={mentionChatId}
+              onChange={(e) => {
+                setMentionChatId(e.target.value);
+                setMentionTopicId('');
+              }}
+              className="select-field w-full"
+            >
+              <option value="">— выключено —</option>
+              {mentionForumChats.map((chat) => (
+                <option key={chat.chatId} value={chat.chatId}>
+                  {formatChatLabel(chat)}
+                </option>
+              ))}
+            </select>
+            {mentionForumChats.length === 0 && (
+              <p className="text-xs text-ink-faint mt-1.5">
+                Нет форум-чатов — беседа с топиками появится в списке после синхронизации.
+              </p>
+            )}
+          </div>
+
+          {mentionChatId && (
+            <div>
+              <FieldLabel>Топик для упоминаний</FieldLabel>
+              <select
+                value={mentionTopicId}
+                onChange={(e) => setMentionTopicId(e.target.value)}
+                className="select-field w-full"
+              >
+                <option value="">— выберите топик —</option>
+                {mentionTopics.map((t) => (
+                  <option key={t.threadId} value={String(t.threadId)}>
+                    {formatTopicLabel(t)}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-ink-faint mt-1.5 leading-relaxed">
+                Создайте топик (например «Упоминания») в самой беседе — он появится здесь
+                после обновления чатов.
+              </p>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={onSaveMentionForward}
+            disabled={saveMentionForward.isPending}
+            className="btn-primary btn-sm"
+          >
+            {saveMentionForward.isPending ? 'Сохранение…' : 'Сохранить'}
+          </button>
         </div>
       </Section>
 

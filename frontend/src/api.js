@@ -1006,6 +1006,21 @@ export function useAddTelegramTopic() {
   });
 }
 
+export function useTelegramMentionForward() {
+  return useQuery({
+    queryKey: ['telegram-mention-forward'],
+    queryFn: () => api.get('/telegram/mention-forward').then((r) => r.data),
+  });
+}
+
+export function useSaveTelegramMentionForward() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => api.put('/telegram/mention-forward', body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-mention-forward'] }),
+  });
+}
+
 export function useTelegramWebhookStatus() {
   return useQuery({
     queryKey: ['telegram-webhook-status'],

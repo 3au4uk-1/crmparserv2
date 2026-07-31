@@ -28,6 +28,7 @@ import { initPrintSheetCron } from './services/print-sheet-cron.js';
 import { initExpenseSyncCron } from './services/expense-sync-cron.js';
 import { initTelegramPolling } from './telegram/polling.js';
 import { initUserbotReconcile } from './telegram/userbot/reconcile.js';
+import { initMentionForwarding } from './telegram/userbot/mention-forward.js';
 import { recoverStaleParseRuns } from './services/parser.js';
 import { recoverStaleRestoreMissingTwentyJobs } from './services/restore-missing-twenty-jobs.js';
 import { getDb } from './db/connection.js';
@@ -86,6 +87,7 @@ async function start() {
   initExpenseSyncCron();
   initTelegramPolling();
   initUserbotReconcile();
+  initMentionForwarding();
   app.listen(config.port, () => {
     console.log(`CRM Parser running on port ${config.port}`);
   });
