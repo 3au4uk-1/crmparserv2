@@ -98,6 +98,23 @@ Redeploy crmparser after changing API credentials or env session. UI-logged sess
 8. [ ] Check run status in UI / retry API — expect `success` or `partial` with clear per-member errors if privacy blocked.
 9. [ ] Re-add bot / repeat event → **no duplicate** invites (idempotent).
 
+## 8. Proxy when Telegram is blocked (RKN etc.)
+
+If the host cannot reach Telegram directly, run the **xray** sidecar (VLESS client) and point crmparser at it:
+
+1. Create `ops/xray/config.json` from `ops/xray/config.example.json` (fill VLESS server host/port/uuid/reality params from the `vless://` link). The real config is gitignored; on Dokploy it is provided as a file mount.
+2. Start the sidecar: repo compose profile `proxy` (`docker compose --profile proxy up -d`) or an `xray` service in the Dokploy raw compose.
+3. Set env on crmparser:
+
+| Key | Value |
+|-----|-------|
+| `TELEGRAM_PROXY_URL` | `socks5://xray:1080` — GramJS MTProto (user-bot) |
+| `TELEGRAM_HTTP_PROXY_URL` | `http://xray:1081` — Bot API `api.telegram.org` fetch |
+
+Only `api.telegram.org` requests go through the HTTP proxy (`backend/src/telegram/proxy.js`); internal file downloads stay direct. Empty vars = direct connection (default).
+
+**Webhook caveat:** incoming webhook delivery (Telegram → `PUBLIC_BASE_URL`) does not go through this proxy. If inbound is also blocked, webhook updates stop arriving — check `getWebhookInfo` `last_error_*`; long-polling через прокси would be a separate change.
+
 ## Security
 
 - StringSession equals full Telegram account access — treat Dokploy secrets, SQLite data, and backups as confidential.

@@ -1,6 +1,7 @@
 import { TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions/index.js';
 import { config } from '../../config.js';
+import { getGramjsProxy } from '../proxy.js';
 import { resolveSession } from './session-store.js';
 
 /** @type {Promise<import('telegram').TelegramClient> | undefined} */
@@ -35,7 +36,7 @@ export async function getUserbotClient(db) {
       session,
       Number(config.telegramApiId),
       config.telegramApiHash,
-      { connectionRetries: 3 },
+      { connectionRetries: 3, ...(getGramjsProxy() ? { proxy: getGramjsProxy(), useWSS: false } : {}) },
     );
     clientPromise = client.connect().then(() => client);
   }

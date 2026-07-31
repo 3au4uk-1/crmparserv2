@@ -12,3 +12,6 @@ backend/scripts/count-events.mjs
 .worktrees/
 ops/perf/compose/*.full.yaml
 ops/perf/compose/*.full.yaml.orig
+
+# Xray proxy config with VLESS credentials
+ops/xray/config.json

@@ -40,6 +40,22 @@ services:
       - TELEGRAM_API_ID=${TELEGRAM_API_ID}
       - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
       - TELEGRAM_USER_SESSION=${TELEGRAM_USER_SESSION}
+      # Optional proxy for Telegram traffic (see xray sidecar); empty = direct.
+      - TELEGRAM_PROXY_URL=${TELEGRAM_PROXY_URL}
+      - TELEGRAM_HTTP_PROXY_URL=${TELEGRAM_HTTP_PROXY_URL}
+    networks:
+      - twenty
+    restart: unless-stopped
+
+  # VLESS → SOCKS5/HTTP proxy for Telegram when direct access is blocked.
+  # Start with: docker compose --profile proxy up -d
+  # Requires ops/xray/config.json (see ops/xray/config.example.json).
+  xray:
+    image: teddysun/xray:latest
+    container_name: crmparser-xray
+    profiles: ["proxy"]
+    volumes:
+      - ./ops/xray/config.json:/etc/xray/config.json:ro
     networks:
       - twenty
     restart: unless-stopped

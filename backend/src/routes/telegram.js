@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { config } from '../config.js';
 import { getDb } from '../db/connection.js';
 import { callTelegram } from '../telegram/api-client.js';
+import { telegramFetch } from '../telegram/proxy.js';
 import {
   getTelegramBotToken,
   getTelegramDestination,
@@ -106,7 +107,7 @@ function buildTokenPreview(token) {
   return `••••${token.slice(-4)}`;
 }
 
-async function callTelegramGetMe(token, fetchImpl = globalThis.fetch) {
+async function callTelegramGetMe(token, fetchImpl = telegramFetch) {
   const resp = await fetchImpl(`https://api.telegram.org/bot${token}/getMe`);
   const data = typeof resp.json === 'function' ? await resp.json() : resp;
   if (!data.ok) {

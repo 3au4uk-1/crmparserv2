@@ -1,3 +1,5 @@
+import { telegramFetch } from './proxy.js';
+
 const CAPTION_MAX = 1024;
 
 export function splitCaption(text) {
@@ -73,7 +75,7 @@ export async function sendOkleykaToTelegram({
   threadId,
   text,
   fileUrls = [],
-  fetchImpl = globalThis.fetch,
+  fetchImpl = telegramFetch,
 }) {
   const { caption, separateMessage } = splitCaption(text ?? '');
   const warnings = [];

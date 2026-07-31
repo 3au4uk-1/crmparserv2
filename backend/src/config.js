@@ -67,4 +67,8 @@ export const config = {
   telegramApiId: process.env.TELEGRAM_API_ID || '',
   telegramApiHash: process.env.TELEGRAM_API_HASH || '',
   telegramUserSession: process.env.TELEGRAM_USER_SESSION || '',
+  /** SOCKS5 proxy for GramJS MTProto, e.g. socks5://xray:1080 (empty = direct). */
+  telegramProxyUrl: process.env.TELEGRAM_PROXY_URL || '',
+  /** HTTP proxy for Bot API (api.telegram.org) fetch, e.g. http://xray:1081 (empty = direct). */
+  telegramHttpProxyUrl: process.env.TELEGRAM_HTTP_PROXY_URL || '',
 };
