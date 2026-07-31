@@ -13,7 +13,7 @@ Secrets live in Dokploy env and the SQLite data volume — **never** commit `TEL
 | User session | **Preferred:** login via `/telegram` User-bot wizard → SQLite (`crmparser-data`) |
 | `TELEGRAM_USER_SESSION` | Optional legacy env fallback; DB session takes precedence |
 | Discovery | Background reconcile (`getDialogs` every ~30s) + `POST /api/telegram/chats/refresh` |
-| Auto-invite | When reconcile sees a **new** group dialog → invite up to **5** list members with **5–15s** random delay |
+| Auto-invite | When reconcile sees a **new** group dialog → wait **5–15s**, then invite up to **5** list members with **3–6s** random delay between invites |
 | Okleyka | User-bot `sendMessage` / `sendFile` to configured chat/topic |
 
 Bot API token / webhook remain in the UI as **deprecated** (optional legacy).
@@ -88,7 +88,7 @@ See xray sidecar: `TELEGRAM_PROXY_URL=socks5://xray:1080`. User-bot MTProto goes
 
 - StringSession = full account access (Dokploy + SQLite + backups).
 - Prefer a dedicated service account.
-- Invite delays (5–15s) and cap (5) reduce anti-spam risk; still treat mass invites carefully.
+- Initial delay (5–15s), invite delays (3–6s), and cap (5) reduce anti-spam risk; still treat mass invites carefully.
 
 ## Related code
 

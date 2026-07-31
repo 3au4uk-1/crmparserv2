@@ -687,7 +687,7 @@ export default function Telegram() {
 
       <Section
         title="Авто-добавление"
-        description="Когда логистика добавляет user-bot в чат заказа, он сам приглашает до 5 человек из списка (пауза 5–15 с между приглашениями)."
+        description="Когда логистика добавляет user-bot в чат заказа, он сам приглашает до 5 человек из списка (старт через 5–15 с после добавления, пауза 3–6 с между приглашениями)."
       >
         <div className="space-y-4">
           <div className="max-w-2xl space-y-4 pb-4 border-b border-border">

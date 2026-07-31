@@ -14,17 +14,19 @@ import {
 
 /** Max people invited per chat from the active list. */
 export const AUTO_INVITE_MEMBER_CAP = 5;
-/** Random delay between invites (ms). */
-export const AUTO_INVITE_DELAY_MIN_MS = 5000;
-export const AUTO_INVITE_DELAY_MAX_MS = 15000;
+/** Random delay after the bot is added to a chat, before the first invite (ms). */
+export const AUTO_INVITE_INITIAL_DELAY_MIN_MS = 5000;
+export const AUTO_INVITE_INITIAL_DELAY_MAX_MS = 15000;
+/** Random delay between consecutive invites (ms). */
+export const AUTO_INVITE_DELAY_MIN_MS = 3000;
+export const AUTO_INVITE_DELAY_MAX_MS = 6000;
 
 function defaultSleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function defaultRandomDelayMs() {
-  const span = AUTO_INVITE_DELAY_MAX_MS - AUTO_INVITE_DELAY_MIN_MS;
-  return AUTO_INVITE_DELAY_MIN_MS + Math.floor(Math.random() * (span + 1));
+function randBetween(minMs, maxMs) {
+  return minMs + Math.floor(Math.random() * (maxMs - minMs + 1));
 }
 
 function defaultDeps(db) {
@@ -37,7 +39,9 @@ function defaultDeps(db) {
     isConfigured: () => isUserbotConfigured(db),
     updateMember: updateAutoInviteMember,
     sleep: defaultSleep,
-    randomDelayMs: defaultRandomDelayMs,
+    randomInitialDelayMs: () =>
+      randBetween(AUTO_INVITE_INITIAL_DELAY_MIN_MS, AUTO_INVITE_INITIAL_DELAY_MAX_MS),
+    randomDelayMs: () => randBetween(AUTO_INVITE_DELAY_MIN_MS, AUTO_INVITE_DELAY_MAX_MS),
   };
 }
 
@@ -112,6 +116,10 @@ export async function runAutoInviteForChat(db, chatId, { force = false, deps: de
 
   const members = deps.listMembers(db).slice(0, AUTO_INVITE_MEMBER_CAP);
   const memberResults = [];
+
+  if (members.length > 0) {
+    await deps.sleep(deps.randomInitialDelayMs());
+  }
 
   for (let index = 0; index < members.length; index += 1) {
     const member = members[index];

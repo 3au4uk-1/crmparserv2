@@ -78,7 +78,8 @@ function makeDeps(overrides = {}) {
       };
     }),
     sleep: vi.fn(async () => {}),
-    randomDelayMs: vi.fn(() => 7000),
+    randomInitialDelayMs: vi.fn(() => 10000),
+    randomDelayMs: vi.fn(() => 4000),
     ...overrides,
   };
 }
@@ -108,8 +109,12 @@ describe('runAutoInviteForChat', () => {
     expect(result.detail.members.every((m) => m.status === 'invited')).toBe(true);
     expect(deps.canInvite).toHaveBeenCalled();
     expect(deps.inviteUser).toHaveBeenCalledTimes(2);
-    expect(deps.sleep).toHaveBeenCalledTimes(1);
-    expect(deps.randomDelayMs).toHaveBeenCalled();
+    // Initial delay after joining the chat + one delay between the two invites.
+    expect(deps.sleep).toHaveBeenCalledTimes(2);
+    expect(deps.sleep).toHaveBeenNthCalledWith(1, 10000);
+    expect(deps.sleep).toHaveBeenNthCalledWith(2, 4000);
+    expect(deps.randomInitialDelayMs).toHaveBeenCalledTimes(1);
+    expect(deps.randomDelayMs).toHaveBeenCalledTimes(1);
 
     const run = getAutoInviteRun(db, '-1001');
     expect(run.status).toBe('success');
@@ -139,7 +144,8 @@ describe('runAutoInviteForChat', () => {
     expect(result.detail.members).toHaveLength(AUTO_INVITE_MEMBER_CAP);
     expect(result.detail.cappedAt).toBe(AUTO_INVITE_MEMBER_CAP);
     expect(deps.inviteUser).toHaveBeenCalledTimes(AUTO_INVITE_MEMBER_CAP);
-    expect(deps.sleep).toHaveBeenCalledTimes(AUTO_INVITE_MEMBER_CAP - 1);
+    // Initial delay + (CAP - 1) between-invite delays.
+    expect(deps.sleep).toHaveBeenCalledTimes(AUTO_INVITE_MEMBER_CAP);
   });
 
   it('persists resolved user_id for username-only members', async () => {
