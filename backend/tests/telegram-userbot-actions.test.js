@@ -102,15 +102,36 @@ describe('joinChatByInviteLink', () => {
 });
 
 describe('inviteUserToChat', () => {
-  it('calls InviteToChannel with chat and user', async () => {
-    const client = { invoke: vi.fn(async () => ({})) };
+  it('calls InviteToChannel for supergroups/channels', async () => {
+    const inputPeer = { className: 'InputPeerChannel', channelId: 123n };
+    const client = {
+      invoke: vi.fn(async () => ({})),
+      getInputEntity: vi.fn(async () => inputPeer),
+    };
     await inviteUserToChat(client, '-100123', '456789');
 
+    expect(client.getInputEntity).toHaveBeenCalledWith('-100123');
     expect(client.invoke).toHaveBeenCalledTimes(1);
     const request = client.invoke.mock.calls[0][0];
     expect(request).toBeInstanceOf(Api.channels.InviteToChannel);
-    expect(request.channel).toBe('-100123');
+    expect(request.channel).toBe(inputPeer);
     expect(request.users).toEqual(['456789']);
+  });
+
+  it('calls messages.AddChatUser for basic groups', async () => {
+    const inputPeer = { className: 'InputPeerChat', chatId: 5490992591n };
+    const client = {
+      invoke: vi.fn(async () => ({})),
+      getInputEntity: vi.fn(async () => inputPeer),
+    };
+    await inviteUserToChat(client, '-5490992591', '456789');
+
+    expect(client.invoke).toHaveBeenCalledTimes(1);
+    const request = client.invoke.mock.calls[0][0];
+    expect(request).toBeInstanceOf(Api.messages.AddChatUser);
+    expect(request.chatId).toBe(5490992591n);
+    expect(request.userId).toBe('456789');
+    expect(request.fwdLimit).toBe(0);
   });
 });
 

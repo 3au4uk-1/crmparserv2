@@ -40,14 +40,28 @@ export async function joinChatByInviteLink(client, inviteLink) {
 }
 
 /**
- * @param {{ invoke: (request: unknown) => Promise<unknown> }} client
+ * Invites a user into a chat. Basic groups (InputPeerChat) require
+ * messages.AddChatUser; supergroups/channels use channels.InviteToChannel.
+ *
+ * @param {{ invoke: (request: unknown) => Promise<unknown>, getInputEntity: (input: string | number | bigint) => Promise<object> }} client
  * @param {string | number | bigint} chatId
  * @param {string | number | bigint} userId
  */
 export async function inviteUserToChat(client, chatId, userId) {
+  const inputPeer = await client.getInputEntity(chatId);
+  if (inputPeer?.className === 'InputPeerChat') {
+    await client.invoke(
+      new Api.messages.AddChatUser({
+        chatId: inputPeer.chatId,
+        userId,
+        fwdLimit: 0,
+      }),
+    );
+    return;
+  }
   await client.invoke(
     new Api.channels.InviteToChannel({
-      channel: chatId,
+      channel: inputPeer,
       users: [userId],
     }),
   );
