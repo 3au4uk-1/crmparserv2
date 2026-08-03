@@ -1,4 +1,6 @@
-export async function callTelegram(token, method, body, fetchImpl = globalThis.fetch) {
+import { telegramFetch } from './proxy.js';
+
+export async function callTelegram(token, method, body, fetchImpl = telegramFetch) {
   const resp = await fetchImpl(`https://api.telegram.org/bot${token}/${method}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

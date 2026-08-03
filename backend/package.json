@@ -25,6 +25,7 @@
     "multer": "^2.2.0",
     "node-cron": "^4.2.1",
     "telegram": "^2.26.22",
+    "undici": "^6.28.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

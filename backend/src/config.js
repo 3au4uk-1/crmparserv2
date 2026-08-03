@@ -67,4 +67,14 @@ export const config = {
   telegramApiId: process.env.TELEGRAM_API_ID || '',
   telegramApiHash: process.env.TELEGRAM_API_HASH || '',
   telegramUserSession: process.env.TELEGRAM_USER_SESSION || '',
+  /** SOCKS5 proxy for GramJS MTProto, e.g. socks5://xray:1080 (empty = direct). */
+  telegramProxyUrl: process.env.TELEGRAM_PROXY_URL || '',
+  /** HTTP proxy for Bot API (api.telegram.org) fetch, e.g. http://xray:1081 (empty = direct). */
+  telegramHttpProxyUrl: process.env.TELEGRAM_HTTP_PROXY_URL || '',
+  /** Use getUpdates long polling instead of webhook (when inbound from Telegram is blocked). */
+  telegramPolling: ['1', 'true', 'yes'].includes(
+    String(process.env.TELEGRAM_POLLING || '').trim().toLowerCase()
+  ),
+  /** User-bot dialog reconcile interval (ms). Discovery + auto-invite trigger. */
+  telegramReconcileIntervalMs: parseInt(process.env.TELEGRAM_RECONCILE_INTERVAL_MS || '30000', 10),
 };

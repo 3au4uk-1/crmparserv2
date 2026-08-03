@@ -1,6 +1,7 @@
 import { TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions/index.js';
 import { Api } from 'telegram';
+import { getGramjsProxy } from '../proxy.js';
 
 /**
  * Production GramJS adapter for interactive login.
@@ -13,7 +14,7 @@ export function createGramJsAuthApi() {
         new StringSession(''),
         Number(apiId),
         apiHash,
-        { connectionRetries: 3 },
+        { connectionRetries: 3, ...(getGramjsProxy() ? { proxy: getGramjsProxy(), useWSS: false } : {}) },
       );
       await client.connect();
       const { phoneCodeHash } = await client.sendCode(

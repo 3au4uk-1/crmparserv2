@@ -3,10 +3,13 @@ import { Router } from 'express';
 import { config } from '../config.js';
 import { getDb } from '../db/connection.js';
 import { callTelegram } from '../telegram/api-client.js';
+import { telegramFetch } from '../telegram/proxy.js';
 import {
   getTelegramBotToken,
   getTelegramDestination,
   mergeChatMapEntry,
+  getMentionForwardSettings,
+  setMentionForwardSettings,
 } from '../telegram/settings.js';
 import {
   listTelegramChats,
@@ -23,7 +26,8 @@ import {
   updateAutoInviteMember,
   deleteAutoInviteMember,
 } from '../telegram/auto-invite-store.js';
-import { isUserbotConfigured } from '../telegram/userbot/client.js';
+import { getUserbotClient, isUserbotConfigured } from '../telegram/userbot/client.js';
+import { mapEntityToChat, reconcileUserbotChats } from '../telegram/userbot/reconcile.js';
 import {
   getAuthStatus,
   startLogin,
@@ -106,7 +110,7 @@ function buildTokenPreview(token) {
   return `••••${token.slice(-4)}`;
 }
 
-async function callTelegramGetMe(token, fetchImpl = globalThis.fetch) {
+async function callTelegramGetMe(token, fetchImpl = telegramFetch) {
   const resp = await fetchImpl(`https://api.telegram.org/bot${token}/getMe`);
   const data = typeof resp.json === 'function' ? await resp.json() : resp;
   if (!data.ok) {
@@ -164,17 +168,17 @@ router.post('/test-bot', async (req, res, next) => {
 router.post('/test-send', async (req, res, next) => {
   try {
     const db = getDb();
-    const token = getTelegramBotToken(db);
     const dest = getTelegramDestination(db, 'okleyka.send');
-    if (!token) {
-      return res.status(400).json({ ok: false, error: 'Bot token not configured' });
+    if (!isUserbotConfigured(db)) {
+      return res.status(400).json({ ok: false, error: 'User-bot not configured' });
     }
     if (!dest?.chatId) {
       return res.status(400).json({ ok: false, error: 'okleyka.send chat_id not configured' });
     }
     const { chatId, threadId } = dest;
+    const client = await getUserbotClient(db);
     await sendOkleykaToTelegram({
-      token,
+      client,
       chatId,
       threadId,
       text: 'Тест из crmparser',
@@ -186,11 +190,40 @@ router.post('/test-send', async (req, res, next) => {
   }
 });
 
+router.get('/mention-forward', (req, res) => {
+  res.json({ settings: getMentionForwardSettings(getDb()) });
+});
+
+router.put('/mention-forward', (req, res, next) => {
+  try {
+    const settings = setMentionForwardSettings(getDb(), req.body ?? {});
+    res.json({ settings });
+  } catch (err) {
+    if (err?.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    next(err);
+  }
+});
+
 router.get('/chats', (req, res) => {
   const db = getDb();
   const activeOnly = req.query.active !== '0';
   const chats = listTelegramChats(db, { activeOnly }).map(mapChatRow);
   res.json({ chats });
+});
+
+router.post('/chats/refresh', async (req, res, next) => {
+  try {
+    const db = getDb();
+    if (!isUserbotConfigured(db)) {
+      return res.status(503).json({ error: 'User-bot not configured' });
+    }
+    const result = await reconcileUserbotChats(db);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    next(err);
+  }
 });
 
 router.get('/chats/:chatId/topics', (req, res) => {
@@ -202,25 +235,29 @@ router.get('/chats/:chatId/topics', (req, res) => {
 router.post('/chats', async (req, res, next) => {
   try {
     const db = getDb();
-    const token = getTelegramBotToken(db);
-    if (!token) {
-      return res.status(400).json({ error: 'Bot token not configured' });
+    if (!isUserbotConfigured(db)) {
+      return res.status(400).json({ error: 'User-bot not configured' });
     }
     const chatId = String(req.body?.chatId ?? '').trim();
     if (!chatId) {
       return res.status(400).json({ error: 'chatId required' });
     }
-    const chat = await callTelegram(token, 'getChat', { chat_id: chatId });
+    const client = await getUserbotClient(db);
+    const entity = await client.getEntity(chatId);
+    const mapped = mapEntityToChat(entity);
+    if (!mapped) {
+      return res.status(400).json({ error: 'Not a group/supergroup entity' });
+    }
     upsertTelegramChat(db, {
-      chatId: String(chat.id),
-      title: chat.title || chat.username || '',
-      type: chat.type || '',
-      isForum: Boolean(chat.is_forum),
-      username: chat.username || null,
+      chatId: mapped.chatId,
+      title: mapped.title,
+      type: mapped.type,
+      isForum: mapped.isForum,
+      username: mapped.username,
       active: true,
       source: 'manual',
     });
-    const row = db.prepare(`SELECT * FROM telegram_chats WHERE chat_id = ?`).get(String(chat.id));
+    const row = db.prepare(`SELECT * FROM telegram_chats WHERE chat_id = ?`).get(mapped.chatId);
     res.json({ chat: mapChatRow(row) });
   } catch (err) {
     next(err);
@@ -251,6 +288,8 @@ router.get('/webhook/status', async (req, res, next) => {
       ? `${config.publicBaseUrl}/api/telegram/webhook`
       : '';
     const payload = {
+      deprecated: true,
+      note: 'Webhook discovery is deprecated; use user-bot reconcile (/chats/refresh).',
       publicBaseUrlConfigured: Boolean(config.publicBaseUrl),
       webhookUrl,
       secretSet,
@@ -285,7 +324,13 @@ router.post('/webhook/setup', async (req, res, next) => {
       secret_token: secret,
       allowed_updates: ['message', 'channel_post', 'my_chat_member'],
     });
-    res.json({ ok: true, webhookUrl, secretSet: true });
+    res.json({
+      ok: true,
+      deprecated: true,
+      note: 'Webhook setup is deprecated; prefer user-bot reconcile.',
+      webhookUrl,
+      secretSet: true,
+    });
   } catch (err) {
     next(err);
   }

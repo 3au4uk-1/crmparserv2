@@ -98,6 +98,8 @@ node ensure-schedules.mjs
 
 Creates (or reuses) schedules `ops-backup-sync` and `ops-backup-run`, both **disabled** and manual-only. Workflows call `remote-run.mjs sync|run`; successful remote steps log `[remote-ok]` in Dokploy deployment logs.
 
+**Dokploy ≥0.29:** host schedules execute only the `script` field (`script.sh`). `remote-run` / `chooseSchedulePayload` always put the job body in `script` (with `command: bash` as a placeholder). Do not put the real body only in `command`.
+
 **Cutover:** After merge and a green staging refresh dry-run, delete repository secret **`DOCKER_HOST_SSH_KEY`** — it is no longer used.
 
 **Hard vs soft requirements:** **Staging refresh** and **prod rollback** workflows fail immediately if `DOKPLOY_SCHEDULE_OPS_SYNC` or `DOKPLOY_SCHEDULE_OPS_RUN` is missing. **Release-prepare** MinIO manifest upload and expired-prefix deletion soft-skip when schedule vars are unset (GitHub artifact still available).

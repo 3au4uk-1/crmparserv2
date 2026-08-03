@@ -37,6 +37,46 @@ export function getTelegramChatId(db, event) {
   return getTelegramDestination(db, event)?.chatId ?? '';
 }
 
+/**
+ * Mention forwarding target: chat + forum topic. Disabled until both are set.
+ * @returns {{ chatId: string, topicId: number | null }}
+ */
+export function getMentionForwardSettings(db) {
+  const row = db
+    .prepare(`SELECT value FROM settings WHERE key = 'telegram_mention_forward'`)
+    .get();
+  if (!row?.value) return { chatId: '', topicId: null };
+  try {
+    const parsed = JSON.parse(row.value);
+    const chatId = String(parsed?.chatId ?? '').trim();
+    let topicId = null;
+    if (parsed?.topicId != null && parsed.topicId !== '') {
+      const n = Number(parsed.topicId);
+      if (Number.isInteger(n) && n > 0) topicId = n;
+    }
+    return { chatId, topicId };
+  } catch {
+    return { chatId: '', topicId: null };
+  }
+}
+
+/** @param {{ chatId?: string, topicId?: number | string | null }} value */
+export function setMentionForwardSettings(db, value = {}) {
+  const chatId = String(value.chatId ?? '').trim();
+  let topicId = null;
+  if (value.topicId != null && value.topicId !== '') {
+    const n = Number(value.topicId);
+    if (!Number.isInteger(n) || n <= 0) {
+      throw Object.assign(new Error('topicId must be a positive integer'), { status: 400 });
+    }
+    topicId = n;
+  }
+  db.prepare(
+    `INSERT OR REPLACE INTO settings (key, value) VALUES ('telegram_mention_forward', ?)`,
+  ).run(JSON.stringify({ chatId, topicId }));
+  return { chatId, topicId };
+}
+
 export function mergeChatMapEntry(existing, incoming) {
   const result = { ...existing };
   for (const [key, raw] of Object.entries(incoming)) {

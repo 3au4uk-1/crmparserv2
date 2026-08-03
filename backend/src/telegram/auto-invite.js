@@ -1,11 +1,8 @@
-import { getTelegramBotToken } from './settings.js';
-import { createChatInviteLink, promoteChatMemberForInvite } from './bot-admin.js';
 import { getUserbotClient, isUserbotConfigured } from './userbot/client.js';
 import {
-  joinChatByInviteLink,
   resolveUser,
   inviteUserToChat,
-  getSelfUserId,
+  canInviteToChat,
 } from './userbot/actions.js';
 import {
   tryBeginAutoInviteRun,
@@ -15,19 +12,36 @@ import {
   updateAutoInviteMember,
 } from './auto-invite-store.js';
 
+/** Max people invited per chat from the active list. */
+export const AUTO_INVITE_MEMBER_CAP = 5;
+/** Random delay after the bot is added to a chat, before the first invite (ms). */
+export const AUTO_INVITE_INITIAL_DELAY_MIN_MS = 5000;
+export const AUTO_INVITE_INITIAL_DELAY_MAX_MS = 15000;
+/** Random delay between consecutive invites (ms). */
+export const AUTO_INVITE_DELAY_MIN_MS = 3000;
+export const AUTO_INVITE_DELAY_MAX_MS = 6000;
+
+function defaultSleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function randBetween(minMs, maxMs) {
+  return minMs + Math.floor(Math.random() * (maxMs - minMs + 1));
+}
+
 function defaultDeps(db) {
   return {
-    getToken: (database) => getTelegramBotToken(database),
-    createInviteLink: createChatInviteLink,
-    promote: promoteChatMemberForInvite,
     getClient: () => getUserbotClient(db),
-    joinInvite: joinChatByInviteLink,
+    canInvite: canInviteToChat,
     resolveUser,
     inviteUser: inviteUserToChat,
-    getSelfUserId,
     listMembers: (database) => listAutoInviteMembers(database, { activeOnly: true }),
     isConfigured: () => isUserbotConfigured(db),
     updateMember: updateAutoInviteMember,
+    sleep: defaultSleep,
+    randomInitialDelayMs: () =>
+      randBetween(AUTO_INVITE_INITIAL_DELAY_MIN_MS, AUTO_INVITE_INITIAL_DELAY_MAX_MS),
+    randomDelayMs: () => randBetween(AUTO_INVITE_DELAY_MIN_MS, AUTO_INVITE_DELAY_MAX_MS),
   };
 }
 
@@ -54,25 +68,6 @@ const ALREADY_PARTICIPANT_PATTERNS = [
 function isAlreadyParticipantError(err) {
   const message = String(err?.message ?? err ?? '').toLowerCase();
   return ALREADY_PARTICIPANT_PATTERNS.some((pattern) => message.includes(pattern.toLowerCase()));
-}
-
-const PROMOTE_NOT_SUPPORTED_PATTERNS = [
-  'CHAT_ADMIN_REQUIRED',
-  'PEER_ID_INVALID',
-  'NOT_SUPERGROUP',
-  'NOT A SUPERGROUP',
-];
-
-function isPromoteNotSupportedError(err) {
-  const message = String(err?.message ?? err ?? '').toUpperCase();
-  return PROMOTE_NOT_SUPPORTED_PATTERNS.some((pattern) => message.includes(pattern));
-}
-
-function formatPromoteError(err) {
-  if (isPromoteNotSupportedError(err)) {
-    return 'Order chats must be a supergroup with the bot as admin (Invite users via link + Add new admins).';
-  }
-  return err?.message || String(err);
 }
 
 /**
@@ -106,37 +101,31 @@ export async function runAutoInviteForChat(db, chatId, { force = false, deps: de
     return finishFailed({ error: 'userbot not configured' });
   }
 
-  const token = deps.getToken(db);
-  if (!token) {
-    return finishFailed({ error: 'bot token not configured' });
-  }
-
   let client;
-  let promoteError = null;
   try {
-    const { inviteLink } = await deps.createInviteLink(token, chatId);
     client = await deps.getClient();
-    try {
-      await deps.joinInvite(client, inviteLink);
-    } catch (err) {
-      if (!isAlreadyParticipantError(err)) {
-        throw err;
-      }
-    }
-    const selfId = await deps.getSelfUserId(client);
-    try {
-      await deps.promote(token, chatId, selfId);
-    } catch (err) {
-      promoteError = formatPromoteError(err);
+    const capability = await deps.canInvite(client, chatId);
+    if (!capability?.ok) {
+      return finishFailed({
+        error: capability?.reason || 'User-bot cannot invite members to this chat',
+      });
     }
   } catch (err) {
     return finishFailed({ error: err?.message || String(err) });
   }
 
-  const members = deps.listMembers(db);
+  const members = deps.listMembers(db).slice(0, AUTO_INVITE_MEMBER_CAP);
   const memberResults = [];
 
-  for (const member of members) {
+  if (members.length > 0) {
+    await deps.sleep(deps.randomInitialDelayMs());
+  }
+
+  for (let index = 0; index < members.length; index += 1) {
+    const member = members[index];
+    if (index > 0) {
+      await deps.sleep(deps.randomDelayMs());
+    }
     try {
       const resolved = await deps.resolveUser(client, {
         userId: member.userId,
@@ -178,13 +167,9 @@ export async function runAutoInviteForChat(db, chatId, { force = false, deps: de
     }
   }
 
-  const detail = { members: memberResults };
-  if (promoteError) {
-    detail.promoteError = promoteError;
-  }
-
+  const detail = { members: memberResults, cappedAt: AUTO_INVITE_MEMBER_CAP };
   const hasMemberFailures = memberResults.some((r) => r.status === 'failed');
-  const status = promoteError || hasMemberFailures ? 'partial' : 'success';
+  const status = hasMemberFailures ? 'partial' : 'success';
   finishAutoInviteRun(db, chatId, { status, detail });
   return { status, detail };
 }

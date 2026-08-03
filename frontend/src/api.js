@@ -982,6 +982,17 @@ export function useAddTelegramChat() {
   });
 }
 
+export function useRefreshTelegramChats() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post('/telegram/chats/refresh').then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['telegram-chats'] });
+      qc.invalidateQueries({ queryKey: ['telegram-topics'] });
+    },
+  });
+}
+
 export function useAddTelegramTopic() {
   const qc = useQueryClient();
   return useMutation({
@@ -992,6 +1003,21 @@ export function useAddTelegramTopic() {
     onSuccess: (_data, { chatId }) => {
       qc.invalidateQueries({ queryKey: ['telegram-topics', chatId] });
     },
+  });
+}
+
+export function useTelegramMentionForward() {
+  return useQuery({
+    queryKey: ['telegram-mention-forward'],
+    queryFn: () => api.get('/telegram/mention-forward').then((r) => r.data),
+  });
+}
+
+export function useSaveTelegramMentionForward() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => api.put('/telegram/mention-forward', body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-mention-forward'] }),
   });
 }
 

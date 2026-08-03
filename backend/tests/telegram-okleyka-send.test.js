@@ -19,7 +19,6 @@ function memoryDb() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
-  db.prepare(`INSERT INTO settings VALUES ('telegram_bot_token', 'tok')`).run();
   db.prepare(
     `INSERT INTO settings VALUES ('telegram_chat_map', ?)`,
   ).run(JSON.stringify({ 'okleyka.send': '-1001' }));
@@ -46,7 +45,12 @@ describe('handleOkleykaSend', () => {
         fileUrls: [],
         force: false,
       },
-      { sendOkleykaToTelegram: send, patchOkleykaTelegramFields: patch },
+      {
+        sendOkleykaToTelegram: send,
+        patchOkleykaTelegramFields: patch,
+        isUserbotConfigured: () => true,
+        getUserbotClient: async () => ({}),
+      },
     );
     expect(result.alreadySent).toBe(true);
     expect(send).not.toHaveBeenCalled();
@@ -67,7 +71,12 @@ describe('handleOkleykaSend', () => {
         sentBy: { name: 'Ann' },
         force: false,
       },
-      { sendOkleykaToTelegram: send, patchOkleykaTelegramFields: patch },
+      {
+        sendOkleykaToTelegram: send,
+        patchOkleykaTelegramFields: patch,
+        isUserbotConfigured: () => true,
+        getUserbotClient: async () => ({ id: 'client' }),
+      },
     );
     expect(result.ok).toBe(true);
     expect(result.messageIds).toEqual([7]);
@@ -91,11 +100,17 @@ describe('handleOkleykaSend', () => {
         fileUrls: [],
         force: false,
       },
-      { sendOkleykaToTelegram: send, patchOkleykaTelegramFields: patch },
+      {
+        sendOkleykaToTelegram: send,
+        patchOkleykaTelegramFields: patch,
+        isUserbotConfigured: () => true,
+        getUserbotClient: async () => ({ id: 'client' }),
+      },
     );
     expect(send).toHaveBeenCalledWith(expect.objectContaining({
       chatId: '-1001',
       threadId: 42,
+      client: { id: 'client' },
     }));
   });
 });

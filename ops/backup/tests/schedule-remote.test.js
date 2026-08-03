@@ -209,7 +209,39 @@ describe('runScheduleJob', () => {
       now: () => new Date('2026-07-29T12:00:00.000Z'),
     });
     expect(result.status).toBe('done');
-    expect(client.scheduleUpdate.mock.calls[0][0].command).toContain('echo hi');
-    expect(client.scheduleUpdate.mock.calls[0][0].script).toBe(null);
+    expect(client.scheduleUpdate.mock.calls[0][0].command).toBe('bash');
+    expect(client.scheduleUpdate.mock.calls[0][0].script).toBe('echo hi');
+  });
+
+  it('always puts job body in script (Dokploy ignores command for server jobs)', async () => {
+    const client = {
+      scheduleOne: vi.fn(async () => ({
+        name: 'ops-backup-sync',
+        cronExpression: '0 0 1 1 *',
+        scheduleType: 'server',
+        serverId: 'srv-1',
+        enabled: false,
+        shellType: 'bash',
+        timezone: 'UTC',
+      })),
+      scheduleUpdate: vi.fn(async () => ({})),
+      scheduleRunManually: vi.fn(async () => ({})),
+      deploymentAllByType: vi.fn(async () => [
+        { deploymentId: 'd1', status: 'done', createdAt: '2026-07-29T12:00:01.000Z' },
+      ]),
+      deploymentReadLogs: vi.fn(async () => 'ok\n[remote-ok]\n'),
+    };
+    const body = wrapRemoteScript('echo payload');
+    await runScheduleJob({
+      client,
+      scheduleId: 'sch-1',
+      script: body,
+      pollIntervalMs: 1,
+      timeoutMs: 500,
+      now: () => new Date('2026-07-29T12:00:00.000Z'),
+    });
+    const update = client.scheduleUpdate.mock.calls[0][0];
+    expect(update.script).toBe(body);
+    expect(update.command).toBe('bash');
   });
 });

@@ -7,6 +7,7 @@ import {
   joinChatByInviteLink,
   inviteUserToChat,
   getSelfUserId,
+  canInviteToChat,
 } from '../src/telegram/userbot/actions.js';
 import { isUserbotConfigured } from '../src/telegram/userbot/client.js';
 
@@ -101,15 +102,36 @@ describe('joinChatByInviteLink', () => {
 });
 
 describe('inviteUserToChat', () => {
-  it('calls InviteToChannel with chat and user', async () => {
-    const client = { invoke: vi.fn(async () => ({})) };
+  it('calls InviteToChannel for supergroups/channels', async () => {
+    const inputPeer = { className: 'InputPeerChannel', channelId: 123n };
+    const client = {
+      invoke: vi.fn(async () => ({})),
+      getInputEntity: vi.fn(async () => inputPeer),
+    };
     await inviteUserToChat(client, '-100123', '456789');
 
+    expect(client.getInputEntity).toHaveBeenCalledWith('-100123');
     expect(client.invoke).toHaveBeenCalledTimes(1);
     const request = client.invoke.mock.calls[0][0];
     expect(request).toBeInstanceOf(Api.channels.InviteToChannel);
-    expect(request.channel).toBe('-100123');
+    expect(request.channel).toBe(inputPeer);
     expect(request.users).toEqual(['456789']);
+  });
+
+  it('calls messages.AddChatUser for basic groups', async () => {
+    const inputPeer = { className: 'InputPeerChat', chatId: 5490992591n };
+    const client = {
+      invoke: vi.fn(async () => ({})),
+      getInputEntity: vi.fn(async () => inputPeer),
+    };
+    await inviteUserToChat(client, '-5490992591', '456789');
+
+    expect(client.invoke).toHaveBeenCalledTimes(1);
+    const request = client.invoke.mock.calls[0][0];
+    expect(request).toBeInstanceOf(Api.messages.AddChatUser);
+    expect(request.chatId).toBe(5490992591n);
+    expect(request.userId).toBe('456789');
+    expect(request.fwdLimit).toBe(0);
   });
 });
 
@@ -117,5 +139,49 @@ describe('getSelfUserId', () => {
   it('returns string id from getMe', async () => {
     const client = { getMe: vi.fn(async () => ({ id: 777888999n })) };
     await expect(getSelfUserId(client)).resolves.toBe('777888999');
+  });
+});
+
+describe('canInviteToChat', () => {
+  it('ok when admin has inviteUsers', async () => {
+    const client = {
+      getEntity: vi.fn(async () => ({
+        adminRights: { inviteUsers: true },
+        defaultBannedRights: { inviteUsers: true },
+      })),
+    };
+    await expect(canInviteToChat(client, '-1001')).resolves.toEqual({ ok: true });
+  });
+
+  it('ok when invites are not banned for members', async () => {
+    const client = {
+      getEntity: vi.fn(async () => ({
+        defaultBannedRights: { inviteUsers: false },
+      })),
+    };
+    await expect(canInviteToChat(client, '-1002')).resolves.toEqual({ ok: true });
+  });
+
+  it('fails when invites are banned and self is not inviting admin', async () => {
+    const client = {
+      getEntity: vi.fn(async () => ({
+        defaultBannedRights: { inviteUsers: true },
+      })),
+    };
+    const result = await canInviteToChat(client, '-1003');
+    expect(result.ok).toBe(false);
+    expect(result.reason).toMatch(/cannot invite/i);
+  });
+
+  it('fails when admin lacks inviteUsers', async () => {
+    const client = {
+      getEntity: vi.fn(async () => ({
+        adminRights: { inviteUsers: false },
+        defaultBannedRights: { inviteUsers: false },
+      })),
+    };
+    const result = await canInviteToChat(client, '-1004');
+    expect(result.ok).toBe(false);
+    expect(result.reason).toMatch(/without inviteUsers/i);
   });
 });

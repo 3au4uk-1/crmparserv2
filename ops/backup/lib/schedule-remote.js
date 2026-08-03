@@ -63,16 +63,16 @@ export function isRemoteJobSuccess(logs) {
   return parseRemoteOk(logs) || parseDokployCommandSuccess(logs);
 }
 
-/** Prefer `command` for small scripts so Dokploy may capture stdout; large sync stays in `script`. */
+/**
+ * Dokploy v0.29+ writes only the `script` field into schedule script.sh for
+ * server / dokploy-server jobs (`command` is ignored at exec time). Always put
+ * the real body in `script`; keep a harmless `command` for API completeness.
+ */
 export const COMMAND_SCRIPT_MAX_BYTES = 80_000;
 
 export function chooseSchedulePayload(script, commandOverride) {
-  const bytes = Buffer.byteLength(script, 'utf8');
   if (commandOverride != null) {
     return { command: commandOverride, script };
-  }
-  if (bytes <= COMMAND_SCRIPT_MAX_BYTES) {
-    return { command: script, script: null };
   }
   return { command: 'bash', script };
 }

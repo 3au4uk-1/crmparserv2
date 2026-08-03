@@ -8,10 +8,13 @@ import {
   useTelegramChats,
   useTelegramTopics,
   useAddTelegramChat,
+  useRefreshTelegramChats,
   useAddTelegramTopic,
   useTelegramWebhookStatus,
   useSetupTelegramWebhook,
   useTeardownTelegramWebhook,
+  useTelegramMentionForward,
+  useSaveTelegramMentionForward,
   useTelegramAutoInviteStatus,
   useTelegramAutoInviteMembers,
   useAddTelegramAutoInviteMember,
@@ -106,8 +109,9 @@ export default function Telegram() {
   const userbotAuthLogout = useTelegramUserbotAuthLogout();
 
   const [activeOnly, setActiveOnly] = useState(true);
-  const { data: chatsData, isLoading: chatsLoading } = useTelegramChats(activeOnly);
+  const { data: chatsData, isLoading: chatsLoading, refetch: refetchChats } = useTelegramChats(activeOnly);
   const addChat = useAddTelegramChat();
+  const refreshChats = useRefreshTelegramChats();
   const addTopic = useAddTelegramTopic();
 
   const [tokenInput, setTokenInput] = useState('');
@@ -127,6 +131,11 @@ export default function Telegram() {
   const [saveError, setSaveError] = useState('');
   const [actionError, setActionError] = useState('');
   const [actionSuccess, setActionSuccess] = useState('');
+
+  const { data: mentionForwardData } = useTelegramMentionForward();
+  const saveMentionForward = useSaveTelegramMentionForward();
+  const [mentionChatId, setMentionChatId] = useState('');
+  const [mentionTopicId, setMentionTopicId] = useState('');
 
   const autoInviteConfigured = Boolean(autoInviteStatus?.configured);
   const autoInviteMembers = autoInviteMembersData?.members ?? [];
@@ -204,6 +213,20 @@ export default function Telegram() {
     setOkleykaChatId(dest.chatId);
     setOkleykaThreadId(dest.threadId);
   }, [telegramSettings?.chatMap]);
+
+  useEffect(() => {
+    const s = mentionForwardData?.settings;
+    if (!s) return;
+    setMentionChatId(s.chatId || '');
+    setMentionTopicId(s.topicId != null ? String(s.topicId) : '');
+  }, [mentionForwardData?.settings]);
+
+  const mentionForumChats = useMemo(
+    () => chats.filter((c) => c.isForum && c.active),
+    [chats],
+  );
+  const { data: mentionTopicsData } = useTelegramTopics(mentionChatId);
+  const mentionTopics = mentionTopicsData?.topics ?? [];
 
   useEffect(() => {
     if (chatsLoading || !okleykaChatId || !selectedChatResolved || !selectedChat) {
@@ -290,6 +313,21 @@ export default function Telegram() {
     }
   }
 
+  async function onRefreshChats() {
+    setActionError('');
+    setActionSuccess('');
+    try {
+      const result = await refreshChats.mutateAsync();
+      await refetchChats();
+      setActionSuccess(
+        `Обновлено: чатов ${result.chats ?? 0}, тем ${result.topics ?? 0}` +
+          (result.invited ? `, инвайтов ${result.invited}` : ''),
+      );
+    } catch (err) {
+      setActionError(err.response?.data?.error || err.message || 'Не удалось обновить чаты');
+    }
+  }
+
   async function onAddTopic() {
     setActionError('');
     setActionSuccess('');
@@ -347,6 +385,29 @@ export default function Telegram() {
       setActionSuccess('Тестовое сообщение отправлено');
     } catch (err) {
       setActionError(err.response?.data?.error || err.message || 'Не удалось отправить тест');
+    }
+  }
+
+  async function onSaveMentionForward() {
+    setSaveError('');
+    setActionError('');
+    setActionSuccess('');
+    if (mentionChatId && !mentionTopicId) {
+      setSaveError('Выберите топик для упоминаний');
+      return;
+    }
+    try {
+      await saveMentionForward.mutateAsync({
+        chatId: mentionChatId,
+        topicId: mentionTopicId ? Number(mentionTopicId) : null,
+      });
+      setActionSuccess(
+        mentionChatId ? 'Пересылка упоминаний включена' : 'Пересылка упоминаний выключена',
+      );
+    } catch (err) {
+      setSaveError(
+        err.response?.data?.error || err.message || 'Не удалось сохранить настройки',
+      );
     }
   }
 
@@ -526,12 +587,12 @@ export default function Telegram() {
     <div>
       <PageHeader
         title="Telegram"
-        description="Бот для отправки оклейки в групповой чат. Токен хранится на сервере и не отображается полностью."
+        description="User-bot для авто-добавления команды в чаты заказов и отправки оклейки. Bot API токен больше не обязателен."
       />
 
       <Section
-        title="Бот"
-        description="Токен, проверка getMe и управление webhook для автоматического обнаружения чатов."
+        title="Бот (устарело)"
+        description="Токен Bot API и webhook больше не нужны для рабочих сценариев. Секция оставлена для совместимости."
       >
         <div className="space-y-4 max-w-2xl">
           {telegramSettings?.tokenSet && (
@@ -572,64 +633,68 @@ export default function Telegram() {
             </button>
           </div>
 
-          <div className="pt-2 border-t border-border">
-            <FieldLabel>Webhook</FieldLabel>
-            {webhookLoading ? (
-              <p className="text-sm text-ink-muted">Загрузка…</p>
-            ) : !webhookStatus?.publicBaseUrlConfigured ? (
-              <p className="text-sm text-ink-muted">
-                PUBLIC_BASE_URL не задан на сервере — подключение webhook недоступно.
-              </p>
-            ) : (
-              <div className="space-y-2 text-sm">
-                <p className="text-ink-muted font-mono text-xs break-all">
-                  {webhookStatus.webhookUrl || '—'}
+          <details className="pt-2 border-t border-border">
+            <summary className="text-sm text-ink-muted cursor-pointer select-none">
+              Webhook (не используется, свёрнуто)
+            </summary>
+            <div className="mt-3 space-y-2">
+              {webhookLoading ? (
+                <p className="text-sm text-ink-muted">Загрузка…</p>
+              ) : !webhookStatus?.publicBaseUrlConfigured ? (
+                <p className="text-sm text-ink-muted">
+                  PUBLIC_BASE_URL не задан на сервере — подключение webhook недоступно.
                 </p>
-                <p className="text-ink-muted">
-                  Секрет: {webhookStatus?.secretSet ? 'задан' : 'не задан'}
-                  {webhookConnected && (
-                    <span className="ml-2 text-pastel-green-text">· подключён</span>
-                  )}
-                  {tgWebhook?.last_error_message && (
-                    <span className="block mt-1 text-pastel-red-text">
-                      Ошибка Telegram: {tgWebhook.last_error_message}
-                    </span>
-                  )}
-                </p>
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={onSetupWebhook}
-                    disabled={setupWebhook.isPending || !telegramSettings?.tokenSet}
-                    className="btn-primary btn-sm"
-                  >
-                    {setupWebhook.isPending ? 'Подключение…' : 'Подключить webhook'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onTeardownWebhook}
-                    disabled={teardownWebhook.isPending || !telegramSettings?.tokenSet}
-                    className="btn-secondary btn-sm"
-                  >
-                    {teardownWebhook.isPending ? 'Отключение…' : 'Отключить webhook'}
-                  </button>
+              ) : (
+                <div className="space-y-2 text-sm">
+                  <p className="text-ink-muted font-mono text-xs break-all">
+                    {webhookStatus.webhookUrl || '—'}
+                  </p>
+                  <p className="text-ink-muted">
+                    Секрет: {webhookStatus?.secretSet ? 'задан' : 'не задан'}
+                    {webhookConnected && (
+                      <span className="ml-2 text-pastel-green-text">· подключён</span>
+                    )}
+                    {tgWebhook?.last_error_message && (
+                      <span className="block mt-1 text-pastel-red-text">
+                        Ошибка Telegram: {tgWebhook.last_error_message}
+                      </span>
+                    )}
+                  </p>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={onSetupWebhook}
+                      disabled={setupWebhook.isPending || !telegramSettings?.tokenSet}
+                      className="btn-primary btn-sm"
+                    >
+                      {setupWebhook.isPending ? 'Подключение…' : 'Подключить webhook'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onTeardownWebhook}
+                      disabled={teardownWebhook.isPending || !telegramSettings?.tokenSet}
+                      className="btn-secondary btn-sm"
+                    >
+                      {teardownWebhook.isPending ? 'Отключение…' : 'Отключить webhook'}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          </details>
         </div>
       </Section>
 
       <Section
         title="Авто-добавление"
-        description="User-bot автоматически добавляет команду брендинга в чаты заказов, когда бот туда вступает."
+        description="Когда логистика добавляет user-bot в чат заказа, он сам приглашает до 5 человек из списка (старт через 5–15 с после добавления, пауза 3–6 с между приглашениями)."
       >
         <div className="space-y-4">
           <div className="max-w-2xl space-y-4 pb-4 border-b border-border">
             <div>
               <h4 className="text-sm font-semibold text-ink">User-bot</h4>
               <p className="text-xs text-ink-faint mt-1 leading-relaxed">
-                Войдите сервисным Telegram-аккаунтом для авто-добавления участников.
+                Войдите сервисным Telegram-аккаунтом. Логистика добавляет этот аккаунт в чат заказа — остальное делает система.
               </p>
             </div>
 
@@ -882,24 +947,34 @@ export default function Telegram() {
 
       <Section
         title="Чаты"
-        description="Список чатов, где состоит бот. Новые чаты появляются через webhook или ручное добавление."
+        description="Список групп, где состоит user-bot. Обновляется автоматически (~30 с) или кнопкой ниже."
       >
         <div className="space-y-4">
-          <label className="inline-flex items-center gap-2 text-sm text-ink-muted cursor-pointer">
-            <input
-              type="checkbox"
-              checked={!activeOnly}
-              onChange={(e) => setActiveOnly(!e.target.checked)}
-              className="rounded border-border"
-            />
-            Показать неактивные
-          </label>
+          <div className="flex flex-wrap gap-3 items-center">
+            <label className="inline-flex items-center gap-2 text-sm text-ink-muted cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!activeOnly}
+                onChange={(e) => setActiveOnly(!e.target.checked)}
+                className="rounded border-border"
+              />
+              Показать неактивные
+            </label>
+            <button
+              type="button"
+              onClick={onRefreshChats}
+              disabled={refreshChats.isPending}
+              className="btn-secondary btn-sm"
+            >
+              {refreshChats.isPending ? 'Обновление…' : 'Обновить чаты из user-bot'}
+            </button>
+          </div>
 
           {chatsLoading ? (
             <p className="text-sm text-ink-muted">Загрузка…</p>
           ) : chats.length === 0 ? (
             <p className="text-sm text-ink-muted">
-              Чатов пока нет. Добавьте бота в группу и подключите webhook или добавьте chat_id вручную.
+              Чатов пока нет. Добавьте user-bot в группу или нажмите «Обновить чаты из user-bot».
             </p>
           ) : (
             <div className="overflow-x-auto">
@@ -958,7 +1033,7 @@ export default function Telegram() {
 
       <Section
         title="Оклейка → отправка"
-        description="Куда бот отправляет сообщения okleyka.send из Twenty."
+        description="Куда user-bot отправляет сообщения okleyka.send из Twenty."
       >
         <div className="space-y-4 max-w-xl">
           <div>
@@ -1058,6 +1133,68 @@ export default function Telegram() {
               {testTelegramSend.isPending ? 'Отправка…' : 'Тест в чат'}
             </button>
           </div>
+        </div>
+      </Section>
+
+      <Section
+        title="Пересылка упоминаний"
+        description="Когда user-bot тегают в рабочем чате, сообщение пересылается в выбранный топик общей беседы. Пока чат и топик не выбраны — функция выключена."
+      >
+        <div className="space-y-4 max-w-xl">
+          <div>
+            <FieldLabel>Общая беседа (форум)</FieldLabel>
+            <select
+              value={mentionChatId}
+              onChange={(e) => {
+                setMentionChatId(e.target.value);
+                setMentionTopicId('');
+              }}
+              className="select-field w-full"
+            >
+              <option value="">— выключено —</option>
+              {mentionForumChats.map((chat) => (
+                <option key={chat.chatId} value={chat.chatId}>
+                  {formatChatLabel(chat)}
+                </option>
+              ))}
+            </select>
+            {mentionForumChats.length === 0 && (
+              <p className="text-xs text-ink-faint mt-1.5">
+                Нет форум-чатов — беседа с топиками появится в списке после синхронизации.
+              </p>
+            )}
+          </div>
+
+          {mentionChatId && (
+            <div>
+              <FieldLabel>Топик для упоминаний</FieldLabel>
+              <select
+                value={mentionTopicId}
+                onChange={(e) => setMentionTopicId(e.target.value)}
+                className="select-field w-full"
+              >
+                <option value="">— выберите топик —</option>
+                {mentionTopics.map((t) => (
+                  <option key={t.threadId} value={String(t.threadId)}>
+                    {formatTopicLabel(t)}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-ink-faint mt-1.5 leading-relaxed">
+                Создайте топик (например «Упоминания») в самой беседе — он появится здесь
+                после обновления чатов.
+              </p>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={onSaveMentionForward}
+            disabled={saveMentionForward.isPending}
+            className="btn-primary btn-sm"
+          >
+            {saveMentionForward.isPending ? 'Сохранение…' : 'Сохранить'}
+          </button>
         </div>
       </Section>
 
