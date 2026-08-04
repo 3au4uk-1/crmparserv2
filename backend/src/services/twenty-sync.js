@@ -622,6 +622,29 @@ export async function cancelDealInTwenty(dealId) {
   logTwentyStep('cancel.start', { oppId: deal.twenty_id });
 
   try {
+    const existingLineItems = await listLineItemsForOpportunity(
+      gql,
+      twenty.apiUrl,
+      twenty.apiToken,
+      deal.twenty_id,
+    );
+
+    const existingSnapshot = deal.line_item_stage_snapshot_json;
+    if (!existingSnapshot) {
+      const snapshot = existingLineItems.map((li) => ({ id: li.id, stage: li.stage ?? null }));
+      db.prepare(`
+        UPDATE deals
+        SET pre_cancel_opportunity_stage = ?,
+            line_item_stage_snapshot_json = ?
+        WHERE id = ?
+          AND (line_item_stage_snapshot_json IS NULL OR line_item_stage_snapshot_json = '')
+      `).run(deal.twenty_stage ?? null, JSON.stringify(snapshot), dealId);
+      logTwentyStep('cancel.snapshot', {
+        lineItemCount: snapshot.length,
+        opportunityStage: deal.twenty_stage ?? null,
+      });
+    }
+
     const oppResp = await gql(
       twenty.apiUrl,
       twenty.apiToken,

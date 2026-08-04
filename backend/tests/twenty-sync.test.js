@@ -46,6 +46,34 @@ vi.mock('../src/db/connection.js', () => {
             }
             return { changes: 1 };
           }
+          if (sql.includes('line_item_stage_snapshot_json') && sql.includes('pre_cancel_opportunity_stage')) {
+            const deal = deals.get(params[params.length - 1]);
+            if (deal) {
+              if (sql.includes('IS NULL OR')) {
+                if (deal.line_item_stage_snapshot_json) return { changes: 0 };
+                deal.pre_cancel_opportunity_stage = params[0];
+                deal.line_item_stage_snapshot_json = params[1];
+                return { changes: 1 };
+              }
+              deal.pre_cancel_opportunity_stage = params[0];
+              deal.line_item_stage_snapshot_json = params[1];
+              if (sql.includes('calendar_miss_streak')) {
+                deal.calendar_miss_streak = params[2] ?? 0;
+              }
+              return { changes: 1 };
+            }
+            return { changes: 0 };
+          }
+          if (sql.includes('twenty_stage = ?')) {
+            const deal = deals.get(params[params.length - 1]);
+            if (deal) {
+              deal.twenty_stage = params[0];
+              if (params[1]) deal.status = params[1];
+              deal.synced_at = 'now';
+              deal.twenty_error = null;
+            }
+            return { changes: 1 };
+          }
           if (sql.includes('synced_at')) {
             const deal = deals.get(params[params.length - 1]);
             if (deal) {
@@ -69,16 +97,6 @@ vi.mock('../src/db/connection.js', () => {
             }
             return { changes: 1 };
           }
-          if (sql.includes('twenty_stage = ?')) {
-            const deal = deals.get(params[params.length - 1]);
-            if (deal) {
-              deal.twenty_stage = params[0];
-              if (params[1]) deal.status = params[1];
-              deal.synced_at = 'now';
-              deal.twenty_error = null;
-            }
-            return { changes: 1 };
-          }
           return { changes: 1 };
         },
       };
@@ -89,7 +107,13 @@ vi.mock('../src/db/connection.js', () => {
     getDb: () => db,
     __seedDeal(deal) {
       const id = deal.id ?? dealSeq++;
-      deals.set(id, { ...deal, id });
+      deals.set(id, {
+        calendar_miss_streak: 0,
+        pre_cancel_opportunity_stage: null,
+        line_item_stage_snapshot_json: null,
+        ...deal,
+        id,
+      });
       return id;
     },
     __seedItem(item) {
@@ -310,6 +334,15 @@ describe('syncDealToTwenty', () => {
     });
 
     axiosPost
+      .mockResolvedValueOnce(gqlOk({
+        dealLineItems: {
+          edges: [
+            { node: { id: 'li-novyy', name: 'Баннер', stage: 'NOVYY' } },
+            { node: { id: 'li-protected', name: 'Ролл-ап', stage: 'V_PECHATI' } },
+            { node: { id: 'li-cancelled', name: 'Наклейка', stage: 'OTMENA' } },
+          ],
+        },
+      }))
       .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-cancel' } }))
       .mockResolvedValueOnce(gqlOk({
         dealLineItems: {
@@ -326,7 +359,7 @@ describe('syncDealToTwenty', () => {
     const result = await cancelDealInTwenty(dealId);
 
     expect(result.action).toBe('cancelled');
-    expect(axiosPost.mock.calls[0][1].variables.input.stage).toBe('OTMENA');
+    expect(axiosPost.mock.calls[1][1].variables.input.stage).toBe('OTMENA');
 
     const lineItemCancelCalls = axiosPost.mock.calls.filter(([_, body]) =>
       body.query.includes('updateDealLineItem')
@@ -339,6 +372,70 @@ describe('syncDealToTwenty', () => {
     for (const [, body] of lineItemCancelCalls) {
       expect(body.variables.input.stage).toBe('OTMENA');
     }
+  });
+
+  it('writes line-item stage snapshot before cancelling', async () => {
+    const dealId = dbMock.__seedDeal({
+      id: 7,
+      twenty_id: 'opp-snap',
+      twenty_stage: 'V_RABOTE',
+      approval_status: 'synced',
+      title: 'Snap deal',
+      start_date: '2026-06-10',
+      crm_event_id: 'e7',
+    });
+
+    axiosPost
+      .mockResolvedValueOnce(gqlOk({
+        dealLineItems: {
+          edges: [
+            { node: { id: 'li-a', name: 'Фриз', stage: 'V_PECHATI' } },
+            { node: { id: 'li-b', name: 'Стойка', stage: 'NOVYY' } },
+            { node: { id: 'li-c', name: 'Старое', stage: 'OTMENA' } },
+          ],
+        },
+      }))
+      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-snap' } }))
+      .mockResolvedValueOnce(gqlOk({
+        dealLineItems: {
+          edges: [
+            { node: { id: 'li-a', name: 'Фриз', stage: 'V_PECHATI' } },
+            { node: { id: 'li-b', name: 'Стойка', stage: 'NOVYY' } },
+            { node: { id: 'li-c', name: 'Старое', stage: 'OTMENA' } },
+          ],
+        },
+      }))
+      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-a' } }))
+      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-b' } }));
+
+    await cancelDealInTwenty(dealId);
+
+    const deal = dbMock.getDb().prepare('SELECT * FROM deals WHERE id = ?').get(dealId);
+    expect(deal.pre_cancel_opportunity_stage).toBe('V_RABOTE');
+    expect(JSON.parse(deal.line_item_stage_snapshot_json)).toEqual([
+      { id: 'li-a', stage: 'V_PECHATI' },
+      { id: 'li-b', stage: 'NOVYY' },
+      { id: 'li-c', stage: 'OTMENA' },
+    ]);
+    expect(deal.twenty_stage).toBe('OTMENA');
+  });
+
+  it('does not overwrite an existing cancel snapshot when already cancelled', async () => {
+    const existing = JSON.stringify([{ id: 'li-old', stage: 'OKLEYKA' }]);
+    const dealId = dbMock.__seedDeal({
+      id: 8,
+      twenty_id: 'opp-keep-snap',
+      twenty_stage: 'OTMENA',
+      pre_cancel_opportunity_stage: 'V_RABOTE',
+      line_item_stage_snapshot_json: existing,
+      crm_event_id: 'e8',
+    });
+
+    const result = await cancelDealInTwenty(dealId);
+    expect(result.skipped).toBe(true);
+    const deal = dbMock.getDb().prepare('SELECT * FROM deals WHERE id = ?').get(dealId);
+    expect(deal.line_item_stage_snapshot_json).toBe(existing);
+    expect(axiosPost).not.toHaveBeenCalled();
   });
 
   it('skips cancel when deal already cancelled in Twenty', async () => {
