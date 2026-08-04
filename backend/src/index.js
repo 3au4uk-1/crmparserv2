@@ -32,6 +32,7 @@ import { initMentionForwarding } from './telegram/userbot/mention-forward.js';
 import { recoverStaleParseRuns } from './services/parser.js';
 import { recoverStaleRestoreMissingTwentyJobs } from './services/restore-missing-twenty-jobs.js';
 import { runFreeEntryDuplicateRepairIfNeeded } from './services/free-entry-duplicate-repair.js';
+import { runOpportunityAmountRecalcIfNeeded } from './services/opportunity-amount-recalc.js';
 import { getDb } from './db/connection.js';
 import { registerDefaultTelegramHooks } from './telegram/register-default-hooks.js';
 
@@ -91,10 +92,17 @@ async function start() {
   initMentionForwarding();
   app.listen(config.port, () => {
     console.log(`CRM Parser running on port ${config.port}`);
-    setImmediate(() => {
-      runFreeEntryDuplicateRepairIfNeeded().catch((err) => {
+    setImmediate(async () => {
+      try {
+        await runFreeEntryDuplicateRepairIfNeeded();
+      } catch (err) {
         console.error('[free-entry-repair] failed:', err.message);
-      });
+      }
+      try {
+        await runOpportunityAmountRecalcIfNeeded();
+      } catch (err) {
+        console.error('[opportunity-amount-recalc] startup failed', err);
+      }
     });
   });
 }

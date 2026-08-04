@@ -8,6 +8,6 @@ Task 1: done (1e09e36)
 Task 2: done (7417c4e)
 Task 3: done (133a36c)
 Task 4: done (f664db5)
-Task 5: pending
+Task 5: done (e3f71b3)
 Task 6: pending
 Task 7: pending
