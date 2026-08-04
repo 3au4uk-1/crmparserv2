@@ -1,7 +1,7 @@
 # Free-entry дубликаты: match по twenty_id + one-shot repair — Design Spec
 
 **Дата:** 2026-08-04  
-**Статус:** Draft (ожидает review)  
+**Статус:** Approved  
 **Репозиторий:** `crmparserv2` (основной); UI rename в BrandingTwentyView уже есть и не меняется в v1  
 **Связанные спеки:**  
 `2026-07-28-tony-free-entry-name-design.md`,  

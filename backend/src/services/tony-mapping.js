@@ -47,8 +47,19 @@ export function buildTonyDealFields(parsed) {
   };
 }
 
+export function disambiguateDuplicateNames(items) {
+  const seen = new Map(); // trimmedName -> count seen so far
+  return items.map((item) => {
+    const base = String(item.name ?? '').trim();
+    const n = (seen.get(base) || 0) + 1;
+    seen.set(base, n);
+    if (n === 1) return item;
+    return { ...item, name: `${base} (#${n})` };
+  });
+}
+
 export function buildTonyItems(parsed) {
-  return parsed.items.map((i) =>
+  const normalized = parsed.items.map((i) =>
     normalizeFreeEntryItem({
       name: i.name,
       price: i.price,
@@ -59,6 +70,7 @@ export function buildTonyItems(parsed) {
       quantity_num: parseQuantityNum(i.quantity),
     }),
   );
+  return disambiguateDuplicateNames(normalized);
 }
 
 export function tonyContentHash(parsed) {
