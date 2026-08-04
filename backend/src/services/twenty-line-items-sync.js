@@ -136,7 +136,14 @@ export async function listLineItemsForOpportunity(gql, apiUrl, apiToken, oppId) 
   return resp.data?.data?.dealLineItems?.edges?.map((e) => e.node) || [];
 }
 
-export async function listLineItemsForRepair(gql, apiUrl, apiToken, oppId) {
+export async function listLineItemsForRepair(
+  gql,
+  apiUrl,
+  apiToken,
+  oppId,
+  assertHttpSuccess,
+  assertGqlSuccess,
+) {
   const resp = await gql(
     apiUrl,
     apiToken,
@@ -157,6 +164,8 @@ export async function listLineItemsForRepair(gql, apiUrl, apiToken, oppId) {
     }`,
     { oppId },
   );
+  assertHttpSuccess(resp, apiUrl);
+  assertGqlSuccess(resp, 'Failed to list line items for repair in Twenty');
   return resp.data?.data?.dealLineItems?.edges?.map(({ node }) => ({
     id: node.id,
     name: node.name,

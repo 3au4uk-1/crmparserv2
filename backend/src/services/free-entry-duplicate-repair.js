@@ -215,7 +215,7 @@ export function resolveRepairFlagState(db, nowMs = Date.now()) {
 
 function isHardTwentyError(err) {
   const message = err?.message || String(err);
-  return /401|403|not configured|timeout|ECONNREFUSED|ECONNRESET|GraphQL endpoint not found|Twenty API/i.test(message);
+  return /401|403|404|5\d{2}|not configured|timeout|ECONNREFUSED|ECONNRESET|ECONNABORTED|GraphQL endpoint not found|Twenty API|Failed to .* in Twenty/i.test(message);
 }
 
 function listSyncedDeals(db) {
@@ -300,6 +300,8 @@ export async function repairOneDeal(deal, deps) {
     twenty.apiUrl,
     twenty.apiToken,
     deal.twenty_id,
+    assertHttp,
+    assertGql,
   );
   const localItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(deal.id);
 

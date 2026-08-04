@@ -309,6 +309,61 @@ describe('runFreeEntryDuplicateRepairIfNeeded', () => {
     expect(result.dealsSkipped).toBe(1);
   });
 
+  it('skips when running started less than 6 hours ago', async () => {
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(REPAIR_FLAG_KEY, 'running');
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(
+      REPAIR_STARTED_AT_KEY,
+      '2026-08-04T11:00:00.000Z',
+    );
+    insertSyncedDeal(db);
+
+    const result = await runFreeEntryDuplicateRepairIfNeeded({
+      getDb: () => db,
+      requireTwentyConfig: () => ({ apiUrl: 'https://crm.example/graphql', apiToken: 'tok' }),
+      gql: gqlMock,
+      now: () => Date.parse('2026-08-04T12:00:00.000Z'),
+    });
+
+    expect(result).toEqual({ status: 'skipped', reason: 'running' });
+    expect(gqlMock).not.toHaveBeenCalled();
+  });
+
+  it('marks failed when list returns HTTP 401 without rejecting', async () => {
+    insertSyncedDeal(db);
+    gqlMock.mockResolvedValue({ status: 401, data: {} });
+
+    const result = await runFreeEntryDuplicateRepairIfNeeded({
+      getDb: () => db,
+      requireTwentyConfig: () => ({ apiUrl: 'https://crm.example/graphql', apiToken: 'tok' }),
+      gql: gqlMock,
+      now: () => Date.parse('2026-08-04T12:00:00.000Z'),
+      log: { error: vi.fn() },
+    });
+
+    expect(result.status).toBe('failed');
+    expect(readFlag(db, REPAIR_FLAG_KEY)).toBe('failed');
+    expect(readFlag(db, REPAIR_FLAG_KEY)).not.toBe('done');
+  });
+
+  it('retries when flag is failed and completes successfully', async () => {
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(REPAIR_FLAG_KEY, 'failed');
+    insertSyncedDeal(db);
+
+    const result = await runFreeEntryDuplicateRepairIfNeeded({
+      getDb: () => db,
+      requireTwentyConfig: () => ({ apiUrl: 'https://crm.example/graphql', apiToken: 'tok' }),
+      gql: gqlMock,
+      assertHttpSuccess: () => {},
+      assertGqlSuccess: () => {},
+      now: () => Date.parse('2026-08-04T12:00:00.000Z'),
+      log: { error: vi.fn(), info: vi.fn() },
+    });
+
+    expect(result.status).toBe('done');
+    expect(readFlag(db, REPAIR_FLAG_KEY)).toBe('done');
+    expect(result.reason).toBe('retry_failed');
+  });
+
   it('retries when running started_at is older than 6 hours', async () => {
     db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(REPAIR_FLAG_KEY, 'running');
     db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(
