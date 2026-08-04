@@ -256,6 +256,78 @@ describe('runFreeEntryDuplicateRepairIfNeeded', () => {
     expect(readFlag(db, REPAIR_FLAG_KEY)).not.toBe('done');
   });
 
+  it('continues repair when assertGqlSuccess fails on line item mutation', async () => {
+    insertSyncedDeal(db, { id: 1, twentyId: 'opp-1' });
+    insertSyncedDeal(db, { id: 2, twentyId: 'opp-2', title: 'Deal 2' });
+    db.prepare(`
+      INSERT INTO deal_items (deal_id, name, price, quantity, classification, twenty_id)
+      VALUES (1, ?, 100, '1', 'keyword_match', 'li-1')
+    `).run(FREE_ENTRY_TEMPLATE);
+
+    gqlMock.mockImplementation(async (_url, _token, query, variables) => {
+      if (query.includes('ListLineItemsForRepair')) {
+        if (variables?.oppId === 'opp-1') {
+          return {
+            status: 200,
+            data: {
+              data: {
+                dealLineItems: {
+                  edges: [
+                    {
+                      node: {
+                        id: 'li-1',
+                        name: FREE_ENTRY_TEMPLATE,
+                        kommentariy: 'Логотип на стол',
+                        createdAt: '2026-01-01',
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          };
+        }
+        return { status: 200, data: { data: { dealLineItems: { edges: [] } } } };
+      }
+      return {
+        status: 200,
+        data: {
+          data: {
+            updateDealLineItem: { id: variables?.id },
+            updateOpportunity: { id: variables?.id },
+          },
+        },
+      };
+    });
+
+    const assertGql = vi.fn((_resp, fallbackMessage) => {
+      if (fallbackMessage?.includes('Failed to update line item')) {
+        throw new Error(fallbackMessage);
+      }
+    });
+
+    const result = await runFreeEntryDuplicateRepairIfNeeded({
+      getDb: () => db,
+      requireTwentyConfig: () => ({ apiUrl: 'https://crm.example/graphql', apiToken: 'tok' }),
+      gql: gqlMock,
+      assertHttpSuccess: () => {},
+      assertGqlSuccess: assertGql,
+      now: () => Date.parse('2026-08-04T12:00:00.000Z'),
+      log: { error: vi.fn(), info: vi.fn() },
+    });
+
+    expect(result.status).toBe('done');
+    expect(readFlag(db, REPAIR_FLAG_KEY)).toBe('done');
+    expect(result.dealsFailed).toBeGreaterThanOrEqual(1);
+    expect(result.dealsSkipped).toBe(1);
+    expect(gqlMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.stringContaining('ListLineItemsForRepair'),
+      expect.objectContaining({ oppId: 'opp-2' }),
+    );
+  });
+
   it('sets done after processing deals even with soft per-deal errors', async () => {
     insertSyncedDeal(db, { id: 1, twentyId: 'opp-1' });
     insertSyncedDeal(db, { id: 2, twentyId: 'opp-2', title: 'Deal 2' });

@@ -215,7 +215,7 @@ export function resolveRepairFlagState(db, nowMs = Date.now()) {
 
 function isHardTwentyError(err) {
   const message = err?.message || String(err);
-  return /401|403|404|5\d{2}|not configured|timeout|ECONNREFUSED|ECONNRESET|ECONNABORTED|GraphQL endpoint not found|Twenty API|Failed to .* in Twenty/i.test(message);
+  return /401|403|not configured|timeout|ECONNREFUSED|ECONNRESET|ECONNABORTED|GraphQL endpoint not found/i.test(message);
 }
 
 function listSyncedDeals(db) {
