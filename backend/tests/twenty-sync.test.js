@@ -149,6 +149,15 @@ vi.mock('../src/services/print-sheet-cycle.js', () => ({
   runPrintSheetCycle: (...args) => runPrintSheetCycleMock(...args),
 }));
 
+const logTwentyStepMock = vi.fn();
+vi.mock('../src/services/twenty-sync-log.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    logTwentyStep: (...args) => logTwentyStepMock(...args),
+  };
+});
+
 import * as dbMock from '../src/db/connection.js';
 import { syncDealToTwenty, cancelDealInTwenty, restoreDealInTwenty } from '../src/services/twenty-sync.js';
 
@@ -161,6 +170,7 @@ describe('syncDealToTwenty', () => {
     axiosPost.mockReset();
     dbMock.__reset();
     runPrintSheetCycleMock.mockReset();
+    logTwentyStepMock.mockReset();
   });
 
   it('updates opportunity when twenty_id exists', async () => {
@@ -418,6 +428,10 @@ describe('syncDealToTwenty', () => {
       { id: 'li-c', stage: 'OTMENA' },
     ]);
     expect(deal.twenty_stage).toBe('OTMENA');
+    expect(logTwentyStepMock).toHaveBeenCalledWith('cancel.snapshot', {
+      lineItemCount: 3,
+      opportunityStage: 'V_RABOTE',
+    });
   });
 
   it('does not overwrite an existing cancel snapshot when already cancelled', async () => {

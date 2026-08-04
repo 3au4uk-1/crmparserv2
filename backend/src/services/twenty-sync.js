@@ -632,17 +632,19 @@ export async function cancelDealInTwenty(dealId) {
     const existingSnapshot = deal.line_item_stage_snapshot_json;
     if (!existingSnapshot) {
       const snapshot = existingLineItems.map((li) => ({ id: li.id, stage: li.stage ?? null }));
-      db.prepare(`
+      const snapshotWrite = db.prepare(`
         UPDATE deals
         SET pre_cancel_opportunity_stage = ?,
             line_item_stage_snapshot_json = ?
         WHERE id = ?
           AND (line_item_stage_snapshot_json IS NULL OR line_item_stage_snapshot_json = '')
       `).run(deal.twenty_stage ?? null, JSON.stringify(snapshot), dealId);
-      logTwentyStep('cancel.snapshot', {
-        lineItemCount: snapshot.length,
-        opportunityStage: deal.twenty_stage ?? null,
-      });
+      if (snapshotWrite.changes > 0) {
+        logTwentyStep('cancel.snapshot', {
+          lineItemCount: snapshot.length,
+          opportunityStage: deal.twenty_stage ?? null,
+        });
+      }
     }
 
     const oppResp = await gql(
