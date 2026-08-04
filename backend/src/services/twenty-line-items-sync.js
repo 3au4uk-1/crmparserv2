@@ -44,42 +44,73 @@ export function computeLineItemDiff(
   const parsedItems = eligibleItems.filter((item) => !isManualTwentyItem(item));
 
   const existingById = new Map(existingLineItems.map((li) => [li.id, li]));
-  const existingByName = new Map(
-    existingLineItems.map((li) => [normalizePattern(li.name), li]),
-  );
 
   const toUpdate = [];
   const toCreate = [];
+  const claimedIds = new Set();
 
   for (const item of manualItems) {
     const existing = existingById.get(item.twenty_id);
     if (existing) {
-      if (isProtected(existing.stage)) continue;
+      if (isProtected(existing.stage)) {
+        claimedIds.add(existing.id);
+        continue;
+      }
+      claimedIds.add(existing.id);
       toUpdate.push({ twentyId: item.twenty_id, item });
     } else {
       toCreate.push(item);
     }
   }
 
+  const byNameQueues = new Map();
+  for (const li of existingLineItems) {
+    const key = normalizePattern(li.name);
+    if (!byNameQueues.has(key)) byNameQueues.set(key, []);
+    byNameQueues.get(key).push(li);
+  }
+
   for (const item of parsedItems) {
-    const existing = existingByName.get(normalizePattern(item.name));
-    if (existing) {
-      if (isProtected(existing.stage)) continue;
+    if (item.twenty_id && existingById.has(item.twenty_id) && !claimedIds.has(item.twenty_id)) {
+      const existing = existingById.get(item.twenty_id);
+      if (isProtected(existing.stage)) {
+        claimedIds.add(existing.id);
+        continue;
+      }
+      claimedIds.add(existing.id);
       toUpdate.push({ twentyId: existing.id, item });
+      continue;
+    }
+
+    const key = normalizePattern(item.name);
+    const queue = byNameQueues.get(key) || [];
+    let matched = null;
+    while (queue.length) {
+      const candidate = queue.shift();
+      if (claimedIds.has(candidate.id)) continue;
+      matched = candidate;
+      break;
+    }
+    if (matched) {
+      if (isProtected(matched.stage)) {
+        claimedIds.add(matched.id);
+        continue;
+      }
+      claimedIds.add(matched.id);
+      toUpdate.push({ twentyId: matched.id, item });
     } else {
       toCreate.push(item);
     }
   }
 
   const manualTwentyIds = new Set(manualItems.map((item) => item.twenty_id));
-  const parsedEligibleNames = new Set(parsedItems.map((item) => normalizePattern(item.name)));
 
   const toDelete = [];
   const preserved = [];
 
   for (const li of existingLineItems) {
     if (manualTwentyIds.has(li.id)) continue;
-    if (parsedEligibleNames.has(normalizePattern(li.name))) continue;
+    if (claimedIds.has(li.id)) continue;
     if (isProtected(li.stage)) {
       preserved.push({ id: li.id, name: li.name, stage: li.stage });
       continue;
