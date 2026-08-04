@@ -1,4 +1,4 @@
-import { computeLineItemTotal, parseQuantityNum } from './twenty-opportunity.js';
+import { computeLineItemTotal, parseQuantityNum, DEFAULT_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
 import { findTipRuleMatch } from './tip-rules.js';
 import { resolveTipDetail } from './tip-taxonomy.js';
 
@@ -46,6 +46,7 @@ export function buildLineItemCreateInput(item, warehouseItemId, opportunityId, p
     position,
     warehouseItemId,
     opportunityId,
+    stage: DEFAULT_OPPORTUNITY_STAGE,
     ...buildLineItemFields(item, options),
   };
 }

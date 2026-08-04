@@ -4,6 +4,7 @@ import {
   buildLineItemCreateInput,
   buildLineItemUpdateInput,
 } from '../src/services/twenty-line-item.js';
+import { DEFAULT_OPPORTUNITY_STAGE } from '../src/services/twenty-opportunity.js';
 
 describe('twenty-line-item', () => {
   it('builds warehouse item with name only', () => {
@@ -25,6 +26,20 @@ describe('twenty-line-item', () => {
   it('buildLineItemUpdateInput includes istochnik PARSER', () => {
     const input = buildLineItemUpdateInput({ name: 'Наклейка', price: 1000, quantity: '1' });
     expect(input.istochnik).toBe('PARSER');
+  });
+
+  it('buildLineItemCreateInput sets stage NOVYY', () => {
+    const input = buildLineItemCreateInput(
+      { name: 'Наклейка', price: 1000, quantity: '1' },
+      'wh-001',
+      'opp-456',
+    );
+    expect(input.stage).toBe('NOVYY');
+  });
+
+  it('buildLineItemUpdateInput does not set stage', () => {
+    const input = buildLineItemUpdateInput({ name: 'Наклейка', price: 1000, quantity: '1' });
+    expect(input).not.toHaveProperty('stage');
   });
 });
 
@@ -48,6 +63,7 @@ describe('Tony line items', () => {
       position: 'first',
       warehouseItemId: 'wh-001',
       opportunityId: 'opp-456',
+      stage: DEFAULT_OPPORTUNITY_STAGE,
       kolichestvo: 9,
       kommentariy: '+ монтаж',
       amount: { amountMicros: 2640000000, currencyCode: 'RUB' },
@@ -109,6 +125,7 @@ describe('calendar line items', () => {
       position: 'first',
       warehouseItemId: 'wh-002',
       opportunityId: 'opp-456',
+      stage: DEFAULT_OPPORTUNITY_STAGE,
       kolichestvo: 1,
       amount: { amountMicros: 0, currencyCode: 'RUB' },
       istochnik: 'PARSER',
@@ -143,7 +160,7 @@ describe('restoration line items', () => {
     );
     expect(input.amount.amountMicros).toBe(0);
     expect(input.kolichestvo).toBe(1);
-    expect(input.stage).toBeUndefined();
+    expect(input.stage).toBe(DEFAULT_OPPORTUNITY_STAGE);
   });
 
   it('builds update input with zero amount when restoration match', () => {
