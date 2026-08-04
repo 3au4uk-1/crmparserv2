@@ -14,7 +14,7 @@ import { buildOverrideMap, replaceDealItemsPreservingOverrides } from './deal-it
 import {
   collectCalendarEventIds,
   collectCalendarBookingNumbers,
-  findDealsMissingFromCalendar,
+  collectDealsReadyToCancelFromCalendar,
   findCancelledDealsBackInCalendar,
 } from './calendar-missing.js';
 import { extractBookingNumbers } from './booking-numbers.js';
@@ -513,7 +513,7 @@ export async function runParsing(startDate, endDate) {
 
     const calendarEventIds = collectCalendarEventIds(events, startDate, endDate);
     const calendarBookingNumbers = collectCalendarBookingNumbers(events, startDate, endDate);
-    const missingDeals = findDealsMissingFromCalendar(
+    const missingDeals = collectDealsReadyToCancelFromCalendar(
       db,
       calendarEventIds,
       startDate,
