@@ -1,7 +1,7 @@
 # Защита от ложной отмены сделки и восстановление стадий позиций — Design Spec
 
 **Дата:** 2026-08-04  
-**Статус:** Draft (ожидает review)  
+**Статус:** Approved  
 **Связанные спеки:** `2026-06-27-line-item-stage-protection-design.md`, `2026-06-20-twenty-line-items-design.md`, `2026-06-09-deal-resync-design.md`
 
 ## Проблема
