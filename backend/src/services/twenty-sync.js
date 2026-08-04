@@ -6,7 +6,7 @@ import { loadRestorationList, isRestorationItem } from './restoration.js';
 import { loadNeNasheBrandingList, isNeNasheBrandingItem } from './ne-nashe-branding.js';
 import { loadNeNasheDecorMkList, isNeNasheDecorMkItem } from './ne-nashe-decor-mk.js';
 import { loadTipRules, findTipRuleMatch } from './tip-rules.js';
-import { buildOpportunityInput, computeDealItemsTotal, computeLineItemTotal, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
+import { buildOpportunityInput, computeDealItemsTotal, computeLineItemTotal, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE, ZERO_RUB_AMOUNT } from './twenty-opportunity.js';
 import {
   getItemsForTwenty,
   getItemEligibleReason,
@@ -695,7 +695,7 @@ export async function cancelDealInTwenty(dealId) {
       `mutation CancelOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
         updateOpportunity(id: $id, data: $input) { id }
       }`,
-      { id: deal.twenty_id, input: { stage: CANCELLED_OPPORTUNITY_STAGE } }
+      { id: deal.twenty_id, input: { stage: CANCELLED_OPPORTUNITY_STAGE, amount: ZERO_RUB_AMOUNT } }
     );
     assertHttpSuccess(oppResp, twenty.apiUrl);
     assertGqlSuccess(oppResp, 'Failed to cancel opportunity in Twenty');

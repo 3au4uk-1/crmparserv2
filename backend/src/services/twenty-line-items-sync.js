@@ -6,7 +6,7 @@ import { normalizePattern } from './blacklist.js';
 import { shouldZeroLineItemAmount } from './twenty-opportunity.js';
 import { findTipRuleMatch } from './tip-rules.js';
 import { logTwentyStep } from './twenty-sync-log.js';
-import { CANCELLED_OPPORTUNITY_STAGE, DEFAULT_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
+import { CANCELLED_OPPORTUNITY_STAGE, DEFAULT_OPPORTUNITY_STAGE, ZERO_RUB_AMOUNT } from './twenty-opportunity.js';
 import { MANUAL_TWENTY_CLASSIFICATION } from './manual-twenty-line-item.js';
 
 /** Line items at this stage (or null) may be deleted/updated on re-sync. */
@@ -213,7 +213,7 @@ export async function cancelLineItemsForOpportunity(
       `mutation UpdateDealLineItem($id: ID!, $input: DealLineItemUpdateInput!) {
         updateDealLineItem(id: $id, data: $input) { id }
       }`,
-      { id: li.id, input: { stage: cancelledStage } }
+      { id: li.id, input: { stage: cancelledStage, amount: ZERO_RUB_AMOUNT } }
     );
 
     if (assertHttpSuccess) assertHttpSuccess(resp, apiUrl);

@@ -373,7 +373,12 @@ describe('syncDealToTwenty', () => {
     const result = await cancelDealInTwenty(dealId);
 
     expect(result.action).toBe('cancelled');
-    expect(axiosPost.mock.calls[1][1].variables.input.stage).toBe('OTMENA');
+
+    const opportunityInput = axiosPost.mock.calls[1][1].variables.input;
+    expect(opportunityInput).toMatchObject({
+      stage: 'OTMENA',
+      amount: { amountMicros: 0, currencyCode: 'RUB' },
+    });
 
     const lineItemCancelCalls = axiosPost.mock.calls.filter(([_, body]) =>
       body.query.includes('updateDealLineItem')
@@ -384,7 +389,10 @@ describe('syncDealToTwenty', () => {
       'li-protected',
     ]);
     for (const [, body] of lineItemCancelCalls) {
-      expect(body.variables.input.stage).toBe('OTMENA');
+      expect(body.variables.input).toMatchObject({
+        stage: 'OTMENA',
+        amount: { amountMicros: 0, currencyCode: 'RUB' },
+      });
     }
   });
 
