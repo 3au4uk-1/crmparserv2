@@ -6,7 +6,7 @@ import { normalizePattern } from './blacklist.js';
 import { shouldZeroLineItemAmount } from './twenty-opportunity.js';
 import { findTipRuleMatch } from './tip-rules.js';
 import { logTwentyStep } from './twenty-sync-log.js';
-import { CANCELLED_OPPORTUNITY_STAGE, DEFAULT_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
+import { CANCELLED_OPPORTUNITY_STAGE, DEFAULT_OPPORTUNITY_STAGE, ZERO_RUB_AMOUNT } from './twenty-opportunity.js';
 import { MANUAL_TWENTY_CLASSIFICATION } from './manual-twenty-line-item.js';
 
 /** Line items at this stage (or null) may be deleted/updated on re-sync. */
@@ -44,42 +44,73 @@ export function computeLineItemDiff(
   const parsedItems = eligibleItems.filter((item) => !isManualTwentyItem(item));
 
   const existingById = new Map(existingLineItems.map((li) => [li.id, li]));
-  const existingByName = new Map(
-    existingLineItems.map((li) => [normalizePattern(li.name), li]),
-  );
 
   const toUpdate = [];
   const toCreate = [];
+  const claimedIds = new Set();
 
   for (const item of manualItems) {
     const existing = existingById.get(item.twenty_id);
     if (existing) {
-      if (isProtected(existing.stage)) continue;
+      if (isProtected(existing.stage)) {
+        claimedIds.add(existing.id);
+        continue;
+      }
+      claimedIds.add(existing.id);
       toUpdate.push({ twentyId: item.twenty_id, item });
     } else {
       toCreate.push(item);
     }
   }
 
+  const byNameQueues = new Map();
+  for (const li of existingLineItems) {
+    const key = normalizePattern(li.name);
+    if (!byNameQueues.has(key)) byNameQueues.set(key, []);
+    byNameQueues.get(key).push(li);
+  }
+
   for (const item of parsedItems) {
-    const existing = existingByName.get(normalizePattern(item.name));
-    if (existing) {
-      if (isProtected(existing.stage)) continue;
+    if (item.twenty_id && existingById.has(item.twenty_id) && !claimedIds.has(item.twenty_id)) {
+      const existing = existingById.get(item.twenty_id);
+      if (isProtected(existing.stage)) {
+        claimedIds.add(existing.id);
+        continue;
+      }
+      claimedIds.add(existing.id);
       toUpdate.push({ twentyId: existing.id, item });
+      continue;
+    }
+
+    const key = normalizePattern(item.name);
+    const queue = byNameQueues.get(key) || [];
+    let matched = null;
+    while (queue.length) {
+      const candidate = queue.shift();
+      if (claimedIds.has(candidate.id)) continue;
+      matched = candidate;
+      break;
+    }
+    if (matched) {
+      if (isProtected(matched.stage)) {
+        claimedIds.add(matched.id);
+        continue;
+      }
+      claimedIds.add(matched.id);
+      toUpdate.push({ twentyId: matched.id, item });
     } else {
       toCreate.push(item);
     }
   }
 
   const manualTwentyIds = new Set(manualItems.map((item) => item.twenty_id));
-  const parsedEligibleNames = new Set(parsedItems.map((item) => normalizePattern(item.name)));
 
   const toDelete = [];
   const preserved = [];
 
   for (const li of existingLineItems) {
     if (manualTwentyIds.has(li.id)) continue;
-    if (parsedEligibleNames.has(normalizePattern(li.name))) continue;
+    if (claimedIds.has(li.id)) continue;
     if (isProtected(li.stage)) {
       preserved.push({ id: li.id, name: li.name, stage: li.stage });
       continue;
@@ -97,12 +128,53 @@ export async function listLineItemsForOpportunity(gql, apiUrl, apiToken, oppId) 
     apiToken,
     `query ListLineItems($oppId: ID!) {
       dealLineItems(filter: { opportunityId: { eq: $oppId } }) {
-        edges { node { id name stage istochnik } }
+        edges { node { id name stage istochnik amount { amountMicros currencyCode } } }
       }
     }`,
     { oppId }
   );
   return resp.data?.data?.dealLineItems?.edges?.map((e) => e.node) || [];
+}
+
+export async function listLineItemsForRepair(
+  gql,
+  apiUrl,
+  apiToken,
+  oppId,
+  assertHttpSuccess,
+  assertGqlSuccess,
+) {
+  const resp = await gql(
+    apiUrl,
+    apiToken,
+    `query ListLineItemsForRepair($oppId: ID!) {
+      dealLineItems(filter: { opportunityId: { eq: $oppId } }) {
+        edges {
+          node {
+            id
+            name
+            stage
+            istochnik
+            kommentariy
+            createdAt
+            amount { amountMicros currencyCode }
+          }
+        }
+      }
+    }`,
+    { oppId },
+  );
+  assertHttpSuccess(resp, apiUrl);
+  assertGqlSuccess(resp, 'Failed to list line items for repair in Twenty');
+  return resp.data?.data?.dealLineItems?.edges?.map(({ node }) => ({
+    id: node.id,
+    name: node.name,
+    stage: node.stage,
+    istochnik: node.istochnik,
+    kommentariy: node.kommentariy ?? '',
+    createdAt: node.createdAt ?? null,
+    amountMicros: node.amount?.amountMicros ?? null,
+  })) || [];
 }
 
 export async function deleteLineItem(gql, apiUrl, apiToken, lineItemId) {
@@ -141,7 +213,7 @@ export async function cancelLineItemsForOpportunity(
       `mutation UpdateDealLineItem($id: ID!, $input: DealLineItemUpdateInput!) {
         updateDealLineItem(id: $id, data: $input) { id }
       }`,
-      { id: li.id, input: { stage: cancelledStage } }
+      { id: li.id, input: { stage: cancelledStage, amount: ZERO_RUB_AMOUNT } }
     );
 
     if (assertHttpSuccess) assertHttpSuccess(resp, apiUrl);

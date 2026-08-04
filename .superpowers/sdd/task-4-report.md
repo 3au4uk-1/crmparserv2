@@ -1,154 +1,94 @@
-# Task 4 Report: Auto-invite orchestration
+# Task 4 Report: Snapshot on cancel (TDD)
 
-**Date:** 2026-07-30  
-**Branch:** `staging`  
-**Commit:** `13a35d7` — feat(telegram): auto-invite orchestration
+## Status: DONE
 
 ## Summary
 
-Added `runAutoInviteForChat` and `scheduleAutoInvite` in `auto-invite.js`, wiring store idempotency, Bot API invite/promote, and GramJS userbot actions behind injectable deps. Ten vitest cases cover happy path, privacy partial failure, skip on prior success, force retry, configuration/token failures, setup hard-fail, and non-blocking scheduling. TDD: tests written first → all green.
+`cancelDealInTwenty` now lists line items first, writes `pre_cancel_opportunity_stage` + `line_item_stage_snapshot_json` to local SQLite (guarded by SQL `WHERE` and early skip when already `OTMENA`), logs `cancel.snapshot`, then cancels opportunity + line items as before. `cancelLineItemsForOpportunity` signature unchanged (re-list inside). Restore not implemented (Task 5).
 
-## TDD Evidence
+## Commits
 
-### RED (Step 1)
-
-Command: `cd backend && npm test -- tests/telegram-auto-invite.test.js` (before `auto-invite.js`)
-
-```
-Error: Cannot find module '../src/telegram/auto-invite.js'
- Test Files  1 failed (1)
-      Tests  no tests
-```
-
-### GREEN (Step 3)
-
-Command: `cd backend && npm test -- tests/telegram-auto-invite.test.js`
-
-```
- Test Files  1 passed (1)
-      Tests  10 passed (10)
-```
+- `a309182` — Snapshot line-item stages before cancelling a deal in Twenty.
 
 ## Files Changed
 
 | File | Change |
 |------|--------|
-| `backend/src/telegram/auto-invite.js` | `runAutoInviteForChat`, `scheduleAutoInvite`, default deps wiring |
-| `backend/tests/telegram-auto-invite.test.js` | 10 orchestration tests with mocked deps |
+| `backend/src/services/twenty-sync.js` | Snapshot list + SQLite write before Twenty cancel mutations |
+| `backend/tests/twenty-sync.test.js` | Db mock snapshot handler, seed defaults, 2 new tests, existing cancel mock order fix |
 
-## New API Surface
+## TDD Evidence
 
-| Export | Signature | Behavior |
-|--------|-----------|----------|
-| `runAutoInviteForChat` | `(db, chatId, { force?, deps? }) → { status, detail, skipped? }` | Full pipeline: idempotency → userbot/token checks → invite link → join → promote → per-member resolve/invite → aggregate status |
-| `scheduleAutoInvite` | `(db, chatId, options?) → void` | `setImmediate(() => runAutoInviteForChat(...)).unref?.()`; logs unexpected rejections |
+### RED (tests before implementation)
 
-### Injectable deps (defaults in production)
+```bash
+cd backend && npm test -- tests/twenty-sync.test.js
+```
 
-| Dep | Default |
-|-----|---------|
-| `getToken` | `getTelegramBotToken` |
-| `createInviteLink` | `createChatInviteLink` |
-| `promote` | `promoteChatMemberForInvite` |
-| `getClient` | `getUserbotClient` |
-| `joinInvite` | `joinChatByInviteLink` |
-| `resolveUser` | `resolveUser` |
-| `inviteUser` | `inviteUserToChat` |
-| `getSelfUserId` | `getSelfUserId` |
-| `listMembers` | `listAutoInviteMembers(db, { activeOnly: true })` |
-| `isConfigured` | `isUserbotConfigured` |
-| `updateMember` | `updateAutoInviteMember` |
+```
+ Test Files  1 failed (1)
+      Tests  2 failed | 9 passed (11)
 
-### Flow / status rules
+ FAIL  cancels opportunity when deal disappears from calendar
+   TypeError: Cannot read properties of undefined (reading 'stage')  # calls[1] expected list-first order
 
-1. `force` → `resetAutoInviteRun`
-2. `tryBeginAutoInviteRun` — if blocked, return `{ skipped: true, status, detail }` from existing run
-3. Missing userbot or bot token → `failed` with `{ error: '...' }`
-4. Setup (invite link, join, self id, promote) failure → `failed` before member loop
-5. Per-member invite errors caught → `{ status: 'failed', error }` in `detail.members`
-6. Aggregate: any member fail → `partial`; else `success`
-7. Always `finishAutoInviteRun` when a run was started
+ FAIL  writes line-item stage snapshot before cancelling
+   AssertionError: expected null to be 'V_RABOTE'  # pre_cancel_opportunity_stage not written
+```
 
-## Self-Review
+### GREEN (after implementation + mock handler reorder)
 
-### Correctness
-- Idempotency delegated to store; skip path does not mutate run row.
-- Resolved `user_id` persisted via `updateMember` when `member.id` and resolved id exist.
-- `scheduleAutoInvite` passes optional `options` through to `runAutoInviteForChat` (enables deps injection in tests without changing webhook call sites).
-
-### Test coverage
-- Happy path (2 members, success)
-- Username-only member gets persisted `user_id`
-- Privacy-style partial (one invite throws)
-- Skip when prior success
-- Force retry after success
-- Userbot not configured / missing token
-- Setup throw before invites
-- Schedule: real async `setImmediate` + `unref`; error logging on thrown db failure
-
-### Scope
-- Only the two files specified. No inbound webhook or HTTP routes (Task 5).
-
-## Status
-
-**DONE**
-
-## Tests one-liner
-
-`npm test -- tests/telegram-auto-invite.test.js` → **11/11 pass**
-
-## Concerns
-
-1. **No FLOOD_WAIT backoff** — design notes defer retry to orchestration; current loop fails fast per member. Task 5+ may need delay/retry.
-2. ~~**No “already participant” skip**~~ — **Fixed 2026-07-30:** invite throws matching already-participant patterns → `{ status: 'skipped', reason: 'already_participant' }`; aggregate stays `success`.
-3. **Empty member list** — returns `success` with `{ members: [] }`; acceptable for v1 but ops may want explicit “no members configured” warning.
-4. **`scheduleAutoInvite` options param** — brief shows `(db, chatId)` only; third `options` arg is a testability pass-through, not used by production callers yet.
-
-## Review Fix: Already-Participant Skip (2026-07-30)
-
-**Finding:** Important — `inviteUser` throws for existing participants were recorded as `failed`, causing `partial` aggregate status.
-
-**Fix commit:** `fix(telegram): treat already-participant invite as skipped`
-
-### Changes
-- Added `isAlreadyParticipantError(err)` — case-insensitive match on error message for `USER_ALREADY_PARTICIPANT`, `USER_ALREADY_INVITED`, `ALREADY_PARTICIPANT`, `ALREADY_IN_CHAT`.
-- Per-member catch: already-participant → `{ status: 'skipped', reason: 'already_participant' }` instead of `failed`.
-- Aggregate unchanged: only `status === 'failed'` triggers `partial`; skipped counts as success path.
-
-### Test evidence
-
-Command: `cd backend && npm test -- tests/telegram-auto-invite.test.js`
+```bash
+cd backend && npm test -- tests/twenty-sync.test.js
+```
 
 ```
  Test Files  1 passed (1)
       Tests  11 passed (11)
 ```
 
-New test: `skips already-participant invite errors and finishes success` — mocks `inviteUser` throwing `Error('USER_ALREADY_PARTICIPANT')`, asserts member `skipped` + run `success`.
+## Self-Review
 
-## Review Fix: Rejoin + Promote Failure (2026-07-30)
+### Correctness
+- Lists line items via `listLineItemsForOpportunity` before any Twenty cancel mutation.
+- Snapshot JSON shape: `[{ id, stage }]` with `stage ?? null`.
+- SQL guard `AND (line_item_stage_snapshot_json IS NULL OR = '')` prevents overwrite at DB level.
+- In-memory guard `if (!existingSnapshot)` skips write when deal row already has snapshot.
+- Early return when `twenty_stage === OTMENA` preserves existing snapshot (no axios calls).
+- `cancel.snapshot` logged with `{ lineItemCount, opportunityStage }`.
+- `cancelLineItemsForOpportunity` still re-lists internally (v1, per brief).
 
-**Findings (final review):**
-1. **Important** — `joinInvite` throwing `USER_ALREADY_PARTICIPANT` failed the whole run; should continue to promote + member invites.
-2. **Important** — `promote` failure aborted before member invites; basic groups / missing admin rights need clear guidance and invite attempts should still run.
+### Test mock fix
+- Moved `twenty_stage = ?` handler before generic `synced_at` handler so cancel final UPDATE sets stage correctly (pre-existing mock ordering bug surfaced by new snapshot assertion).
 
-**Fix commit:** `fix(telegram): tolerate rejoin and promote failure in auto-invite`
+### Scope
+- No restore logic (Task 5).
+- No push.
+- `listLineItemsForOpportunity` import was already present in `twenty-sync.js`.
+
+## Tests one-liner
+
+`npm test -- tests/twenty-sync.test.js` → **11/11 pass**
+
+## Task 4 Review Fix (2026-08-04)
 
 ### Changes
-- `joinInvite`: catch already-participant errors via `isAlreadyParticipantError`, continue setup.
-- `promote`: non-fatal — capture `detail.promoteError`, still invite members; aggregate `partial` when promote failed or any member failed.
-- `formatPromoteError`: `CHAT_ADMIN_REQUIRED` / `PEER_ID_INVALID` / `NOT_SUPERGROUP` → clear message that order chats must be a **supergroup** with bot admin (Invite + Add admins).
+1. **`cancel.snapshot` log gated on SQL write** — `logTwentyStep('cancel.snapshot', …)` only fires when snapshot UPDATE returns `changes > 0` (no-op race skips log).
+2. **Test assertion for `cancel.snapshot`** — `vi.mock` of `twenty-sync-log.js` spies `logTwentyStep`; snapshot test expects `('cancel.snapshot', { lineItemCount: 3, opportunityStage: 'V_RABOTE' })`.
 
-### Test evidence
+### Verification
 
-Command: `cd backend && npm test -- tests/telegram-auto-invite.test.js`
+```bash
+cd backend && npm test -- tests/twenty-sync.test.js
+```
 
 ```
  Test Files  1 passed (1)
-      Tests  13 passed (13)
+      Tests  11 passed (11)
 ```
 
-New tests:
-- `continues when joinInvite throws USER_ALREADY_PARTICIPANT`
-- `continues member invites when promote fails and finishes partial`
-- `sets clear promoteError for basic group / admin-required failures`
+## Concerns
+
+1. **Double list API call** — cancel now lists line items twice (snapshot + `cancelLineItemsForOpportunity`); acceptable for v1 per design.
+2. **Partial cancel failure** — if opp update fails after snapshot write, snapshot persists (intended for restore in Task 5).
+3. **Mock handler ordering** — `synced_at` catch-all remains; only cancel path fixed by reorder; restore/clear handlers in Task 5 should follow same pattern.

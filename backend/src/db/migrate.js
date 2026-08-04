@@ -249,6 +249,9 @@ export function migrate() {
   ensureColumn(db, 'deals', 'dismantle_time', 'TEXT');
   ensureColumn(db, 'sync_runs', 'action', 'TEXT');
   ensureColumn(db, 'deals', 'twenty_stage', 'TEXT');
+  ensureColumn(db, 'deals', 'calendar_miss_streak', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'deals', 'pre_cancel_opportunity_stage', 'TEXT');
+  ensureColumn(db, 'deals', 'line_item_stage_snapshot_json', 'TEXT');
   ensureColumn(db, 'deals', 'payment_amount', 'REAL');
   ensureColumn(db, 'deals', 'payment_status', 'TEXT');
   ensureColumn(db, 'deals', 'payment_count', 'INTEGER');

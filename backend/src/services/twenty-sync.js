@@ -6,7 +6,7 @@ import { loadRestorationList, isRestorationItem } from './restoration.js';
 import { loadNeNasheBrandingList, isNeNasheBrandingItem } from './ne-nashe-branding.js';
 import { loadNeNasheDecorMkList, isNeNasheDecorMkItem } from './ne-nashe-decor-mk.js';
 import { loadTipRules, findTipRuleMatch } from './tip-rules.js';
-import { buildOpportunityInput, computeDealItemsTotal, computeLineItemTotal, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
+import { buildOpportunityAmountInputFromLineItems, buildOpportunityInput, computeDealItemsTotal, computeLineItemTotal, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE, ZERO_RUB_AMOUNT } from './twenty-opportunity.js';
 import {
   getItemsForTwenty,
   getItemEligibleReason,
@@ -246,6 +246,30 @@ function createLineItemSyncDeps(warehouseCache) {
   };
 }
 
+async function updateOpportunityAmountFromLineItems(twenty, oppId) {
+  const lineItems = await listLineItemsForOpportunity(
+    gql, twenty.apiUrl, twenty.apiToken, oppId,
+  );
+  const amount = buildOpportunityAmountInputFromLineItems(lineItems);
+
+  logTwentyStep('sync.opportunity_amount', {
+    oppId,
+    amountMicros: amount.amountMicros,
+    lineItemCount: lineItems.length,
+  });
+
+  const resp = await gql(
+    twenty.apiUrl,
+    twenty.apiToken,
+    `mutation UpdateOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
+      updateOpportunity(id: $id, data: $input) { id }
+    }`,
+    { id: oppId, input: { amount } },
+  );
+  assertHttpSuccess(resp, twenty.apiUrl);
+  assertGqlSuccess(resp, 'Failed to update opportunity amount in Twenty');
+}
+
 async function updateDealInTwenty(
   dealId,
   deal,
@@ -326,6 +350,8 @@ async function updateDealInTwenty(
     ignoreStageProtection: ignoreLineItemStageProtection,
   });
 
+  await updateOpportunityAmountFromLineItems(twenty, oppId);
+
   const action = items.length === 0 ? 'updated_empty' : 'updated';
 
   db.prepare(`
@@ -390,6 +416,8 @@ async function createDealInTwenty(
     neNasheDecorMkList,
     tipRules,
   });
+
+  await updateOpportunityAmountFromLineItems(twenty, oppId);
 
   db.prepare(`
     UPDATE deals SET
@@ -556,7 +584,16 @@ export async function restoreDealInTwenty(dealId) {
     return { twentyId: deal.twenty_id, action: 'restored', skipped: true };
   }
 
-  const stage = getOpportunityStage();
+  const stage = deal.pre_cancel_opportunity_stage || getOpportunityStage();
+  let snapshot = [];
+  if (deal.line_item_stage_snapshot_json) {
+    try {
+      snapshot = JSON.parse(deal.line_item_stage_snapshot_json);
+      if (!Array.isArray(snapshot)) snapshot = [];
+    } catch {
+      snapshot = [];
+    }
+  }
 
   beginTwentySyncContext({
     dealId,
@@ -565,7 +602,7 @@ export async function restoreDealInTwenty(dealId) {
     title: deal.title,
   });
 
-  logTwentyStep('restore.start', { oppId: deal.twenty_id, stage });
+  logTwentyStep('restore.start', { oppId: deal.twenty_id, stage, lineItemCount: snapshot.length });
 
   try {
     const oppResp = await gql(
@@ -579,10 +616,43 @@ export async function restoreDealInTwenty(dealId) {
     assertHttpSuccess(oppResp, twenty.apiUrl);
     assertGqlSuccess(oppResp, 'Failed to restore opportunity in Twenty');
 
+    const existingLineItems = await listLineItemsForOpportunity(
+      gql,
+      twenty.apiUrl,
+      twenty.apiToken,
+      deal.twenty_id,
+    );
+    const existingLineItemIds = new Set(existingLineItems.map((li) => li.id));
+
+    for (const entry of snapshot) {
+      if (!entry?.id) continue;
+      if (!existingLineItemIds.has(entry.id)) {
+        logTwentyStep('restore.line_item_skipped', { lineItemId: entry.id });
+        continue;
+      }
+      const resp = await gql(
+        twenty.apiUrl,
+        twenty.apiToken,
+        `mutation UpdateDealLineItem($id: ID!, $input: DealLineItemUpdateInput!) {
+          updateDealLineItem(id: $id, data: $input) { id }
+        }`,
+        { id: entry.id, input: { stage: entry.stage ?? null } }
+      );
+      assertHttpSuccess(resp, twenty.apiUrl);
+      assertGqlSuccess(resp, `Failed to restore line item ${entry.id} in Twenty`);
+      if (!resp.data?.data?.updateDealLineItem?.id) {
+        logTwentyStep('restore.line_item_skipped', { lineItemId: entry.id });
+        continue;
+      }
+    }
+
     db.prepare(`
       UPDATE deals SET
         twenty_stage = ?,
         status = NULL,
+        pre_cancel_opportunity_stage = NULL,
+        line_item_stage_snapshot_json = NULL,
+        calendar_miss_streak = 0,
         synced_at = datetime('now'),
         twenty_error = NULL,
         updated_at = datetime('now')
@@ -622,13 +692,38 @@ export async function cancelDealInTwenty(dealId) {
   logTwentyStep('cancel.start', { oppId: deal.twenty_id });
 
   try {
+    const existingLineItems = await listLineItemsForOpportunity(
+      gql,
+      twenty.apiUrl,
+      twenty.apiToken,
+      deal.twenty_id,
+    );
+
+    const existingSnapshot = deal.line_item_stage_snapshot_json;
+    if (!existingSnapshot) {
+      const snapshot = existingLineItems.map((li) => ({ id: li.id, stage: li.stage ?? null }));
+      const snapshotWrite = db.prepare(`
+        UPDATE deals
+        SET pre_cancel_opportunity_stage = ?,
+            line_item_stage_snapshot_json = ?
+        WHERE id = ?
+          AND (line_item_stage_snapshot_json IS NULL OR line_item_stage_snapshot_json = '')
+      `).run(deal.twenty_stage ?? null, JSON.stringify(snapshot), dealId);
+      if (snapshotWrite.changes > 0) {
+        logTwentyStep('cancel.snapshot', {
+          lineItemCount: snapshot.length,
+          opportunityStage: deal.twenty_stage ?? null,
+        });
+      }
+    }
+
     const oppResp = await gql(
       twenty.apiUrl,
       twenty.apiToken,
       `mutation CancelOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
         updateOpportunity(id: $id, data: $input) { id }
       }`,
-      { id: deal.twenty_id, input: { stage: CANCELLED_OPPORTUNITY_STAGE } }
+      { id: deal.twenty_id, input: { stage: CANCELLED_OPPORTUNITY_STAGE, amount: ZERO_RUB_AMOUNT } }
     );
     assertHttpSuccess(oppResp, twenty.apiUrl);
     assertGqlSuccess(oppResp, 'Failed to cancel opportunity in Twenty');

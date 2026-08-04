@@ -1,15 +1,21 @@
+export function occurrenceKey(name, index) {
+  return `${name}#${index}`;
+}
+
 export function buildOverrideMap(existingItems) {
   const map = {};
+  const counts = new Map();
   for (const item of existingItems) {
-    if (item.sync_override || item.twenty_id || item.amount_locked) {
-      map[item.name] = {
-        sync_override: item.sync_override ?? null,
-        twenty_id: item.twenty_id ?? null,
-        amount_locked: item.amount_locked ? 1 : 0,
-        sum: item.amount_locked ? item.sum : undefined,
-        price: item.amount_locked ? item.price : undefined,
-      };
-    }
+    if (!(item.sync_override || item.twenty_id || item.amount_locked)) continue;
+    const n = counts.get(item.name) || 0;
+    counts.set(item.name, n + 1);
+    map[occurrenceKey(item.name, n)] = {
+      sync_override: item.sync_override ?? null,
+      twenty_id: item.twenty_id ?? null,
+      amount_locked: item.amount_locked ? 1 : 0,
+      sum: item.amount_locked ? item.sum : undefined,
+      price: item.amount_locked ? item.price : undefined,
+    };
   }
   return map;
 }
@@ -32,7 +38,11 @@ export function replaceDealItemsPreservingOverrides(db, dealId, classifiedItems,
     WHERE id = ?
   `);
 
+  const nameCounts = new Map();
   for (const item of classifiedItems) {
+    const n = nameCounts.get(item.name) || 0;
+    nameCounts.set(item.name, n + 1);
+
     const result = insert.run(
       dealId,
       item.name,
@@ -46,7 +56,7 @@ export function replaceDealItemsPreservingOverrides(db, dealId, classifiedItems,
       item.quantity_num ?? null
     );
 
-    const preserved = overrideMap[item.name];
+    const preserved = overrideMap[occurrenceKey(item.name, n)];
     if (preserved) {
       if (preserved.amount_locked) {
         restoreLocked.run(

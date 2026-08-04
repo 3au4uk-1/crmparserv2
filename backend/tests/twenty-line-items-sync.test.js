@@ -152,4 +152,50 @@ describe('computeLineItemDiff', () => {
     });
     expect(diff.toDelete).toEqual(['li-gone']);
   });
+
+  it('updates by twenty_id even when names differ', () => {
+    const existing = [
+      { id: 'li-a', name: 'Старое', stage: 'NOVYY' },
+      { id: 'li-b', name: 'Другое', stage: 'NOVYY' },
+    ];
+    const eligible = [
+      { id: 1, name: 'НовоеА', twenty_id: 'li-a', price: 1 },
+      { id: 2, name: 'НовоеБ', twenty_id: 'li-b', price: 2 },
+    ];
+    const diff = computeLineItemDiff(existing, eligible);
+    expect(diff.toUpdate).toEqual([
+      { twentyId: 'li-a', item: eligible[0] },
+      { twentyId: 'li-b', item: eligible[1] },
+    ]);
+    expect(diff.toCreate).toEqual([]);
+    expect(diff.toDelete).toEqual([]);
+  });
+
+  it('FIFO-matches duplicate names without twenty_id', () => {
+    const existing = [
+      { id: 'li-1', name: 'Макет', stage: 'NOVYY' },
+      { id: 'li-2', name: 'Макет', stage: 'NOVYY' },
+    ];
+    const eligible = [
+      { id: 1, name: 'Макет', price: 10 },
+      { id: 2, name: 'Макет', price: 20 },
+    ];
+    const diff = computeLineItemDiff(existing, eligible);
+    expect(diff.toUpdate).toEqual([
+      { twentyId: 'li-1', item: eligible[0] },
+      { twentyId: 'li-2', item: eligible[1] },
+    ]);
+    expect(diff.toCreate).toEqual([]);
+  });
+
+  it('does not send two updates to the same existing id for duplicate names', () => {
+    const existing = [{ id: 'li-only', name: 'Макет', stage: 'NOVYY' }];
+    const eligible = [
+      { id: 1, name: 'Макет', price: 10 },
+      { id: 2, name: 'Макет', price: 20 },
+    ];
+    const diff = computeLineItemDiff(existing, eligible);
+    expect(diff.toUpdate).toEqual([{ twentyId: 'li-only', item: eligible[0] }]);
+    expect(diff.toCreate).toEqual([eligible[1]]);
+  });
 });

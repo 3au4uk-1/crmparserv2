@@ -75,3 +75,49 @@ export function findCancelledDealsBackInCalendar(
     return isEventInRange({ start: deal.start_date }, startDate, endDate);
   });
 }
+
+export const CALENDAR_MISS_CANCEL_THRESHOLD = 3;
+
+export function bumpCalendarMissStreak(db, dealId) {
+  db.prepare(`
+    UPDATE deals
+    SET calendar_miss_streak = COALESCE(calendar_miss_streak, 0) + 1
+    WHERE id = ?
+  `).run(dealId);
+  const row = db.prepare('SELECT calendar_miss_streak FROM deals WHERE id = ?').get(dealId);
+  return row?.calendar_miss_streak ?? 0;
+}
+
+export function resetCalendarMissStreak(db, dealId) {
+  db.prepare('UPDATE deals SET calendar_miss_streak = 0 WHERE id = ?').run(dealId);
+}
+
+export function collectDealsReadyToCancelFromCalendar(
+  db,
+  calendarEventIds,
+  startDate,
+  endDate,
+  calendarBookingNumbers = new Set(),
+) {
+  const deals = db.prepare(`
+    SELECT * FROM deals
+    WHERE twenty_id IS NOT NULL
+      AND (twenty_stage IS NULL OR twenty_stage != ?)
+  `).all(CANCELLED_OPPORTUNITY_STAGE);
+
+  const ready = [];
+  for (const deal of deals) {
+    if (!isEventInRange({ start: deal.start_date }, startDate, endDate)) continue;
+
+    if (isDealStillInCalendar(deal, calendarEventIds, calendarBookingNumbers)) {
+      resetCalendarMissStreak(db, deal.id);
+      continue;
+    }
+
+    const streak = bumpCalendarMissStreak(db, deal.id);
+    if (streak >= CALENDAR_MISS_CANCEL_THRESHOLD) {
+      ready.push({ ...deal, calendar_miss_streak: streak });
+    }
+  }
+  return ready;
+}

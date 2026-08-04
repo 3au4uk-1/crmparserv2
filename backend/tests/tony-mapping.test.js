@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildTonyDealFields,
   buildTonyItems,
+  disambiguateDuplicateNames,
   normalizeFreeEntryItem,
   tonyContentHash,
 } from '../src/services/tony-mapping.js';
@@ -163,5 +164,38 @@ describe('tony-mapping', () => {
         }),
       ).toMatchObject({ name: 'Ролл-ап', comment: '' });
     });
+  });
+});
+
+describe('disambiguateDuplicateNames', () => {
+  it('suffixes 2nd+ exact trimmed duplicate names', () => {
+    const out = disambiguateDuplicateNames([
+      { name: 'ПВХ', price: 1 },
+      { name: 'ПВХ', price: 2 },
+      { name: 'Баннер', price: 3 },
+      { name: 'ПВХ', price: 4 },
+    ]);
+    expect(out.map((i) => i.name)).toEqual(['ПВХ', 'ПВХ (#2)', 'Баннер', 'ПВХ (#3)']);
+    expect(out[1].price).toBe(2);
+  });
+
+  it('is a no-op when names are unique', () => {
+    const items = [{ name: 'A' }, { name: 'B' }];
+    expect(disambiguateDuplicateNames(items).map((i) => i.name)).toEqual(['A', 'B']);
+  });
+
+  const FREE_ENTRY_NAME =
+    'БРЕНДИНГ свободная запись ( КОМЕНТАРИЙ ОБЯЗАТЕЛЕН )';
+
+  it('buildTonyItems disambiguates two free-entry with same comment', () => {
+    const items = buildTonyItems({
+      items: [
+        { name: FREE_ENTRY_NAME, price: 100, quantity: '1', discount: 0, sum: 100, comment: 'Макет' },
+        { name: FREE_ENTRY_NAME, price: 200, quantity: '1', discount: 0, sum: 200, comment: 'Макет' },
+      ],
+      dates: {},
+    });
+    expect(items.map((i) => i.name)).toEqual(['Макет', 'Макет (#2)']);
+    expect(items.every((i) => i.comment === '')).toBe(true);
   });
 });

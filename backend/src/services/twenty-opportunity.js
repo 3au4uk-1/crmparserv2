@@ -30,6 +30,27 @@ export const DEFAULT_OPPORTUNITY_STAGE = 'NOVYY';
 export const CANCELLED_OPPORTUNITY_STAGE = 'OTMENA';
 export const V_PECHATI_OPPORTUNITY_STAGE = 'V_PECHATI';
 
+export const ZERO_RUB_AMOUNT = { amountMicros: 0, currencyCode: 'RUB' };
+
+export function isCancelledLineItemStage(stage) {
+  return stage === CANCELLED_OPPORTUNITY_STAGE;
+}
+
+export function sumNonCancelledLineAmountsRub(lineItems) {
+  let total = 0;
+  for (const item of lineItems || []) {
+    if (isCancelledLineItemStage(item?.stage)) continue;
+    const micros = item?.amount?.amountMicros ?? item?.amountMicros;
+    if (typeof micros === 'number' && Number.isFinite(micros)) total += micros / 1_000_000;
+  }
+  return total;
+}
+
+export function buildOpportunityAmountInputFromLineItems(lineItems) {
+  const rub = sumNonCancelledLineAmountsRub(lineItems);
+  return { amountMicros: Math.round(rub * 1_000_000), currencyCode: 'RUB' };
+}
+
 export function parseQuantity(value) {
   const n = Number.parseInt(String(value ?? '').replace(/\s/g, ''), 10);
   return Number.isFinite(n) && n > 0 ? n : 1;

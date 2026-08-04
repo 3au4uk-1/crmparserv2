@@ -1,34 +1,85 @@
-# Task 6 report: Profile GraphQL + deals-board front-components
+# Task 6 Report: Final verification
 
-**Date:** 2026-07-31 (UTC+3)  
-**Author:** 3au4uk-1
+## Status: PARTIAL — feature tests green, full suite has pre-existing failures
 
-## Status
+## Full suite
 
-**Done.** Cold pg_stat_statements captured; deals-board static review complete; four front-component fixes shipped; findings committed.
+```bash
+cd backend && npm test
+```
 
-## Commits
+```
+Test Files  2 failed | 99 passed (101)
+Tests       9 failed | 686 passed (695)
+Duration    9.79s
+```
 
-| Repo | Commit message | Files |
-|------|----------------|-------|
-| crmparserv2 | `perf: profiling findings (pg_stat_statements + deals-board front-components)` | `ops/perf/findings-profiling.md` |
-| BrandingTwentyView | `perf(deals-board): skip redundant refetch on edit and SSE patch` | `apply-object-record-event.ts`, `useLineItems.ts`, `useUpdateRecord.ts`, `DealsBoard.tsx`, test |
+### Failures (unrelated to cancel/restore)
 
-## Top findings (summary)
+| File | Count | Cause |
+|------|-------|-------|
+| `tests/migrate-deal-identity.test.js` | 7 | `migrateDealIdentity` creates index on `deal_items(twenty_id)` but test fixtures lack that column |
+| `tests/decor-mk-lists.test.js` | 2 | `/api/settings/decor-keywords` returns 404; mk-keywords GET returns `{}` instead of array |
 
-1. **Cold PG stats** — postmaster restarted ~3 h before capture; metadata + app-registration sync dominate, dealLineItem queries ~2 ms mean / 40 calls. No index action yet (`RESERVE-SCOPE`).
-2. **Inline edit refetch (P1)** — fixed: invalidate queries only on mutation error.
-3. **SSE double-fetch (P2)** — fixed: no `deals-board-page` invalidation after successful opportunity cache patch.
-4. **Rashod prefetch (P3)** — fixed: REST enrichment deferred until analytics pane opens.
-5. **Browser trace** — skipped (no easy staging auth).
+### Feature-scoped suite (cancel/restore + miss streak)
+
+```bash
+npx vitest run tests/calendar-missing.test.js tests/twenty-sync.test.js
+```
+
+```
+Test Files  2 passed (2)
+Tests       24 passed (24)
+```
+
+## Spec coverage self-check
+
+| Spec requirement | Covered | Evidence |
+|------------------|---------|----------|
+| streak ≥ 3 | ✅ | `CALENDAR_MISS_CANCEL_THRESHOLD = 3`, `collectDealsReadyToCancelFromCalendar` (`calendar-missing.js`) |
+| title-driven immediate | ✅ | `parser.js` `removeDealIds` loop calls `cancelDealInTwenty` without streak gate |
+| snapshot on cancel | ✅ | `cancelDealInTwenty` writes `pre_cancel_opportunity_stage` + `line_item_stage_snapshot_json` |
+| restore line items | ✅ | `restoreDealInTwenty` iterates snapshot, restores opp + line-item stages |
+| columns migrated | ✅ | `migrate.js` + `schema.sql`: `calendar_miss_streak`, `pre_cancel_opportunity_stage`, `line_item_stage_snapshot_json` |
+| no overwrite snapshot | ✅ | UPDATE guarded by `line_item_stage_snapshot_json IS NULL OR = ''` |
+| partial restore keeps snapshot | ✅ | GQL failure rethrows; snapshot columns untouched; test in `twenty-sync.test.js` |
+
+Extended checklist from brief also satisfied: bump/reset streak, clear snapshot+streak on success, skip missing ids, non-goals untouched.
+
+## Plan doc commit
+
+Already committed: `3ad6a23` — *Add implementation plan for cancel/restore line-item snapshots.*
+
+No new commit created.
 
 ## Concerns
 
-- pg_stat_statements needs **≥24 h warm window** before index promotion.
-- P6 (`syncDealStage` cache-first) left for follow-up — medium impact, needs tests.
-- Unit tests not run locally (`yarn`/deps unavailable in agent shell); test updated for P2 behavior.
+1. **Full suite not green** — 9 failures in migrate-deal-identity and decor-mk-lists predate or are orthogonal to Tasks 1–5; cancel/restore work is verified via 24/24 targeted tests.
+2. **`deal_items.twenty_id` index** — `migrateDealIdentity` assumes column exists; legacy test DBs without it fail at index creation.
+3. **decor/mk keyword routes** — settings endpoints appear missing or miswired in current branch.
 
-## Artifacts
+## Commits
 
-- Findings: `ops/perf/findings-profiling.md`
-- Report: `.superpowers/sdd/task-6-report.md`
+None (this task).
+
+## Final review fixes
+
+Applied review findings for cancel/restore snapshots:
+
+1. **Restore skip via list intersection** — `restoreDealInTwenty` lists line items once, skips snapshot ids absent from Twenty (logs `restore.line_item_skipped`); removed error-text regex heuristic; GQL/transport errors still abort and keep snapshot.
+2. **Test mock branch ordering** — DB mock handlers re-ordered: restore clear-snapshot UPDATE first, create path (`twenty_id` + `approval_status`) before cancel final UPDATE (`twenty_stage` + `status = ?`).
+3. **Empty calendar guard** — when `inRangeCount === 0`, parser skips calendar-driven cancel/restore queues with `parse.skip_calendar_cancel_restore` log.
+
+### Verification
+
+```bash
+cd backend && npm test -- tests/twenty-sync.test.js tests/calendar-missing.test.js
+```
+
+```
+Test Files  2 passed (2)
+Tests       25 passed (25)
+Duration    505ms
+```
+
+New test: `skips snapshot line items missing from Twenty list and clears snapshot on success`.
