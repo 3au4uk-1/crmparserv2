@@ -588,8 +588,20 @@ export async function restoreDealInTwenty(dealId) {
     assertHttpSuccess(oppResp, twenty.apiUrl);
     assertGqlSuccess(oppResp, 'Failed to restore opportunity in Twenty');
 
+    const existingLineItems = await listLineItemsForOpportunity(
+      gql,
+      twenty.apiUrl,
+      twenty.apiToken,
+      deal.twenty_id,
+    );
+    const existingLineItemIds = new Set(existingLineItems.map((li) => li.id));
+
     for (const entry of snapshot) {
       if (!entry?.id) continue;
+      if (!existingLineItemIds.has(entry.id)) {
+        logTwentyStep('restore.line_item_skipped', { lineItemId: entry.id });
+        continue;
+      }
       const resp = await gql(
         twenty.apiUrl,
         twenty.apiToken,
@@ -598,18 +610,8 @@ export async function restoreDealInTwenty(dealId) {
         }`,
         { id: entry.id, input: { stage: entry.stage ?? null } }
       );
-      try {
-        assertHttpSuccess(resp, twenty.apiUrl);
-        assertGqlSuccess(resp, `Failed to restore line item ${entry.id} in Twenty`);
-      } catch (err) {
-        const msg = String(err.message || err);
-        if (/not found|does not exist/i.test(msg)) {
-          logTwentyStep('restore.line_item_skipped', { lineItemId: entry.id, error: msg });
-          continue;
-        }
-        logTwenty('warn', 'restore.partial', { lineItemId: entry.id, error: msg });
-        throw err;
-      }
+      assertHttpSuccess(resp, twenty.apiUrl);
+      assertGqlSuccess(resp, `Failed to restore line item ${entry.id} in Twenty`);
       if (!resp.data?.data?.updateDealLineItem?.id) {
         logTwentyStep('restore.line_item_skipped', { lineItemId: entry.id });
         continue;

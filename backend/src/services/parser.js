@@ -511,67 +511,73 @@ export async function runParsing(startDate, endDate) {
       }
     }
 
-    const calendarEventIds = collectCalendarEventIds(events, startDate, endDate);
-    const calendarBookingNumbers = collectCalendarBookingNumbers(events, startDate, endDate);
-    const missingDeals = collectDealsReadyToCancelFromCalendar(
-      db,
-      calendarEventIds,
-      startDate,
-      endDate,
-      calendarBookingNumbers,
-    );
-
-    if (missingDeals.length > 0) {
+    if (inRangeCount === 0) {
       console.log(
-        `[twenty-sync] ${new Date().toISOString()} parse.cancel_queue {"count":${missingDeals.length},"dealIds":${JSON.stringify(missingDeals.map((d) => d.id))}}`
+        `[twenty-sync] ${new Date().toISOString()} parse.skip_calendar_cancel_restore {"reason":"empty_in_range_calendar"}`
       );
-    }
+    } else {
+      const calendarEventIds = collectCalendarEventIds(events, startDate, endDate);
+      const calendarBookingNumbers = collectCalendarBookingNumbers(events, startDate, endDate);
+      const missingDeals = collectDealsReadyToCancelFromCalendar(
+        db,
+        calendarEventIds,
+        startDate,
+        endDate,
+        calendarBookingNumbers,
+      );
 
-    for (let i = 0; i < missingDeals.length; i++) {
-      const deal = missingDeals[i];
-      if (i > 0) await delay(1000);
-      console.log(
-        `[twenty-sync] ${new Date().toISOString()} parse.cancel_start {"dealId":${deal.id},"crmEventId":${JSON.stringify(deal.crm_event_id)},"index":${i + 1},"total":${missingDeals.length}}`
-      );
-      try {
-        const result = await cancelDealInTwenty(deal.id);
-        if (result && !result.skipped) counters.cancelledDeals++;
-        console.log(`[twenty-sync] ${new Date().toISOString()} parse.cancel_done {"dealId":${deal.id}}`);
-      } catch (err) {
-        console.error(
-          `[twenty-sync] ${new Date().toISOString()} parse.cancel_failed {"dealId":${deal.id},"error":${JSON.stringify(err.message)}}`
+      if (missingDeals.length > 0) {
+        console.log(
+          `[twenty-sync] ${new Date().toISOString()} parse.cancel_queue {"count":${missingDeals.length},"dealIds":${JSON.stringify(missingDeals.map((d) => d.id))}}`
         );
       }
-    }
 
-    const restoredDeals = findCancelledDealsBackInCalendar(
-      db,
-      calendarEventIds,
-      startDate,
-      endDate,
-      calendarBookingNumbers,
-    );
-
-    if (restoredDeals.length > 0) {
-      console.log(
-        `[twenty-sync] ${new Date().toISOString()} parse.restore_queue {"count":${restoredDeals.length},"dealIds":${JSON.stringify(restoredDeals.map((d) => d.id))}}`
-      );
-    }
-
-    for (let i = 0; i < restoredDeals.length; i++) {
-      const deal = restoredDeals[i];
-      if (i > 0) await delay(1000);
-      console.log(
-        `[twenty-sync] ${new Date().toISOString()} parse.restore_start {"dealId":${deal.id},"crmEventId":${JSON.stringify(deal.crm_event_id)},"index":${i + 1},"total":${restoredDeals.length}}`
-      );
-      try {
-        const result = await restoreDealInTwenty(deal.id);
-        if (result && !result.skipped) counters.restoredDeals++;
-        console.log(`[twenty-sync] ${new Date().toISOString()} parse.restore_done {"dealId":${deal.id}}`);
-      } catch (err) {
-        console.error(
-          `[twenty-sync] ${new Date().toISOString()} parse.restore_failed {"dealId":${deal.id},"error":${JSON.stringify(err.message)}}`
+      for (let i = 0; i < missingDeals.length; i++) {
+        const deal = missingDeals[i];
+        if (i > 0) await delay(1000);
+        console.log(
+          `[twenty-sync] ${new Date().toISOString()} parse.cancel_start {"dealId":${deal.id},"crmEventId":${JSON.stringify(deal.crm_event_id)},"index":${i + 1},"total":${missingDeals.length}}`
         );
+        try {
+          const result = await cancelDealInTwenty(deal.id);
+          if (result && !result.skipped) counters.cancelledDeals++;
+          console.log(`[twenty-sync] ${new Date().toISOString()} parse.cancel_done {"dealId":${deal.id}}`);
+        } catch (err) {
+          console.error(
+            `[twenty-sync] ${new Date().toISOString()} parse.cancel_failed {"dealId":${deal.id},"error":${JSON.stringify(err.message)}}`
+          );
+        }
+      }
+
+      const restoredDeals = findCancelledDealsBackInCalendar(
+        db,
+        calendarEventIds,
+        startDate,
+        endDate,
+        calendarBookingNumbers,
+      );
+
+      if (restoredDeals.length > 0) {
+        console.log(
+          `[twenty-sync] ${new Date().toISOString()} parse.restore_queue {"count":${restoredDeals.length},"dealIds":${JSON.stringify(restoredDeals.map((d) => d.id))}}`
+        );
+      }
+
+      for (let i = 0; i < restoredDeals.length; i++) {
+        const deal = restoredDeals[i];
+        if (i > 0) await delay(1000);
+        console.log(
+          `[twenty-sync] ${new Date().toISOString()} parse.restore_start {"dealId":${deal.id},"crmEventId":${JSON.stringify(deal.crm_event_id)},"index":${i + 1},"total":${restoredDeals.length}}`
+        );
+        try {
+          const result = await restoreDealInTwenty(deal.id);
+          if (result && !result.skipped) counters.restoredDeals++;
+          console.log(`[twenty-sync] ${new Date().toISOString()} parse.restore_done {"dealId":${deal.id}}`);
+        } catch (err) {
+          console.error(
+            `[twenty-sync] ${new Date().toISOString()} parse.restore_failed {"dealId":${deal.id},"error":${JSON.stringify(err.message)}}`
+          );
+        }
       }
     }
 
