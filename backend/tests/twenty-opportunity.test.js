@@ -4,11 +4,30 @@ import {
   buildPaymentFieldsInput,
   computeDealItemsTotal,
   computeLineItemTotal,
+  isCancelledLineItemStage,
   parseQuantity,
   parseQuantityNum,
   shouldZeroLineItemAmount,
+  sumNonCancelledLineAmountsRub,
   DEFAULT_OPPORTUNITY_STAGE,
 } from '../src/services/twenty-opportunity.js';
+
+describe('non-cancelled amount helpers', () => {
+  it('isCancelledLineItemStage only for OTMENA', () => {
+    expect(isCancelledLineItemStage('OTMENA')).toBe(true);
+    expect(isCancelledLineItemStage('NOVYY')).toBe(false);
+    expect(isCancelledLineItemStage(null)).toBe(false);
+  });
+
+  it('sumNonCancelledLineAmountsRub skips OTMENA', () => {
+    const sum = sumNonCancelledLineAmountsRub([
+      { stage: 'NOVYY', amount: { amountMicros: 10_000_000_000 } },
+      { stage: 'OTMENA', amount: { amountMicros: 5_000_000_000 } },
+      { stage: null, amount: { amountMicros: 2_000_000_000 } },
+    ]);
+    expect(sum).toBe(12000);
+  });
+});
 
 describe('buildOpportunityInput', () => {
   const deal = {
