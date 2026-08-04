@@ -1,10 +1,22 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import Database from 'better-sqlite3';
+
+let testDb;
+
+vi.mock('../src/db/connection.js', () => ({
+  getDb: () => testDb,
+}));
+
+import { migrate } from '../src/db/migrate.js';
 import {
   isFreeEntryTemplateName,
   planTwentyFreeEntryRename,
   planTwentyNameDisambiguation,
   planLocalTwentyIdUntangle,
   dealNeedsFreeEntryRepair,
+  runFreeEntryDuplicateRepairIfNeeded,
+  REPAIR_FLAG_KEY,
+  REPAIR_STARTED_AT_KEY,
 } from '../src/services/free-entry-duplicate-repair.js';
 
 const FREE_ENTRY_TEMPLATE =
@@ -172,5 +184,151 @@ describe('free-entry-duplicate-repair', () => {
         }),
       ).toBe(false);
     });
+  });
+});
+
+function createRepairTestDb() {
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  return db;
+}
+
+function readFlag(db, key) {
+  return db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value ?? null;
+}
+
+function insertSyncedDeal(db, { id = 1, twentyId = 'opp-1', title = 'Deal 1' } = {}) {
+  db.prepare(`
+    INSERT INTO deals (id, crm_event_id, title, twenty_id)
+    VALUES (?, ?, ?, ?)
+  `).run(id, `evt-${id}`, title, twentyId);
+}
+
+describe('runFreeEntryDuplicateRepairIfNeeded', () => {
+  let db;
+  let gqlMock;
+
+  beforeEach(() => {
+    testDb = createRepairTestDb();
+    migrate();
+    db = testDb;
+    gqlMock = vi.fn().mockResolvedValue({
+      status: 200,
+      data: { data: { dealLineItems: { edges: [] }, updateOpportunity: { id: 'opp-1' } } },
+    });
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('skips when settings flag is done', async () => {
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(REPAIR_FLAG_KEY, 'done');
+
+    const result = await runFreeEntryDuplicateRepairIfNeeded({
+      getDb: () => db,
+      requireTwentyConfig: () => ({ apiUrl: 'https://crm.example/graphql', apiToken: 'tok' }),
+      gql: gqlMock,
+      assertHttpSuccess: () => {},
+      assertGqlSuccess: () => {},
+    });
+
+    expect(result).toEqual({ status: 'skipped', reason: 'done' });
+    expect(gqlMock).not.toHaveBeenCalled();
+  });
+
+  it('marks failed on hard gql error and does not set done', async () => {
+    insertSyncedDeal(db);
+    gqlMock.mockRejectedValue(new Error('Twenty API: неверный токен или нет доступа (401/403)'));
+
+    const result = await runFreeEntryDuplicateRepairIfNeeded({
+      getDb: () => db,
+      requireTwentyConfig: () => ({ apiUrl: 'https://crm.example/graphql', apiToken: 'tok' }),
+      gql: gqlMock,
+      assertHttpSuccess: () => {},
+      assertGqlSuccess: () => {},
+      now: () => Date.parse('2026-08-04T12:00:00.000Z'),
+      log: { error: vi.fn() },
+    });
+
+    expect(result.status).toBe('failed');
+    expect(readFlag(db, REPAIR_FLAG_KEY)).toBe('failed');
+    expect(readFlag(db, REPAIR_FLAG_KEY)).not.toBe('done');
+  });
+
+  it('sets done after processing deals even with soft per-deal errors', async () => {
+    insertSyncedDeal(db, { id: 1, twentyId: 'opp-1' });
+    insertSyncedDeal(db, { id: 2, twentyId: 'opp-2', title: 'Deal 2' });
+    db.prepare(`
+      INSERT INTO deal_items (deal_id, name, price, quantity, classification, twenty_id)
+      VALUES (2, 'Макет', 100, '1', 'keyword_match', 'li-shared'),
+             (2, 'Макет (#2)', 200, '1', 'keyword_match', 'li-shared')
+    `).run();
+
+    gqlMock.mockImplementation(async (_url, _token, query, variables) => {
+      if (query.includes('ListLineItemsForRepair')) {
+        if (variables?.oppId === 'opp-1') {
+          return { status: 200, data: { data: { dealLineItems: { edges: [] } } } };
+        }
+        return {
+          status: 200,
+          data: {
+            data: {
+              dealLineItems: {
+                edges: [
+                  { node: { id: 'li-shared', name: 'Макет', kommentariy: '', createdAt: '2026-01-01' } },
+                  { node: { id: 'li-orphan', name: 'Макет (#2)', kommentariy: '', createdAt: '2026-01-02' } },
+                ],
+              },
+            },
+          },
+        };
+      }
+      if (query.includes('updateOpportunity') && variables?.id === 'opp-2') {
+        throw new Error('soft deal error');
+      }
+      if (query.includes('updateOpportunity')) {
+        return { status: 200, data: { data: { updateOpportunity: { id: variables?.id } } } };
+      }
+      return { status: 200, data: { data: { updateDealLineItem: { id: 'li-shared' } } } };
+    });
+
+    const result = await runFreeEntryDuplicateRepairIfNeeded({
+      getDb: () => db,
+      requireTwentyConfig: () => ({ apiUrl: 'https://crm.example/graphql', apiToken: 'tok' }),
+      gql: gqlMock,
+      assertHttpSuccess: () => {},
+      assertGqlSuccess: () => {},
+      now: () => Date.parse('2026-08-04T12:00:00.000Z'),
+      log: { error: vi.fn(), info: vi.fn() },
+    });
+
+    expect(result.status).toBe('done');
+    expect(readFlag(db, REPAIR_FLAG_KEY)).toBe('done');
+    expect(result.dealsFailed).toBe(1);
+    expect(result.dealsSkipped).toBe(1);
+  });
+
+  it('retries when running started_at is older than 6 hours', async () => {
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(REPAIR_FLAG_KEY, 'running');
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(
+      REPAIR_STARTED_AT_KEY,
+      '2026-08-04T03:00:00.000Z',
+    );
+    insertSyncedDeal(db);
+
+    const result = await runFreeEntryDuplicateRepairIfNeeded({
+      getDb: () => db,
+      requireTwentyConfig: () => ({ apiUrl: 'https://crm.example/graphql', apiToken: 'tok' }),
+      gql: gqlMock,
+      assertHttpSuccess: () => {},
+      assertGqlSuccess: () => {},
+      now: () => Date.parse('2026-08-04T12:00:00.000Z'),
+      log: { error: vi.fn(), info: vi.fn() },
+    });
+
+    expect(result.status).toBe('done');
+    expect(readFlag(db, REPAIR_FLAG_KEY)).toBe('done');
+    expect(gqlMock).toHaveBeenCalled();
   });
 });

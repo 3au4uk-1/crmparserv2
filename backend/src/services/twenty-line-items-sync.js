@@ -136,6 +136,38 @@ export async function listLineItemsForOpportunity(gql, apiUrl, apiToken, oppId) 
   return resp.data?.data?.dealLineItems?.edges?.map((e) => e.node) || [];
 }
 
+export async function listLineItemsForRepair(gql, apiUrl, apiToken, oppId) {
+  const resp = await gql(
+    apiUrl,
+    apiToken,
+    `query ListLineItemsForRepair($oppId: ID!) {
+      dealLineItems(filter: { opportunityId: { eq: $oppId } }) {
+        edges {
+          node {
+            id
+            name
+            stage
+            istochnik
+            kommentariy
+            createdAt
+            amount { amountMicros currencyCode }
+          }
+        }
+      }
+    }`,
+    { oppId },
+  );
+  return resp.data?.data?.dealLineItems?.edges?.map(({ node }) => ({
+    id: node.id,
+    name: node.name,
+    stage: node.stage,
+    istochnik: node.istochnik,
+    kommentariy: node.kommentariy ?? '',
+    createdAt: node.createdAt ?? null,
+    amountMicros: node.amount?.amountMicros ?? null,
+  })) || [];
+}
+
 export async function deleteLineItem(gql, apiUrl, apiToken, lineItemId) {
   return gql(
     apiUrl,
