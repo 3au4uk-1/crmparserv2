@@ -46,14 +46,26 @@ describe('deal-items-update', () => {
       { name: 'Баннер', sync_override: 'exclude', twenty_id: 'li-1' },
       { name: 'Кейтеринг', sync_override: null, twenty_id: null },
     ]);
-    expect(map['Баннер']).toEqual({
+    expect(map['Баннер#0']).toEqual({
       sync_override: 'exclude',
       twenty_id: 'li-1',
       amount_locked: 0,
       sum: undefined,
       price: undefined,
     });
+    expect(map['Баннер']).toBeUndefined();
     expect(map['Кейтеринг']).toBeUndefined();
+  });
+
+  it('buildOverrideMap keeps distinct twenty_id for duplicate names', () => {
+    const map = buildOverrideMap([
+      { name: 'Макет', sync_override: null, twenty_id: 'li-a', amount_locked: 0 },
+      { name: 'Макет', sync_override: null, twenty_id: 'li-b', amount_locked: 1, sum: 10000, price: 10000 },
+    ]);
+    expect(map['Макет#0'].twenty_id).toBe('li-a');
+    expect(map['Макет#1'].twenty_id).toBe('li-b');
+    expect(map['Макет#1'].amount_locked).toBe(1);
+    expect(map['Макет']).toBeUndefined();
   });
 
   it('restores overrides for matching names after replace', () => {
@@ -94,13 +106,30 @@ describe('deal-items-update', () => {
         price: 7500,
       },
     ]);
-    expect(map['Баннер']).toEqual({
+    expect(map['Баннер#0']).toEqual({
       sync_override: null,
       twenty_id: 'li-locked',
       amount_locked: 1,
       sum: 7500,
       price: 7500,
     });
+  });
+
+  it('replace restores different twenty_id onto duplicate names in order', () => {
+    db.prepare(`
+      INSERT INTO deal_items (deal_id, name, price, classification, twenty_id)
+      VALUES
+        (1, 'Макет', 100, 'keyword_match', 'li-a'),
+        (1, 'Макет', 200, 'keyword_match', 'li-b')
+    `).run();
+    const existing = db.prepare('SELECT * FROM deal_items WHERE deal_id = 1 ORDER BY id').all();
+    const overrideMap = buildOverrideMap(existing);
+    replaceDealItemsPreservingOverrides(db, 1, [
+      { name: 'Макет', price: 111, quantity: null, discount: null, classification: 'keyword_match', classification_confidence: 1 },
+      { name: 'Макет', price: 222, quantity: null, discount: null, classification: 'keyword_match', classification_confidence: 1 },
+    ], overrideMap);
+    const items = db.prepare('SELECT * FROM deal_items WHERE deal_id = 1 ORDER BY id').all();
+    expect(items.map((i) => i.twenty_id)).toEqual(['li-a', 'li-b']);
   });
 
   it('preserves locked sum and price after replace with different Tony prices', () => {
