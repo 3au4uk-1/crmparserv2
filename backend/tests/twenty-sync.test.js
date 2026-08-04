@@ -36,6 +36,19 @@ vi.mock('../src/db/connection.js', () => {
             if (deal) deal.twenty_error = params[0];
             return { changes: 1 };
           }
+          if (sql.includes('line_item_stage_snapshot_json = NULL')) {
+            const deal = deals.get(params[params.length - 1]);
+            if (deal) {
+              deal.twenty_stage = params[0];
+              deal.status = null;
+              deal.pre_cancel_opportunity_stage = null;
+              deal.line_item_stage_snapshot_json = null;
+              deal.calendar_miss_streak = 0;
+              deal.synced_at = 'now';
+              deal.twenty_error = null;
+            }
+            return { changes: 1 };
+          }
           if (sql.includes('status = NULL')) {
             const deal = deals.get(params[params.length - 1]);
             if (deal) {
@@ -466,26 +479,93 @@ describe('syncDealToTwenty', () => {
     expect(axiosPost).not.toHaveBeenCalled();
   });
 
-  it('restores opportunity stage when deal is cancelled locally', async () => {
+  it('restores opportunity and line-item stages from snapshot', async () => {
+    const snapshot = [
+      { id: 'li-a', stage: 'V_PECHATI' },
+      { id: 'li-b', stage: 'NOVYY' },
+      { id: 'li-c', stage: 'OTMENA' },
+    ];
     const dealId = dbMock.__seedDeal({
       id: 5,
       twenty_id: 'opp-restore',
       twenty_stage: 'OTMENA',
       status: 'отмена',
+      pre_cancel_opportunity_stage: 'V_RABOTE',
+      line_item_stage_snapshot_json: JSON.stringify(snapshot),
+      calendar_miss_streak: 3,
       crm_event_id: 'e5',
     });
 
-    axiosPost.mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-restore' } }));
+    axiosPost
+      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-restore' } }))
+      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-a' } }))
+      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-b' } }))
+      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-c' } }));
 
     const result = await restoreDealInTwenty(dealId);
 
     expect(result.action).toBe('restored');
-    expect(result.stage).toBe('NOVYY');
-    expect(axiosPost.mock.calls[0][1].variables.input.stage).toBe('NOVYY');
+    expect(result.stage).toBe('V_RABOTE');
+    expect(axiosPost.mock.calls[0][1].variables.input.stage).toBe('V_RABOTE');
+
+    const lineUpdates = axiosPost.mock.calls.slice(1);
+    expect(lineUpdates.map(([, body]) => body.variables)).toEqual([
+      { id: 'li-a', input: { stage: 'V_PECHATI' } },
+      { id: 'li-b', input: { stage: 'NOVYY' } },
+      { id: 'li-c', input: { stage: 'OTMENA' } },
+    ]);
 
     const deal = dbMock.getDb().prepare('SELECT * FROM deals WHERE id = ?').get(dealId);
-    expect(deal.twenty_stage).toBe('NOVYY');
+    expect(deal.twenty_stage).toBe('V_RABOTE');
     expect(deal.status).toBeNull();
+    expect(deal.pre_cancel_opportunity_stage).toBeNull();
+    expect(deal.line_item_stage_snapshot_json).toBeNull();
+    expect(deal.calendar_miss_streak).toBe(0);
+  });
+
+  it('falls back to settings opportunity stage when snapshot stage missing', async () => {
+    const dealId = dbMock.__seedDeal({
+      id: 9,
+      twenty_id: 'opp-fallback',
+      twenty_stage: 'OTMENA',
+      status: 'отмена',
+      pre_cancel_opportunity_stage: null,
+      line_item_stage_snapshot_json: '[]',
+      crm_event_id: 'e9',
+    });
+
+    axiosPost.mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-fallback' } }));
+
+    const result = await restoreDealInTwenty(dealId);
+    expect(result.stage).toBe('NOVYY');
+    expect(axiosPost.mock.calls[0][1].variables.input.stage).toBe('NOVYY');
+  });
+
+  it('keeps snapshot when a line-item restore hits a GQL error', async () => {
+    const snapshot = [{ id: 'li-a', stage: 'V_PECHATI' }, { id: 'li-b', stage: 'NOVYY' }];
+    const dealId = dbMock.__seedDeal({
+      id: 10,
+      twenty_id: 'opp-partial',
+      twenty_stage: 'OTMENA',
+      status: 'отмена',
+      pre_cancel_opportunity_stage: 'V_RABOTE',
+      line_item_stage_snapshot_json: JSON.stringify(snapshot),
+      crm_event_id: 'e10',
+    });
+
+    axiosPost
+      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-partial' } }))
+      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-a' } }))
+      .mockResolvedValueOnce({
+        status: 200,
+        data: { errors: [{ message: 'boom' }] },
+      });
+
+    await expect(restoreDealInTwenty(dealId)).rejects.toThrow(/boom|Failed/);
+
+    const deal = dbMock.getDb().prepare('SELECT * FROM deals WHERE id = ?').get(dealId);
+    expect(deal.line_item_stage_snapshot_json).toBe(JSON.stringify(snapshot));
+    expect(deal.pre_cancel_opportunity_stage).toBe('V_RABOTE');
   });
 
   it('skips restore when deal is not cancelled', async () => {

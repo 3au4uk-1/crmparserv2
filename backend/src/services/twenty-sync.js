@@ -556,7 +556,16 @@ export async function restoreDealInTwenty(dealId) {
     return { twentyId: deal.twenty_id, action: 'restored', skipped: true };
   }
 
-  const stage = getOpportunityStage();
+  const stage = deal.pre_cancel_opportunity_stage || getOpportunityStage();
+  let snapshot = [];
+  if (deal.line_item_stage_snapshot_json) {
+    try {
+      snapshot = JSON.parse(deal.line_item_stage_snapshot_json);
+      if (!Array.isArray(snapshot)) snapshot = [];
+    } catch {
+      snapshot = [];
+    }
+  }
 
   beginTwentySyncContext({
     dealId,
@@ -565,7 +574,7 @@ export async function restoreDealInTwenty(dealId) {
     title: deal.title,
   });
 
-  logTwentyStep('restore.start', { oppId: deal.twenty_id, stage });
+  logTwentyStep('restore.start', { oppId: deal.twenty_id, stage, lineItemCount: snapshot.length });
 
   try {
     const oppResp = await gql(
@@ -579,10 +588,41 @@ export async function restoreDealInTwenty(dealId) {
     assertHttpSuccess(oppResp, twenty.apiUrl);
     assertGqlSuccess(oppResp, 'Failed to restore opportunity in Twenty');
 
+    for (const entry of snapshot) {
+      if (!entry?.id) continue;
+      const resp = await gql(
+        twenty.apiUrl,
+        twenty.apiToken,
+        `mutation UpdateDealLineItem($id: ID!, $input: DealLineItemUpdateInput!) {
+          updateDealLineItem(id: $id, data: $input) { id }
+        }`,
+        { id: entry.id, input: { stage: entry.stage ?? null } }
+      );
+      try {
+        assertHttpSuccess(resp, twenty.apiUrl);
+        assertGqlSuccess(resp, `Failed to restore line item ${entry.id} in Twenty`);
+      } catch (err) {
+        const msg = String(err.message || err);
+        if (/not found|does not exist/i.test(msg)) {
+          logTwentyStep('restore.line_item_skipped', { lineItemId: entry.id, error: msg });
+          continue;
+        }
+        logTwenty('warn', 'restore.partial', { lineItemId: entry.id, error: msg });
+        throw err;
+      }
+      if (!resp.data?.data?.updateDealLineItem?.id) {
+        logTwentyStep('restore.line_item_skipped', { lineItemId: entry.id });
+        continue;
+      }
+    }
+
     db.prepare(`
       UPDATE deals SET
         twenty_stage = ?,
         status = NULL,
+        pre_cancel_opportunity_stage = NULL,
+        line_item_stage_snapshot_json = NULL,
+        calendar_miss_streak = 0,
         synced_at = datetime('now'),
         twenty_error = NULL,
         updated_at = datetime('now')
