@@ -6,7 +6,7 @@ import { loadRestorationList, isRestorationItem } from './restoration.js';
 import { loadNeNasheBrandingList, isNeNasheBrandingItem } from './ne-nashe-branding.js';
 import { loadNeNasheDecorMkList, isNeNasheDecorMkItem } from './ne-nashe-decor-mk.js';
 import { loadTipRules, findTipRuleMatch } from './tip-rules.js';
-import { buildOpportunityInput, computeDealItemsTotal, computeLineItemTotal, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE, ZERO_RUB_AMOUNT } from './twenty-opportunity.js';
+import { buildOpportunityAmountInputFromLineItems, buildOpportunityInput, computeDealItemsTotal, computeLineItemTotal, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE, ZERO_RUB_AMOUNT } from './twenty-opportunity.js';
 import {
   getItemsForTwenty,
   getItemEligibleReason,
@@ -246,6 +246,30 @@ function createLineItemSyncDeps(warehouseCache) {
   };
 }
 
+async function updateOpportunityAmountFromLineItems(twenty, oppId) {
+  const lineItems = await listLineItemsForOpportunity(
+    gql, twenty.apiUrl, twenty.apiToken, oppId,
+  );
+  const amount = buildOpportunityAmountInputFromLineItems(lineItems);
+
+  logTwentyStep('sync.opportunity_amount', {
+    oppId,
+    amountMicros: amount.amountMicros,
+    lineItemCount: lineItems.length,
+  });
+
+  const resp = await gql(
+    twenty.apiUrl,
+    twenty.apiToken,
+    `mutation UpdateOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
+      updateOpportunity(id: $id, data: $input) { id }
+    }`,
+    { id: oppId, input: { amount } },
+  );
+  assertHttpSuccess(resp, twenty.apiUrl);
+  assertGqlSuccess(resp, 'Failed to update opportunity amount in Twenty');
+}
+
 async function updateDealInTwenty(
   dealId,
   deal,
@@ -326,6 +350,8 @@ async function updateDealInTwenty(
     ignoreStageProtection: ignoreLineItemStageProtection,
   });
 
+  await updateOpportunityAmountFromLineItems(twenty, oppId);
+
   const action = items.length === 0 ? 'updated_empty' : 'updated';
 
   db.prepare(`
@@ -390,6 +416,8 @@ async function createDealInTwenty(
     neNasheDecorMkList,
     tipRules,
   });
+
+  await updateOpportunityAmountFromLineItems(twenty, oppId);
 
   db.prepare(`
     UPDATE deals SET

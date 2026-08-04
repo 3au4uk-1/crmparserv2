@@ -46,6 +46,11 @@ export function sumNonCancelledLineAmountsRub(lineItems) {
   return total;
 }
 
+export function buildOpportunityAmountInputFromLineItems(lineItems) {
+  const rub = sumNonCancelledLineAmountsRub(lineItems);
+  return { amountMicros: Math.round(rub * 1_000_000), currencyCode: 'RUB' };
+}
+
 export function parseQuantity(value) {
   const n = Number.parseInt(String(value ?? '').replace(/\s/g, ''), 10);
   return Number.isFinite(n) && n > 0 ? n : 1;

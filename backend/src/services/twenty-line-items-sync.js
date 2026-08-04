@@ -128,7 +128,7 @@ export async function listLineItemsForOpportunity(gql, apiUrl, apiToken, oppId) 
     apiToken,
     `query ListLineItems($oppId: ID!) {
       dealLineItems(filter: { opportunityId: { eq: $oppId } }) {
-        edges { node { id name stage istochnik } }
+        edges { node { id name stage istochnik amount { amountMicros currencyCode } } }
       }
     }`,
     { oppId }

@@ -199,7 +199,13 @@ describe('syncDealToTwenty', () => {
       .mockResolvedValueOnce(gqlOk({
         dealLineItems: { edges: [{ node: { id: 'li-1', name: 'Баннер' } }] },
       }))
-      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-1' } }));
+      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-1' } }))
+      .mockResolvedValueOnce(gqlOk({
+        dealLineItems: {
+          edges: [{ node: { id: 'li-1', name: 'Баннер', stage: 'NOVYY', amount: { amountMicros: 2_000_000_000, currencyCode: 'RUB' } } }],
+        },
+      }))
+      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-existing' } }));
 
     runPrintSheetCycleMock.mockResolvedValue({ exported: 0, readbackUpdated: 0, sessionsCleared: 0 });
 
@@ -210,6 +216,56 @@ describe('syncDealToTwenty', () => {
       body.query.includes('updateOpportunity')
     )).toBe(true);
     expect(runPrintSheetCycleMock).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it('recalculates opportunity amount from non-OTMENA line items after sync', async () => {
+    const dealId = dbMock.__seedDeal({
+      id: 12,
+      twenty_id: 'opp-amount',
+      approval_status: 'synced',
+      title: 'Amount deal',
+      start_date: '2026-06-10',
+      crm_event_id: 'e12',
+    });
+    dbMock.__seedItem({
+      deal_id: dealId,
+      name: 'Баннер',
+      price: 2000,
+      classification: 'keyword_match',
+      sync_override: null,
+    });
+
+    axiosPost
+      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-amount' } }))
+      .mockResolvedValueOnce(gqlOk({
+        dealLineItems: {
+          edges: [
+            { node: { id: 'li-active', name: 'Баннер', stage: 'NOVYY', amount: { amountMicros: 10_000_000_000, currencyCode: 'RUB' } } },
+            { node: { id: 'li-cancelled', name: 'Old', stage: 'OTMENA', amount: { amountMicros: 5_000_000_000, currencyCode: 'RUB' } } },
+          ],
+        },
+      }))
+      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-active' } }))
+      .mockResolvedValueOnce(gqlOk({
+        dealLineItems: {
+          edges: [
+            { node: { id: 'li-active', name: 'Баннер', stage: 'NOVYY', amount: { amountMicros: 10_000_000_000, currencyCode: 'RUB' } } },
+            { node: { id: 'li-cancelled', name: 'Old', stage: 'OTMENA', amount: { amountMicros: 5_000_000_000, currencyCode: 'RUB' } } },
+          ],
+        },
+      }))
+      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-amount' } }));
+
+    await syncDealToTwenty(dealId);
+
+    const updateCalls = axiosPost.mock.calls.filter(([_, body]) =>
+      body.query.includes('updateOpportunity')
+    );
+    expect(updateCalls).toHaveLength(2);
+    expect(updateCalls[1][1].variables.input).toEqual({
+      amount: { amountMicros: 10_000_000_000, currencyCode: 'RUB' },
+    });
+    expect(updateCalls[1][1].variables.input).not.toHaveProperty('name');
   });
 
   it('creates opportunity when no twenty_id', async () => {
@@ -231,7 +287,13 @@ describe('syncDealToTwenty', () => {
       .mockResolvedValueOnce(gqlOk({ createOpportunity: { id: 'opp-new' } }))
       .mockResolvedValueOnce(gqlOk({ products: { edges: [] } }))
       .mockResolvedValueOnce(gqlOk({ createProduct: { id: 'wh-1' } }))
-      .mockResolvedValueOnce(gqlOk({ createDealLineItem: { id: 'li-new' } }));
+      .mockResolvedValueOnce(gqlOk({ createDealLineItem: { id: 'li-new' } }))
+      .mockResolvedValueOnce(gqlOk({
+        dealLineItems: {
+          edges: [{ node: { id: 'li-new', name: 'Баннер', stage: 'NOVYY', amount: { amountMicros: 1_000_000_000, currencyCode: 'RUB' } } }],
+        },
+      }))
+      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-new' } }));
 
     runPrintSheetCycleMock.mockResolvedValue({ exported: 0, readbackUpdated: 0, sessionsCleared: 0 });
 
@@ -262,7 +324,13 @@ describe('syncDealToTwenty', () => {
       .mockResolvedValueOnce(gqlOk({
         dealLineItems: { edges: [{ node: { id: 'li-1', name: 'Баннер', stage: 'NOVYY' } }] },
       }))
-      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-1' } }));
+      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-1' } }))
+      .mockResolvedValueOnce(gqlOk({
+        dealLineItems: {
+          edges: [{ node: { id: 'li-1', name: 'Баннер', stage: 'NOVYY', amount: { amountMicros: 1_000_000_000, currencyCode: 'RUB' } } }],
+        },
+      }))
+      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-skip-print' } }));
 
     runPrintSheetCycleMock.mockResolvedValue({ exported: 0, readbackUpdated: 0, sessionsCleared: 0 });
 
@@ -283,7 +351,9 @@ describe('syncDealToTwenty', () => {
 
     axiosPost
       .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-print' } }))
-      .mockResolvedValueOnce(gqlOk({ dealLineItems: { edges: [] } }));
+      .mockResolvedValueOnce(gqlOk({ dealLineItems: { edges: [] } }))
+      .mockResolvedValueOnce(gqlOk({ dealLineItems: { edges: [] } }))
+      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-print' } }));
 
     runPrintSheetCycleMock.mockResolvedValue({ exported: 0, readbackUpdated: 1, sessionsCleared: 0 });
 
@@ -317,7 +387,13 @@ describe('syncDealToTwenty', () => {
       .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-dates' } }))
       .mockResolvedValueOnce(gqlOk({
         dealLineItems: { edges: [{ node: { id: 'li-protected', name: 'Баннер', stage: 'V_PECHATI' } }] },
-      }));
+      }))
+      .mockResolvedValueOnce(gqlOk({
+        dealLineItems: {
+          edges: [{ node: { id: 'li-protected', name: 'Баннер', stage: 'V_PECHATI', amount: { amountMicros: 2_000_000_000, currencyCode: 'RUB' } } }],
+        },
+      }))
+      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-dates' } }));
 
     runPrintSheetCycleMock.mockResolvedValue({ exported: 0, readbackUpdated: 0, sessionsCleared: 0 });
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  buildOpportunityAmountInputFromLineItems,
   buildOpportunityInput,
   buildPaymentFieldsInput,
   computeDealItemsTotal,
@@ -26,6 +27,14 @@ describe('non-cancelled amount helpers', () => {
       { stage: null, amount: { amountMicros: 2_000_000_000 } },
     ]);
     expect(sum).toBe(12000);
+  });
+
+  it('buildOpportunityAmountInputFromLineItems sums non-OTMENA micros', () => {
+    const input = buildOpportunityAmountInputFromLineItems([
+      { stage: 'NOVYY', amount: { amountMicros: 10_000_000_000 } },
+      { stage: 'OTMENA', amount: { amountMicros: 5_000_000_000 } },
+    ]);
+    expect(input).toEqual({ amountMicros: 10_000_000_000, currencyCode: 'RUB' });
   });
 });
 
