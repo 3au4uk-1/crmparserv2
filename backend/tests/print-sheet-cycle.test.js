@@ -132,18 +132,55 @@ describe('runPrintSheetCycle', () => {
   it('rolls back claim and re-requests export when sheet write fails', async () => {
     listPendingMock.mockResolvedValue([{ id: 'li-1', plenka: { markdown: '' } }]);
     listActiveMock.mockResolvedValue([]);
+    const order = [];
+    updateMock.mockImplementation(async (_gql, _id, patch) => {
+      order.push(patch);
+    });
     appendMock.mockRejectedValue(new Error('quota'));
 
     const result = await runPrintSheetCycle(gql);
 
     expect(result.exported).toBe(0);
-    expect(updateMock).toHaveBeenCalledWith(
-      gql,
-      'li-1',
+    expect(order).toHaveLength(2);
+    expect(order[0]).toEqual(
+      expect.objectContaining({
+        printSheetSessionId: 'sess-test',
+        printSheetExportRequested: false,
+      }),
+    );
+    expect(order[1]).toEqual(
       expect.objectContaining({
         printSheetSessionId: null,
         printSheetExportRequested: true,
       }),
+    );
+  });
+
+  it('does not rollback claim when row-meta update fails after successful write', async () => {
+    listPendingMock.mockResolvedValue([{ id: 'li-1', plenka: { markdown: '' } }]);
+    listActiveMock.mockResolvedValue([]);
+    appendMock.mockResolvedValue({ rowNumber: 10 });
+    updateMock
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('crm timeout'));
+
+    const result = await runPrintSheetCycle(gql);
+
+    expect(result.exported).toBe(0);
+    expect(updateMock).toHaveBeenCalledTimes(2);
+    expect(updateMock).toHaveBeenNthCalledWith(
+      1,
+      gql,
+      'li-1',
+      expect.objectContaining({
+        printSheetSessionId: 'sess-test',
+        printSheetExportRequested: false,
+      }),
+    );
+    expect(updateMock).not.toHaveBeenCalledWith(
+      gql,
+      'li-1',
+      expect.objectContaining({ printSheetExportRequested: true }),
     );
   });
 

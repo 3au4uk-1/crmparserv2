@@ -27,18 +27,22 @@ export async function runPrintSheetCycle(gql) {
 
   for (const lineItem of pending) {
     const sessionId = newPrintSheetSessionId();
+    let writeSucceeded = false;
     try {
       await updateDealLineItemPrintSheet(gql, lineItem.id, buildClaimPatch(sessionId));
       const rowValues = buildPrintSheetRowValues(lineItem, { workspaceMemberById });
       const { rowNumber } = await writePrintSheetRow(tabName, rowValues);
+      writeSucceeded = true;
       await updateDealLineItemPrintSheet(gql, lineItem.id, buildRowMetaPatch(tabName, rowNumber));
       exported += 1;
     } catch (err) {
       console.error(`[print-sheet] export failed for ${lineItem.id}:`, err.message);
-      try {
-        await updateDealLineItemPrintSheet(gql, lineItem.id, buildClaimRollbackPatch());
-      } catch (rollbackErr) {
-        console.error(`[print-sheet] claim rollback failed for ${lineItem.id}:`, rollbackErr.message);
+      if (!writeSucceeded) {
+        try {
+          await updateDealLineItemPrintSheet(gql, lineItem.id, buildClaimRollbackPatch());
+        } catch (rollbackErr) {
+          console.error(`[print-sheet] claim rollback failed for ${lineItem.id}:`, rollbackErr.message);
+        }
       }
     }
   }
