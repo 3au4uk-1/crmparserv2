@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { sendOkleykaToTelegram, splitCaption } from '../src/telegram/outbound.js';
+import {
+  sendOkleykaToTelegram,
+  splitCaption,
+  guessUploadFileName,
+} from '../src/telegram/outbound.js';
 
 describe('splitCaption', () => {
   it('keeps short text as caption', () => {
@@ -8,6 +12,23 @@ describe('splitCaption', () => {
   it('splits long text', () => {
     const long = 'x'.repeat(1025);
     expect(splitCaption(long)).toEqual({ caption: null, separateMessage: long });
+  });
+});
+
+describe('guessUploadFileName', () => {
+  it('uses extension from URL path', () => {
+    expect(guessUploadFileName('https://cdn.example.com/a/b/pic.PNG', null)).toBe('pic.PNG');
+  });
+
+  it('uses content-type when URL has no image extension', () => {
+    expect(
+      guessUploadFileName('https://cdn.example.com/files/abc123', 'image/jpeg; charset=binary'),
+    ).toBe('photo.jpg');
+    expect(guessUploadFileName('https://cdn.example.com/x', 'image/png')).toBe('photo.png');
+  });
+
+  it('defaults to photo.jpg for unknown types so images still preview', () => {
+    expect(guessUploadFileName('https://cdn.example.com/blob', null)).toBe('photo.jpg');
   });
 });
 
@@ -46,9 +67,10 @@ describe('sendOkleykaToTelegram (userbot)', () => {
     });
   });
 
-  it('sends album via sendFile and downloads files', async () => {
+  it('sends album via sendFile with named buffers so GramJS treats them as photos', async () => {
     const fetchImpl = vi.fn(async () => ({
       ok: true,
+      headers: { get: (k) => (k === 'content-type' ? 'image/jpeg' : null) },
       arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
     }));
     const client = {
@@ -60,7 +82,7 @@ describe('sendOkleykaToTelegram (userbot)', () => {
       chatId: '-100',
       threadId: 5,
       text: 'cap',
-      fileUrls: ['https://example.com/a.jpg', 'https://example.com/b.jpg'],
+      fileUrls: ['https://example.com/a.jpg', 'https://example.com/files/noext'],
       fetchImpl,
     });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
@@ -69,8 +91,13 @@ describe('sendOkleykaToTelegram (userbot)', () => {
       expect.objectContaining({
         caption: 'cap',
         replyTo: 5,
+        forceDocument: false,
       }),
     );
+    const sent = client.sendFile.mock.calls[0][1].file;
+    expect(Array.isArray(sent)).toBe(true);
+    expect(sent[0].name).toBe('a.jpg');
+    expect(sent[1].name).toBe('photo.jpg');
     expect(result.messageIds).toEqual([10, 11]);
   });
 });
