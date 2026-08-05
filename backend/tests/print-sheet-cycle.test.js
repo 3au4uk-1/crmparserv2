@@ -11,10 +11,19 @@ vi.mock('../src/services/print-sheet-export-twenty.js', () => ({
   listActivePrintSheetSessions: (...args) => listActiveMock(...args),
   loadWorkspaceMemberMap: vi.fn().mockResolvedValue({}),
   updateDealLineItemPrintSheet: (...args) => updateMock(...args),
-  buildSessionPatchAfterExport: (sid, tab, row) => ({
-    printSheetSessionId: sid,
-    printSheetTabName: tab,
-    printSheetRowNumber: row,
+  buildClaimPatch: (sessionId) => ({
+    printSheetSessionId: sessionId,
+    printSheetExportRequested: false,
+  }),
+  buildClaimRollbackPatch: () => ({
+    printSheetSessionId: null,
+    printSheetTabName: null,
+    printSheetRowNumber: null,
+    printSheetExportRequested: true,
+  }),
+  buildRowMetaPatch: (tabName, rowNumber) => ({
+    printSheetTabName: tabName,
+    printSheetRowNumber: rowNumber,
   }),
   buildSessionClearPatch: () => ({
     printSheetSessionId: null,
@@ -92,6 +101,50 @@ describe('runPrintSheetCycle', () => {
     expect(updateMock).toHaveBeenCalled();
     expect(result.exported).toBe(1);
     expect(result.readbackUpdated).toBe(1);
+  });
+
+  it('claims session before writing sheet row', async () => {
+    listPendingMock.mockResolvedValue([{ id: 'li-1', name: 'Item', plenka: { markdown: '' } }]);
+    listActiveMock.mockResolvedValue([]);
+    const order = [];
+    updateMock.mockImplementation(async () => { order.push('update'); });
+    appendMock.mockImplementation(async () => {
+      order.push('write');
+      return { rowNumber: 10 };
+    });
+
+    const result = await runPrintSheetCycle(gql);
+
+    expect(order.indexOf('update')).toBeLessThan(order.indexOf('write'));
+    expect(updateMock).toHaveBeenCalledWith(
+      gql,
+      'li-1',
+      expect.objectContaining({ printSheetSessionId: 'sess-test', printSheetExportRequested: false }),
+    );
+    expect(updateMock).toHaveBeenCalledWith(
+      gql,
+      'li-1',
+      expect.objectContaining({ printSheetTabName: 'Июнь 2026', printSheetRowNumber: 10 }),
+    );
+    expect(result.exported).toBe(1);
+  });
+
+  it('rolls back claim and re-requests export when sheet write fails', async () => {
+    listPendingMock.mockResolvedValue([{ id: 'li-1', plenka: { markdown: '' } }]);
+    listActiveMock.mockResolvedValue([]);
+    appendMock.mockRejectedValue(new Error('quota'));
+
+    const result = await runPrintSheetCycle(gql);
+
+    expect(result.exported).toBe(0);
+    expect(updateMock).toHaveBeenCalledWith(
+      gql,
+      'li-1',
+      expect.objectContaining({
+        printSheetSessionId: null,
+        printSheetExportRequested: true,
+      }),
+    );
   });
 
   it('clears session when stage is not V_PECHATI', async () => {

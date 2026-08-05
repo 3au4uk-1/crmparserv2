@@ -8,7 +8,9 @@ import {
   listActivePrintSheetSessions,
   updateDealLineItemPrintSheet,
   loadWorkspaceMemberMap,
-  buildSessionPatchAfterExport,
+  buildClaimPatch,
+  buildClaimRollbackPatch,
+  buildRowMetaPatch,
   buildSessionClearPatch,
   buildReadbackUpdateInput,
   newPrintSheetSessionId,
@@ -24,17 +26,20 @@ export async function runPrintSheetCycle(gql) {
   const workspaceMemberById = await loadWorkspaceMemberMap(gql);
 
   for (const lineItem of pending) {
+    const sessionId = newPrintSheetSessionId();
     try {
+      await updateDealLineItemPrintSheet(gql, lineItem.id, buildClaimPatch(sessionId));
       const rowValues = buildPrintSheetRowValues(lineItem, { workspaceMemberById });
       const { rowNumber } = await writePrintSheetRow(tabName, rowValues);
-      await updateDealLineItemPrintSheet(
-        gql,
-        lineItem.id,
-        buildSessionPatchAfterExport(newPrintSheetSessionId(), tabName, rowNumber)
-      );
+      await updateDealLineItemPrintSheet(gql, lineItem.id, buildRowMetaPatch(tabName, rowNumber));
       exported += 1;
     } catch (err) {
       console.error(`[print-sheet] export failed for ${lineItem.id}:`, err.message);
+      try {
+        await updateDealLineItemPrintSheet(gql, lineItem.id, buildClaimRollbackPatch());
+      } catch (rollbackErr) {
+        console.error(`[print-sheet] claim rollback failed for ${lineItem.id}:`, rollbackErr.message);
+      }
     }
   }
 
