@@ -14,6 +14,7 @@ const LINE_ITEM_EXPORT_FIELDS = `
   printSheetSessionId
   printSheetTabName
   printSheetRowNumber
+  printSheetExportRequested
   vzatoVRabotu
   gotovo
   restavraciyaPechati
@@ -38,6 +39,7 @@ const LIST_PENDING_EXPORT = `
       filter: {
         and: [
           { stage: { eq: ${V_PECHATI_LINE_ITEM_STAGE} } }
+          { printSheetExportRequested: { eq: true } }
           { printSheetSessionId: { is: NULL } }
           { dataGotovnostiPechati: { is: NOT_NULL } }
           { vremyaGotovnostiPechati: { is: NOT_NULL } }
@@ -80,11 +82,37 @@ const UPDATE_LINE_ITEM = `
   }
 `;
 
-export function buildSessionPatchAfterExport(sessionId, tabName, rowNumber) {
+export function isEmptyPrintSheetSessionId(value) {
+  return value == null || String(value).trim() === '';
+}
+
+export function buildClaimPatch(sessionId) {
   return {
     printSheetSessionId: sessionId,
+    printSheetExportRequested: false,
+  };
+}
+
+export function buildClaimRollbackPatch() {
+  return {
+    printSheetSessionId: null,
+    printSheetTabName: null,
+    printSheetRowNumber: null,
+    printSheetExportRequested: true,
+  };
+}
+
+export function buildRowMetaPatch(tabName, rowNumber) {
+  return {
     printSheetTabName: tabName,
     printSheetRowNumber: rowNumber,
+  };
+}
+
+export function buildSessionPatchAfterExport(sessionId, tabName, rowNumber) {
+  return {
+    ...buildClaimPatch(sessionId),
+    ...buildRowMetaPatch(tabName, rowNumber),
   };
 }
 

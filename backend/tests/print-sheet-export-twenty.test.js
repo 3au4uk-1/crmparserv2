@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
+  buildClaimPatch,
+  buildClaimRollbackPatch,
+  buildRowMetaPatch,
+  isEmptyPrintSheetSessionId,
   buildSessionPatchAfterExport,
   buildSessionClearPatch,
   buildReadbackUpdateInput,
@@ -10,10 +14,34 @@ import {
 import { LAYOUT_LINK_FIELD } from '../src/services/print-sheet-field-names.js';
 
 describe('session patches', () => {
+  it('builds claim / rollback / row-meta patches', () => {
+    expect(buildClaimPatch('sess-1')).toEqual({
+      printSheetSessionId: 'sess-1',
+      printSheetExportRequested: false,
+    });
+    expect(buildClaimRollbackPatch()).toEqual({
+      printSheetSessionId: null,
+      printSheetTabName: null,
+      printSheetRowNumber: null,
+      printSheetExportRequested: true,
+    });
+    expect(buildRowMetaPatch('Август 2026', 42)).toEqual({
+      printSheetTabName: 'Август 2026',
+      printSheetRowNumber: 42,
+    });
+  });
+
+  it('treats null and empty string as empty session', () => {
+    expect(isEmptyPrintSheetSessionId(null)).toBe(true);
+    expect(isEmptyPrintSheetSessionId('')).toBe(true);
+    expect(isEmptyPrintSheetSessionId('uuid')).toBe(false);
+  });
+
   it('builds export session patch', () => {
     const patch = buildSessionPatchAfterExport('sess-1', 'Июнь 2026', 297);
     expect(patch).toEqual({
       printSheetSessionId: 'sess-1',
+      printSheetExportRequested: false,
       printSheetTabName: 'Июнь 2026',
       printSheetRowNumber: 297,
     });
@@ -51,6 +79,17 @@ describe('buildReadbackUpdateInput', () => {
 });
 
 describe('graphql helpers', () => {
+  it('pending query requires printSheetExportRequested and not only stage', async () => {
+    const gql = vi.fn().mockResolvedValue({
+      data: { data: { dealLineItems: { edges: [] } } },
+    });
+    await listPendingPrintSheetExport(gql, 10);
+    const query = gql.mock.calls[0][0];
+    expect(query).toContain('printSheetExportRequested');
+    expect(query).toMatch(/eq:\s*true/);
+    expect(query).toContain('V_PECHATI');
+  });
+
   it('requests pending export with layout link field', async () => {
     const gql = vi.fn().mockResolvedValue({
       data: { data: { dealLineItems: { edges: [{ node: { id: 'li-1' } }] } } },
