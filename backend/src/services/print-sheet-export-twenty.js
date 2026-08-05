@@ -14,6 +14,7 @@ const LINE_ITEM_EXPORT_FIELDS = `
   printSheetSessionId
   printSheetTabName
   printSheetRowNumber
+  printSheetExportRequested
   vzatoVRabotu
   gotovo
   restavraciyaPechati
@@ -38,7 +39,7 @@ const LIST_PENDING_EXPORT = `
       filter: {
         and: [
           { stage: { eq: ${V_PECHATI_LINE_ITEM_STAGE} } }
-          { printSheetSessionId: { is: NULL } }
+          { printSheetExportRequested: { eq: true } }
           { dataGotovnostiPechati: { is: NOT_NULL } }
           { vremyaGotovnostiPechati: { is: NOT_NULL } }
         ]
@@ -80,11 +81,37 @@ const UPDATE_LINE_ITEM = `
   }
 `;
 
-export function buildSessionPatchAfterExport(sessionId, tabName, rowNumber) {
+export function isEmptyPrintSheetSessionId(value) {
+  return value == null || String(value).trim() === '';
+}
+
+export function buildClaimPatch(sessionId) {
   return {
     printSheetSessionId: sessionId,
+    printSheetExportRequested: false,
+  };
+}
+
+export function buildClaimRollbackPatch() {
+  return {
+    printSheetSessionId: null,
+    printSheetTabName: null,
+    printSheetRowNumber: null,
+    printSheetExportRequested: true,
+  };
+}
+
+export function buildRowMetaPatch(tabName, rowNumber) {
+  return {
     printSheetTabName: tabName,
     printSheetRowNumber: rowNumber,
+  };
+}
+
+export function buildSessionPatchAfterExport(sessionId, tabName, rowNumber) {
+  return {
+    ...buildClaimPatch(sessionId),
+    ...buildRowMetaPatch(tabName, rowNumber),
   };
 }
 
@@ -109,12 +136,14 @@ export async function loadWorkspaceMemberMap(gql, limit = 100) {
 
 export async function listPendingPrintSheetExport(gql, limit = 100) {
   const resp = await gql(LIST_PENDING_EXPORT, { limit });
-  return resp.data?.data?.dealLineItems?.edges?.map((e) => e.node) ?? [];
+  const nodes = resp.data?.data?.dealLineItems?.edges?.map((e) => e.node) ?? [];
+  return nodes.filter((node) => isEmptyPrintSheetSessionId(node.printSheetSessionId));
 }
 
 export async function listActivePrintSheetSessions(gql, limit = 200) {
   const resp = await gql(LIST_ACTIVE_SESSIONS, { limit });
-  return resp.data?.data?.dealLineItems?.edges?.map((e) => e.node) ?? [];
+  const nodes = resp.data?.data?.dealLineItems?.edges?.map((e) => e.node) ?? [];
+  return nodes.filter((node) => !isEmptyPrintSheetSessionId(node.printSheetSessionId));
 }
 
 export async function updateDealLineItemPrintSheet(gql, id, input) {

@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
+  buildClaimPatch,
+  buildClaimRollbackPatch,
+  buildRowMetaPatch,
+  isEmptyPrintSheetSessionId,
   buildSessionPatchAfterExport,
   buildSessionClearPatch,
   buildReadbackUpdateInput,
@@ -10,10 +14,34 @@ import {
 import { LAYOUT_LINK_FIELD } from '../src/services/print-sheet-field-names.js';
 
 describe('session patches', () => {
+  it('builds claim / rollback / row-meta patches', () => {
+    expect(buildClaimPatch('sess-1')).toEqual({
+      printSheetSessionId: 'sess-1',
+      printSheetExportRequested: false,
+    });
+    expect(buildClaimRollbackPatch()).toEqual({
+      printSheetSessionId: null,
+      printSheetTabName: null,
+      printSheetRowNumber: null,
+      printSheetExportRequested: true,
+    });
+    expect(buildRowMetaPatch('Август 2026', 42)).toEqual({
+      printSheetTabName: 'Август 2026',
+      printSheetRowNumber: 42,
+    });
+  });
+
+  it('treats null and empty string as empty session', () => {
+    expect(isEmptyPrintSheetSessionId(null)).toBe(true);
+    expect(isEmptyPrintSheetSessionId('')).toBe(true);
+    expect(isEmptyPrintSheetSessionId('uuid')).toBe(false);
+  });
+
   it('builds export session patch', () => {
     const patch = buildSessionPatchAfterExport('sess-1', 'Июнь 2026', 297);
     expect(patch).toEqual({
       printSheetSessionId: 'sess-1',
+      printSheetExportRequested: false,
       printSheetTabName: 'Июнь 2026',
       printSheetRowNumber: 297,
     });
@@ -51,28 +79,75 @@ describe('buildReadbackUpdateInput', () => {
 });
 
 describe('graphql helpers', () => {
+  it('pending query requires printSheetExportRequested and not only stage', async () => {
+    const gql = vi.fn().mockResolvedValue({
+      data: { data: { dealLineItems: { edges: [] } } },
+    });
+    await listPendingPrintSheetExport(gql, 10);
+    const query = gql.mock.calls[0][0];
+    expect(query).toContain('printSheetExportRequested');
+    expect(query).toMatch(/eq:\s*true/);
+    expect(query).toContain('V_PECHATI');
+    expect(query).not.toContain('printSheetSessionId: { is: NULL }');
+  });
+
+  it('filters pending rows to empty session ids client-side', async () => {
+    const gql = vi.fn().mockResolvedValue({
+      data: {
+        data: {
+          dealLineItems: {
+            edges: [
+              { node: { id: 'li-null', printSheetSessionId: null } },
+              { node: { id: 'li-empty', printSheetSessionId: '' } },
+              { node: { id: 'li-active', printSheetSessionId: 'uuid-1' } },
+            ],
+          },
+        },
+      },
+    });
+
+    const rows = await listPendingPrintSheetExport(gql, 10);
+
+    expect(rows.map((row) => row.id)).toEqual(['li-null', 'li-empty']);
+  });
+
   it('requests pending export with layout link field', async () => {
     const gql = vi.fn().mockResolvedValue({
-      data: { data: { dealLineItems: { edges: [{ node: { id: 'li-1' } }] } } },
+      data: {
+        data: {
+          dealLineItems: {
+            edges: [{ node: { id: 'li-1', printSheetSessionId: null } }],
+          },
+        },
+      },
     });
 
     const rows = await listPendingPrintSheetExport(gql, 17);
 
-    expect(rows).toEqual([{ id: 'li-1' }]);
+    expect(rows).toEqual([{ id: 'li-1', printSheetSessionId: null }]);
     expect(gql).toHaveBeenCalledWith(expect.stringContaining(LAYOUT_LINK_FIELD), { limit: 17 });
   });
 
   it('lists active sessions and updates line item', async () => {
     const gql = vi.fn()
       .mockResolvedValueOnce({
-        data: { data: { dealLineItems: { edges: [{ node: { id: 'li-2' } }] } } },
+        data: {
+          data: {
+            dealLineItems: {
+              edges: [
+                { node: { id: 'li-2', printSheetSessionId: 'sess-1' } },
+                { node: { id: 'li-empty', printSheetSessionId: '' } },
+              ],
+            },
+          },
+        },
       })
       .mockResolvedValueOnce({ data: { data: { updateDealLineItem: { id: 'li-2' } } } });
 
     const active = await listActivePrintSheetSessions(gql, 8);
     await updateDealLineItemPrintSheet(gql, 'li-2', { gotovo: true });
 
-    expect(active).toEqual([{ id: 'li-2' }]);
+    expect(active).toEqual([{ id: 'li-2', printSheetSessionId: 'sess-1' }]);
     expect(gql).toHaveBeenNthCalledWith(1, expect.stringContaining('ListActivePrintSheetSessions'), {
       limit: 8,
     });

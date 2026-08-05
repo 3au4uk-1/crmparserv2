@@ -148,9 +148,9 @@ vi.mock('../src/services/blacklist.js', async (importOriginal) => {
   };
 });
 
-const runPrintSheetCycleMock = vi.fn();
-vi.mock('../src/services/print-sheet-cycle.js', () => ({
-  runPrintSheetCycle: (...args) => runPrintSheetCycleMock(...args),
+const runPrintSheetRefreshMock = vi.fn();
+vi.mock('../src/services/print-sheet-runner.js', () => ({
+  runPrintSheetRefresh: (...args) => runPrintSheetRefreshMock(...args),
 }));
 
 const logTwentyStepMock = vi.fn();
@@ -173,7 +173,7 @@ describe('syncDealToTwenty', () => {
   beforeEach(() => {
     axiosPost.mockReset();
     dbMock.__reset();
-    runPrintSheetCycleMock.mockReset();
+    runPrintSheetRefreshMock.mockReset();
     logTwentyStepMock.mockReset();
   });
 
@@ -207,7 +207,7 @@ describe('syncDealToTwenty', () => {
       }))
       .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-existing' } }));
 
-    runPrintSheetCycleMock.mockResolvedValue({ exported: 0, readbackUpdated: 0, sessionsCleared: 0 });
+    runPrintSheetRefreshMock.mockResolvedValue({ exported: 0, readbackUpdated: 0, sessionsCleared: 0 });
 
     const result = await syncDealToTwenty(dealId);
 
@@ -215,7 +215,7 @@ describe('syncDealToTwenty', () => {
     expect(axiosPost.mock.calls.some(([_, body]) =>
       body.query.includes('updateOpportunity')
     )).toBe(true);
-    expect(runPrintSheetCycleMock).toHaveBeenCalledWith(expect.any(Function));
+    expect(runPrintSheetRefreshMock).toHaveBeenCalledTimes(1);
   });
 
   it('recalculates opportunity amount from non-OTMENA line items after sync', async () => {
@@ -295,11 +295,11 @@ describe('syncDealToTwenty', () => {
       }))
       .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-new' } }));
 
-    runPrintSheetCycleMock.mockResolvedValue({ exported: 0, readbackUpdated: 0, sessionsCleared: 0 });
+    runPrintSheetRefreshMock.mockResolvedValue({ exported: 0, readbackUpdated: 0, sessionsCleared: 0 });
 
     const result = await syncDealToTwenty(dealId);
     expect(result.action).toBe('created');
-    expect(runPrintSheetCycleMock).toHaveBeenCalledWith(expect.any(Function));
+    expect(runPrintSheetRefreshMock).toHaveBeenCalledTimes(1);
   });
 
   it('skips print sheet refresh when skipPrintSheetRefresh is true', async () => {
@@ -332,11 +332,11 @@ describe('syncDealToTwenty', () => {
       }))
       .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-skip-print' } }));
 
-    runPrintSheetCycleMock.mockResolvedValue({ exported: 0, readbackUpdated: 0, sessionsCleared: 0 });
+    runPrintSheetRefreshMock.mockResolvedValue({ exported: 0, readbackUpdated: 0, sessionsCleared: 0 });
 
     await syncDealToTwenty(dealId, { skipPrintSheetRefresh: true });
 
-    expect(runPrintSheetCycleMock).not.toHaveBeenCalled();
+    expect(runPrintSheetRefreshMock).not.toHaveBeenCalled();
   });
 
   it('refreshes plenka for print-stage line items after sync', async () => {
@@ -355,12 +355,12 @@ describe('syncDealToTwenty', () => {
       .mockResolvedValueOnce(gqlOk({ dealLineItems: { edges: [] } }))
       .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-print' } }));
 
-    runPrintSheetCycleMock.mockResolvedValue({ exported: 0, readbackUpdated: 1, sessionsCleared: 0 });
+    runPrintSheetRefreshMock.mockResolvedValue({ exported: 0, readbackUpdated: 1, sessionsCleared: 0 });
 
     const result = await syncDealToTwenty(dealId);
 
     expect(result.action).toBe('updated_empty');
-    expect(runPrintSheetCycleMock).toHaveBeenCalledTimes(1);
+    expect(runPrintSheetRefreshMock).toHaveBeenCalledTimes(1);
   });
 
   it('updates opportunity dates even when all line items are protected', async () => {
@@ -395,7 +395,7 @@ describe('syncDealToTwenty', () => {
       }))
       .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-dates' } }));
 
-    runPrintSheetCycleMock.mockResolvedValue({ exported: 0, readbackUpdated: 0, sessionsCleared: 0 });
+    runPrintSheetRefreshMock.mockResolvedValue({ exported: 0, readbackUpdated: 0, sessionsCleared: 0 });
 
     await syncDealToTwenty(dealId);
 

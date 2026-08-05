@@ -24,7 +24,7 @@ import {
   logTwentyStep,
 } from './twenty-sync-log.js';
 import { createTwentyGqlClient, gql } from './twenty-gql.js';
-import { runPrintSheetCycle } from './print-sheet-cycle.js';
+import { runPrintSheetRefresh as runPrintSheetRefreshLocked } from './print-sheet-runner.js';
 
 function assertHttpSuccess(resp, apiUrl) {
   if (resp.status === 404) {
@@ -61,13 +61,14 @@ function logSyncRun(dealId, status, twentyId, error, action = null) {
   ).run(dealId, status, action, twentyId || null, error || null);
 }
 
-async function refreshPrintSheetAfterSync(twenty, oppId) {
+async function refreshPrintSheetAfterSync(_twenty, oppId) {
   if (!oppId) return;
 
   try {
-    const gqlClient = createTwentyGqlClient(twenty.apiUrl, twenty.apiToken);
-    const result = await runPrintSheetCycle(gqlClient);
-    logTwentyStep('print_sheet.refresh.done', { oppId, ...result });
+    const result = await runPrintSheetRefreshLocked();
+    if (result) {
+      logTwentyStep('print_sheet.refresh.done', { oppId, ...result });
+    }
   } catch (err) {
     logTwenty('warn', 'print_sheet.refresh.failed', {
       oppId,
@@ -77,11 +78,11 @@ async function refreshPrintSheetAfterSync(twenty, oppId) {
 }
 
 export async function runPrintSheetRefresh() {
-  const twenty = requireTwentyConfig();
   try {
-    const gqlClient = createTwentyGqlClient(twenty.apiUrl, twenty.apiToken);
-    const result = await runPrintSheetCycle(gqlClient);
-    logTwentyStep('print_sheet.refresh.done', { bulk: true, ...result });
+    const result = await runPrintSheetRefreshLocked();
+    if (result) {
+      logTwentyStep('print_sheet.refresh.done', { bulk: true, ...result });
+    }
     return result;
   } catch (err) {
     logTwenty('warn', 'print_sheet.refresh.failed', { bulk: true, error: err.message });

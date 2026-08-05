@@ -27,6 +27,7 @@ vi.mock('../src/services/twenty-config.js', () => ({
 }));
 
 import { initPrintSheetCron, runPrintSheetRefresh } from '../src/services/print-sheet-cron.js';
+import { __resetPrintSheetRunnerForTests } from '../src/services/print-sheet-runner.js';
 
 describe('print-sheet-cron', () => {
   const originalPrintSheetId = config.printSheetId;
@@ -34,6 +35,7 @@ describe('print-sheet-cron', () => {
   const originalGoogleKey = config.googleServiceAccountPrivateKey;
 
   beforeEach(() => {
+    __resetPrintSheetRunnerForTests();
     scheduleMock.mockReset();
     stopMock.mockReset();
     runPrintSheetCycleMock.mockReset();
@@ -106,5 +108,61 @@ describe('print-sheet-cron', () => {
     expect(expression).toBe('* * * * *');
     expect(typeof callback).toBe('function');
     expect(options).toEqual({ timezone: CRM_TIMEZONE });
+  });
+
+  it('skips overlapping refresh and runs once more when dirty', async () => {
+    config.printSheetId = 'sheet-id';
+    config.googleServiceAccountEmail = 'service@test.local';
+    config.googleServiceAccountPrivateKey = 'private-key';
+
+    let release;
+    let callCount = 0;
+    runPrintSheetCycleMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          callCount += 1;
+          if (callCount === 1) {
+            release = () => resolve({ exported: 0, readbackUpdated: 0, sessionsCleared: 0 });
+            return;
+          }
+          resolve({ exported: 0, readbackUpdated: 0, sessionsCleared: 0 });
+        }),
+    );
+
+    const first = runPrintSheetRefresh();
+    const second = runPrintSheetRefresh();
+    await Promise.resolve();
+    expect(runPrintSheetCycleMock).toHaveBeenCalledTimes(1);
+
+    release();
+    await first;
+    await second;
+    expect(runPrintSheetCycleMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('logs cycle result', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    config.printSheetId = 'sheet-id';
+    config.googleServiceAccountEmail = 'service@test.local';
+    config.googleServiceAccountPrivateKey = 'private-key';
+
+    const gqlClient = vi.fn();
+    createTwentyGqlClientMock.mockReturnValue(gqlClient);
+    runPrintSheetCycleMock.mockResolvedValue({
+      exported: 1,
+      readbackUpdated: 2,
+      sessionsCleared: 0,
+    });
+
+    await runPrintSheetRefresh();
+
+    expect(logSpy).toHaveBeenCalledWith('[print-sheet] cycle done', {
+      exported: 1,
+      readbackUpdated: 2,
+      sessionsCleared: 0,
+    });
+
+    logSpy.mockRestore();
   });
 });
