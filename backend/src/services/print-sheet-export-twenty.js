@@ -40,7 +40,6 @@ const LIST_PENDING_EXPORT = `
         and: [
           { stage: { eq: ${V_PECHATI_LINE_ITEM_STAGE} } }
           { printSheetExportRequested: { eq: true } }
-          { printSheetSessionId: { is: NULL } }
           { dataGotovnostiPechati: { is: NOT_NULL } }
           { vremyaGotovnostiPechati: { is: NOT_NULL } }
         ]
@@ -137,12 +136,14 @@ export async function loadWorkspaceMemberMap(gql, limit = 100) {
 
 export async function listPendingPrintSheetExport(gql, limit = 100) {
   const resp = await gql(LIST_PENDING_EXPORT, { limit });
-  return resp.data?.data?.dealLineItems?.edges?.map((e) => e.node) ?? [];
+  const nodes = resp.data?.data?.dealLineItems?.edges?.map((e) => e.node) ?? [];
+  return nodes.filter((node) => isEmptyPrintSheetSessionId(node.printSheetSessionId));
 }
 
 export async function listActivePrintSheetSessions(gql, limit = 200) {
   const resp = await gql(LIST_ACTIVE_SESSIONS, { limit });
-  return resp.data?.data?.dealLineItems?.edges?.map((e) => e.node) ?? [];
+  const nodes = resp.data?.data?.dealLineItems?.edges?.map((e) => e.node) ?? [];
+  return nodes.filter((node) => !isEmptyPrintSheetSessionId(node.printSheetSessionId));
 }
 
 export async function updateDealLineItemPrintSheet(gql, id, input) {
