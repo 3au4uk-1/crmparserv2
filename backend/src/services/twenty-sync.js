@@ -66,7 +66,9 @@ async function refreshPrintSheetAfterSync(_twenty, oppId) {
 
   try {
     const result = await runPrintSheetRefreshLocked();
-    logTwentyStep('print_sheet.refresh.done', { oppId, ...(result || {}) });
+    if (result) {
+      logTwentyStep('print_sheet.refresh.done', { oppId, ...result });
+    }
   } catch (err) {
     logTwenty('warn', 'print_sheet.refresh.failed', {
       oppId,
