@@ -3,24 +3,10 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { parseDigestCommand } from '../src/telegram/digest/commands.js';
 
 const runDigestForDayMock = vi.fn();
-const callTelegramMock = vi.fn();
-const getTelegramBotTokenMock = vi.fn();
 
 vi.mock('../src/telegram/digest/run.js', () => ({
   runDigestForDay: (...args) => runDigestForDayMock(...args),
 }));
-
-vi.mock('../src/telegram/api-client.js', () => ({
-  callTelegram: (...args) => callTelegramMock(...args),
-}));
-
-vi.mock('../src/telegram/settings.js', async (importOriginal) => {
-  const actual = await importOriginal();
-  return {
-    ...actual,
-    getTelegramBotToken: (...args) => getTelegramBotTokenMock(...args),
-  };
-});
 
 function openDb() {
   const db = new Database(':memory:');
@@ -72,27 +58,21 @@ describe('processTelegramUpdate digest commands', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     testDb = openDb();
-    runDigestForDayMock.mockResolvedValue({ ok: true });
     vi.resetModules();
     ({ processTelegramUpdate } = await import('../src/telegram/inbound.js'));
   });
 
-  it('invokes runDigestForDay for /завтра', async () => {
+  it('does not invoke runDigestForDay for /завтра', () => {
     processTelegramUpdate(testDb, {
       message: {
         chat: { id: -100, title: 'Ops', type: 'supergroup' },
         text: '/завтра',
       },
     });
-    await vi.waitFor(() => {
-      expect(runDigestForDayMock).toHaveBeenCalledWith({
-        db: testDb,
-        offsetDays: 1,
-      });
-    });
+    expect(runDigestForDayMock).not.toHaveBeenCalled();
   });
 
-  it('invokes runDigestForDay for /послезавтра without invoke thread override', async () => {
+  it('does not invoke runDigestForDay for /послезавтра in topic', () => {
     processTelegramUpdate(testDb, {
       message: {
         chat: { id: -100, title: 'Forum', type: 'supergroup', is_forum: true },
@@ -100,71 +80,10 @@ describe('processTelegramUpdate digest commands', () => {
         text: '/послезавтра@MyBot',
       },
     });
-    await vi.waitFor(() => {
-      expect(runDigestForDayMock).toHaveBeenCalledWith({
-        db: testDb,
-        offsetDays: 2,
-      });
-    });
+    expect(runDigestForDayMock).not.toHaveBeenCalled();
   });
 
-  it('sends error message on failure', async () => {
-    runDigestForDayMock.mockRejectedValue(new Error('fetch failed'));
-    getTelegramBotTokenMock.mockReturnValue('tok');
-    callTelegramMock.mockResolvedValue({});
-
-    processTelegramUpdate(testDb, {
-      message: {
-        chat: { id: -100, title: 'Ops', type: 'supergroup' },
-        text: '/завтра',
-      },
-    });
-
-    await vi.waitFor(() => {
-      expect(callTelegramMock).toHaveBeenCalledWith('tok', 'sendMessage', {
-        chat_id: '-100',
-        text: 'не удалось загрузить',
-      });
-    });
-  });
-
-  it('sends error message when runDigestForDay returns ok:false (no token)', async () => {
-    runDigestForDayMock.mockResolvedValue({ ok: false, skipped: true, error: 'no bot token' });
-    getTelegramBotTokenMock.mockReturnValue('tok');
-    callTelegramMock.mockResolvedValue({});
-
-    processTelegramUpdate(testDb, {
-      message: {
-        chat: { id: -100, title: 'Ops', type: 'supergroup' },
-        text: '/завтра',
-      },
-    });
-
-    await vi.waitFor(() => {
-      expect(callTelegramMock).toHaveBeenCalledWith('tok', 'sendMessage', {
-        chat_id: '-100',
-        text: 'не удалось загрузить',
-      });
-    });
-  });
-
-  it('does not send error when runDigestForDay succeeds with ok:true', async () => {
-    runDigestForDayMock.mockResolvedValue({ ok: true, skipped: true });
-
-    processTelegramUpdate(testDb, {
-      message: {
-        chat: { id: -100, title: 'Ops', type: 'supergroup' },
-        text: '/завтра',
-      },
-    });
-
-    await vi.waitFor(() => {
-      expect(runDigestForDayMock).toHaveBeenCalled();
-    });
-    expect(callTelegramMock).not.toHaveBeenCalled();
-  });
-
-  it('does not invoke run for unrelated messages', () => {
+  it('does not invoke runDigestForDay for unrelated messages', () => {
     processTelegramUpdate(testDb, {
       message: {
         chat: { id: -100, title: 'Ops', type: 'supergroup' },

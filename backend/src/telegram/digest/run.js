@@ -1,5 +1,6 @@
-import { callTelegram } from '../api-client.js';
-import { getTelegramBotToken, getTelegramDestination } from '../settings.js';
+import { getTelegramDestination } from '../settings.js';
+import { getUserbotClient, isUserbotConfigured } from '../userbot/client.js';
+import { sendDigestText } from './send.js';
 import { requireTwentyConfig } from '../../services/twenty-config.js';
 import { createTwentyGqlClient } from '../../services/twenty-gql.js';
 import { getDigestDayMeta } from './dates.js';
@@ -16,13 +17,19 @@ export async function runDigestForDay({
   chatId,
   threadId = null,
   now = new Date(),
+  deps = {},
 }) {
-  const token = getTelegramBotToken(db);
-  if (!token) {
-    console.log('[digest] skipped: no bot token');
-    return { ok: false, skipped: true, error: 'no bot token' };
+  const configured = deps.isUserbotConfigured ?? isUserbotConfigured;
+  const getClient = deps.getUserbotClient ?? getUserbotClient;
+  const send = deps.sendDigestText ?? sendDigestText;
+
+  if (!configured(db)) {
+    console.log('[digest] skipped: user-bot not configured');
+    return { ok: false, skipped: true, error: 'no userbot' };
   }
-  const targetChatId = chatId || getTelegramDestination(db, 'digest.morning')?.chatId;
+
+  const dest = getTelegramDestination(db, 'digest.morning');
+  const targetChatId = chatId || dest?.chatId;
   if (!targetChatId) return { ok: false, skipped: true, error: 'no chat' };
 
   const meta = getDigestDayMeta(offsetDays, now);
@@ -51,13 +58,9 @@ export async function runDigestForDay({
     risksOverride: enriched.risks,
   });
 
-  const body = { chat_id: targetChatId, text };
-  const destThread =
-    threadId ?? getTelegramDestination(db, 'digest.morning')?.threadId ?? null;
-  if (chatId == null && destThread != null) body.message_thread_id = destThread;
-  if (chatId != null && threadId != null) body.message_thread_id = threadId;
-
-  await callTelegram(token, 'sendMessage', body);
+  const destThread = threadId ?? dest?.threadId ?? null;
+  const client = await getClient(db);
+  await send({ client, chatId: targetChatId, threadId: destThread, text });
   return { ok: true, text };
 }
 

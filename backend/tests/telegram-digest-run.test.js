@@ -3,8 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const fetchDigestDayData = vi.fn();
 const buildDigestModel = vi.fn();
 const renderDigestMessage = vi.fn();
-const callTelegram = vi.fn();
-const getTelegramBotToken = vi.fn();
+const sendDigestText = vi.fn();
+const isUserbotConfigured = vi.fn();
+const getUserbotClient = vi.fn();
 const getTelegramDestination = vi.fn();
 const requireTwentyConfig = vi.fn();
 const createTwentyGqlClient = vi.fn();
@@ -23,11 +24,14 @@ vi.mock('../src/telegram/digest/compute.js', async (importOriginal) => {
 vi.mock('../src/telegram/digest/render.js', () => ({
   renderDigestMessage: (...a) => renderDigestMessage(...a),
 }));
-vi.mock('../src/telegram/api-client.js', () => ({
-  callTelegram: (...a) => callTelegram(...a),
+vi.mock('../src/telegram/digest/send.js', () => ({
+  sendDigestText: (...a) => sendDigestText(...a),
+}));
+vi.mock('../src/telegram/userbot/client.js', () => ({
+  isUserbotConfigured: (...a) => isUserbotConfigured(...a),
+  getUserbotClient: (...a) => getUserbotClient(...a),
 }));
 vi.mock('../src/telegram/settings.js', () => ({
-  getTelegramBotToken: (...a) => getTelegramBotToken(...a),
   getTelegramDestination: (...a) => getTelegramDestination(...a),
 }));
 vi.mock('../src/services/twenty-config.js', () => ({
@@ -50,9 +54,13 @@ vi.mock('../src/telegram/digest/omni.js', () => ({
 import { runDigestForDay, runMorningDigests } from '../src/telegram/digest/run.js';
 
 describe('runDigestForDay', () => {
+  const mockClient = { sendMessage: vi.fn() };
+
   beforeEach(() => {
     vi.clearAllMocks();
-    getTelegramBotToken.mockReturnValue('tok');
+    isUserbotConfigured.mockReturnValue(true);
+    getUserbotClient.mockResolvedValue(mockClient);
+    sendDigestText.mockResolvedValue(undefined);
     requireTwentyConfig.mockReturnValue({ apiUrl: 'https://t/graphql', apiToken: 'x' });
     createTwentyGqlClient.mockReturnValue(vi.fn());
     fetchDigestDayData.mockResolvedValue({ deals: [], lineItemsByOppId: {} });
@@ -64,7 +72,6 @@ describe('runDigestForDay', () => {
       risks: [],
     });
     renderDigestMessage.mockReturnValue('TEXT');
-    callTelegram.mockResolvedValue({});
     pickOmniCandidates.mockImplementation((risks) => risks ?? []);
     getDigestOmniConfig.mockReturnValue({ enabled: true, apiKey: 'k' });
     enrichDigestWithOmni.mockResolvedValue(null);
@@ -74,7 +81,7 @@ describe('runDigestForDay', () => {
     }));
   });
 
-  it('sends to explicit chatId', async () => {
+  it('sends to explicit chatId via user-bot', async () => {
     const result = await runDigestForDay({
       db: {},
       offsetDays: 1,
@@ -82,18 +89,30 @@ describe('runDigestForDay', () => {
       now: new Date('2026-08-06T09:00:00.000Z'),
     });
     expect(result.ok).toBe(true);
-    expect(callTelegram).toHaveBeenCalledWith(
-      'tok',
-      'sendMessage',
-      expect.objectContaining({ chat_id: '-1001', text: 'TEXT' }),
-    );
+    expect(getUserbotClient).toHaveBeenCalledWith({});
+    expect(sendDigestText).toHaveBeenCalledWith({
+      client: mockClient,
+      chatId: '-1001',
+      threadId: null,
+      text: 'TEXT',
+    });
+  });
+
+  it('returns ok:false when no chat destination', async () => {
+    isUserbotConfigured.mockReturnValue(true);
+    getTelegramDestination.mockReturnValue(null);
+
+    const result = await runDigestForDay({ db: {}, offsetDays: 1 });
+
+    expect(result).toEqual({ ok: false, skipped: true, error: 'no chat' });
+    expect(sendDigestText).not.toHaveBeenCalled();
   });
 
   it('skips morning when no destination', async () => {
     getTelegramDestination.mockReturnValue(null);
     const result = await runMorningDigests({ db: {} });
     expect(result.skipped).toBe(true);
-    expect(callTelegram).not.toHaveBeenCalled();
+    expect(sendDigestText).not.toHaveBeenCalled();
   });
 
   it('passes omni notes and risks to render when enrich returns data', async () => {
@@ -150,7 +169,7 @@ describe('runDigestForDay', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(callTelegram).toHaveBeenCalled();
+    expect(sendDigestText).toHaveBeenCalled();
     expect(renderDigestMessage).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ notes: [], risksOverride: [] }),
@@ -169,19 +188,19 @@ describe('runDigestForDay', () => {
 
     expect(result.ok).toBe(true);
     expect(logSpy).toHaveBeenCalledWith('[digest] omni enrich skipped: timeout');
-    expect(callTelegram).toHaveBeenCalled();
+    expect(sendDigestText).toHaveBeenCalled();
     logSpy.mockRestore();
   });
 
-  it('returns ok:false and logs when no bot token', async () => {
+  it('returns ok:false and logs when user-bot not configured', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    getTelegramBotToken.mockReturnValue(null);
+    isUserbotConfigured.mockReturnValue(false);
 
     const result = await runDigestForDay({ db: {}, offsetDays: 1, chatId: '-1001' });
 
-    expect(result).toEqual({ ok: false, skipped: true, error: 'no bot token' });
-    expect(logSpy).toHaveBeenCalledWith('[digest] skipped: no bot token');
-    expect(callTelegram).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: false, skipped: true, error: 'no userbot' });
+    expect(logSpy).toHaveBeenCalledWith('[digest] skipped: user-bot not configured');
+    expect(sendDigestText).not.toHaveBeenCalled();
     logSpy.mockRestore();
   });
 });

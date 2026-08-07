@@ -4,6 +4,7 @@ import Database from 'better-sqlite3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const callTelegramMock = vi.fn();
+const sendDigestTextMock = vi.fn();
 const sendOkleykaMock = vi.fn();
 const getUserbotClientMock = vi.fn();
 const isUserbotConfiguredMock = vi.fn();
@@ -11,6 +12,10 @@ const isUserbotConfiguredMock = vi.fn();
 vi.mock('../src/telegram/api-client.js', () => ({
   callTelegram: (...args) => callTelegramMock(...args),
   callTelegramGetMe: vi.fn(),
+}));
+
+vi.mock('../src/telegram/digest/send.js', () => ({
+  sendDigestText: (...args) => sendDigestTextMock(...args),
 }));
 
 vi.mock('../src/telegram/outbound.js', () => ({
@@ -41,6 +46,7 @@ describe('POST /telegram/test-send', () => {
     isUserbotConfiguredMock.mockReturnValue(true);
     getUserbotClientMock.mockResolvedValue({});
     sendOkleykaMock.mockResolvedValue(undefined);
+    sendDigestTextMock.mockResolvedValue(undefined);
     callTelegramMock.mockResolvedValue({});
     vi.resetModules();
     const router = (await import('../src/routes/telegram.js')).default;
@@ -65,37 +71,46 @@ describe('POST /telegram/test-send', () => {
     );
   });
 
-  it('sends digest.morning ping via bot API', async () => {
+  it('sends digest.morning ping via user-bot', async () => {
+    const client = { id: 'ub' };
+    getUserbotClientMock.mockResolvedValue(client);
     globalThis.__testSendDb
-      .prepare(`INSERT INTO settings (key, value) VALUES (?, ?), (?, ?)`)
-      .run(
-        'telegram_bot_token',
-        'tok',
-        'telegram_chat_map',
-        JSON.stringify({ 'digest.morning': { chatId: '-200', threadId: 9 } }),
-      );
+      .prepare(`INSERT INTO settings (key, value) VALUES ('telegram_chat_map', ?)`)
+      .run(JSON.stringify({ 'digest.morning': { chatId: '-200', threadId: 9 } }));
 
     const res = await request(app)
       .post('/telegram/test-send')
       .send({ event: 'digest.morning' });
     expect(res.status).toBe(200);
-    expect(callTelegramMock).toHaveBeenCalledWith('tok', 'sendMessage', {
-      chat_id: '-200',
+    expect(sendDigestTextMock).toHaveBeenCalledWith({
+      client,
+      chatId: '-200',
+      threadId: 9,
       text: 'Тест утренней сводки',
-      message_thread_id: 9,
     });
+    expect(callTelegramMock).not.toHaveBeenCalled();
     expect(sendOkleykaMock).not.toHaveBeenCalled();
   });
 
   it('returns 400 when digest.morning missing', async () => {
-    globalThis.__testSendDb
-      .prepare(`INSERT INTO settings (key, value) VALUES ('telegram_bot_token', ?)`)
-      .run('tok');
-
     const res = await request(app)
       .post('/telegram/test-send')
       .send({ event: 'digest.morning' });
     expect(res.status).toBe(400);
     expect(res.body.ok).toBe(false);
+  });
+
+  it('returns 400 when user-bot not configured for digest.morning', async () => {
+    isUserbotConfiguredMock.mockReturnValue(false);
+    globalThis.__testSendDb
+      .prepare(`INSERT INTO settings (key, value) VALUES ('telegram_chat_map', ?)`)
+      .run(JSON.stringify({ 'digest.morning': { chatId: '-200', threadId: 9 } }));
+
+    const res = await request(app)
+      .post('/telegram/test-send')
+      .send({ event: 'digest.morning' });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ ok: false, error: 'User-bot not configured' });
+    expect(sendDigestTextMock).not.toHaveBeenCalled();
   });
 });
