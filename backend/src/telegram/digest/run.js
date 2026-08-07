@@ -36,7 +36,7 @@ export async function runDigestForDay({
   const { apiUrl, apiToken } = requireTwentyConfig();
   const gqlClient = createTwentyGqlClient(apiUrl, apiToken);
   const raw = await fetchDigestDayData(gqlClient, { gte: meta.gte, lt: meta.lt });
-  const model = buildDigestModel(raw);
+  const model = buildDigestModel(raw, { twentyApiUrl: apiUrl });
   const candidates = pickOmniCandidates(model.risks);
   const config = getDigestOmniConfig(db);
   let omniRaw = null;

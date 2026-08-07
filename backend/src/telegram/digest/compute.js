@@ -1,4 +1,4 @@
-import { parseDealNameParts } from './label.js';
+import { parseDealNameParts, resolveBookingNo, twentyOpportunityUrl } from './label.js';
 
 export const R1_MIN_RUBLES = 150_000;
 export const RISK_PCT_LT = 0.3;
@@ -29,7 +29,7 @@ function topQuarterThreshold(amounts) {
   return sorted[Math.min(idx, sorted.length - 1)];
 }
 
-export function buildDigestModel({ deals, lineItemsByOppId }) {
+export function buildDigestModel({ deals, lineItemsByOppId }, { twentyApiUrl } = {}) {
   const activeDeals = (deals ?? []).filter((d) => d.stage && d.stage !== 'OTMENA');
   const readyDeals = [];
   const notReadyDeals = [];
@@ -78,12 +78,17 @@ export function buildDigestModel({ deals, lineItemsByOppId }) {
     }
     if (!r0 && !r1 && !r2) continue;
     const parsed = parseDealNameParts(d.name);
+    const tonyUrl = d.tonyUrl || '';
+    const bitrixUrl = d.bitrixUrl || '';
     risks.push({
       opportunityId: d.id,
       companyName: d.companyName || '',
       manager: parsed.manager,
-      bookingNo: parsed.bookingNo,
+      bookingNo: resolveBookingNo({ tonyUrl, name: d.name }),
       name: d.name || '',
+      tonyUrl,
+      bitrixUrl,
+      twentyUrl: twentyOpportunityUrl(twentyApiUrl || '', d.id),
       ready: rdy,
       total,
       amountRubles: amount,
