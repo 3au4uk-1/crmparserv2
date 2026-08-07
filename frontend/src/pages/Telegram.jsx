@@ -1033,7 +1033,7 @@ export default function Telegram() {
 
       <Section
         title="Оклейка → отправка"
-        description="Куда user-bot отправляет сообщения okleyka.send из Twenty. Утренняя сводка: ключ digest.morning в telegram_chat_map (chatId или {chatId, threadId})."
+        description="Куда user-bot отправляет сообщения okleyka.send из Twenty. Утренняя сводка: ключ digest.morning в telegram_chat_map (chatId или {chatId, threadId}). Omni (🧠): digest_omni_api_key в settings или env OMNI_API_KEY; digest_omni_model по умолчанию oc/deepseek-v4-flash-free, fallback auto."
       >
         <div className="space-y-4 max-w-xl">
           <div>
