@@ -168,19 +168,38 @@ router.post('/test-bot', async (req, res, next) => {
 router.post('/test-send', async (req, res, next) => {
   try {
     const db = getDb();
-    const dest = getTelegramDestination(db, 'okleyka.send');
+    const event =
+      req.body?.event === 'digest.morning' ? 'digest.morning' : 'okleyka.send';
+    const dest = getTelegramDestination(db, event);
+    if (!dest?.chatId) {
+      return res.status(400).json({
+        ok: false,
+        error: `${event} chat_id not configured`,
+      });
+    }
+
+    if (event === 'digest.morning') {
+      const token = getTelegramBotToken(db);
+      if (!token) {
+        return res.status(400).json({ ok: false, error: 'Bot token not configured' });
+      }
+      const body = {
+        chat_id: dest.chatId,
+        text: 'Тест утренней сводки',
+      };
+      if (dest.threadId != null) body.message_thread_id = dest.threadId;
+      await callTelegram(token, 'sendMessage', body);
+      return res.json({ ok: true });
+    }
+
     if (!isUserbotConfigured(db)) {
       return res.status(400).json({ ok: false, error: 'User-bot not configured' });
     }
-    if (!dest?.chatId) {
-      return res.status(400).json({ ok: false, error: 'okleyka.send chat_id not configured' });
-    }
-    const { chatId, threadId } = dest;
     const client = await getUserbotClient(db);
     await sendOkleykaToTelegram({
       client,
-      chatId,
-      threadId,
+      chatId: dest.chatId,
+      threadId: dest.threadId,
       text: 'Тест из crmparser',
       fileUrls: [],
     });

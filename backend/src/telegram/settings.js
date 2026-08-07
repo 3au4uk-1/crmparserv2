@@ -77,22 +77,28 @@ export function setMentionForwardSettings(db, value = {}) {
   return { chatId, topicId };
 }
 
+const CHAT_DESTINATION_KEYS = new Set(['okleyka.send', 'digest.morning']);
+
+function applyDestinationPatch(result, key, raw) {
+  if (raw == null || raw === '') {
+    result[key] = '';
+    return;
+  }
+  const normalized = normalizeOkleykaDestination(raw);
+  if (normalized) {
+    const entry = { chatId: normalized.chatId };
+    if (normalized.threadId != null) {
+      entry.threadId = normalized.threadId;
+    }
+    result[key] = entry;
+  }
+}
+
 export function mergeChatMapEntry(existing, incoming) {
   const result = { ...existing };
   for (const [key, raw] of Object.entries(incoming)) {
-    if (key === 'okleyka.send') {
-      if (raw == null || raw === '') {
-        result[key] = '';
-      } else {
-        const normalized = normalizeOkleykaDestination(raw);
-        if (normalized) {
-          const entry = { chatId: normalized.chatId };
-          if (normalized.threadId != null) {
-            entry.threadId = normalized.threadId;
-          }
-          result[key] = entry;
-        }
-      }
+    if (CHAT_DESTINATION_KEYS.has(key)) {
+      applyDestinationPatch(result, key, raw);
     } else {
       result[key] = raw;
     }

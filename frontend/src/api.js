@@ -950,7 +950,7 @@ export function useTestTelegramBot() {
 
 export function useTestTelegramSend() {
   return useMutation({
-    mutationFn: () => api.post('/telegram/test-send').then((r) => r.data),
+    mutationFn: (body = {}) => api.post('/telegram/test-send', body).then((r) => r.data),
   });
 }
 
