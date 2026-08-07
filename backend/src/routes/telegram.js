@@ -17,6 +17,7 @@ import {
   upsertTelegramChat,
   upsertTelegramTopic,
 } from '../telegram/chat-store.js';
+import { sendDigestText } from '../telegram/digest/send.js';
 import { sendOkleykaToTelegram } from '../telegram/outbound.js';
 import { handleTelegramWebhook } from '../telegram/inbound.js';
 import { runAutoInviteForChat } from '../telegram/auto-invite.js';
@@ -179,16 +180,16 @@ router.post('/test-send', async (req, res, next) => {
     }
 
     if (event === 'digest.morning') {
-      const token = getTelegramBotToken(db);
-      if (!token) {
-        return res.status(400).json({ ok: false, error: 'Bot token not configured' });
+      if (!isUserbotConfigured(db)) {
+        return res.status(400).json({ ok: false, error: 'User-bot not configured' });
       }
-      const body = {
-        chat_id: dest.chatId,
+      const client = await getUserbotClient(db);
+      await sendDigestText({
+        client,
+        chatId: dest.chatId,
+        threadId: dest.threadId,
         text: 'Тест утренней сводки',
-      };
-      if (dest.threadId != null) body.message_thread_id = dest.threadId;
-      await callTelegram(token, 'sendMessage', body);
+      });
       return res.json({ ok: true });
     }
 
