@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { formatCompactRub, formatRiskTitle, renderDigestMessage } from '../src/telegram/digest/render.js';
-import { parseDealNameParts } from '../src/telegram/digest/label.js';
+import {
+  parseDealNameParts,
+  bookingNoFromTonyUrl,
+  bookingNoFromName,
+  resolveBookingNo,
+  twentyOpportunityUrl,
+} from '../src/telegram/digest/label.js';
 
 describe('formatCompactRub', () => {
   it('formats thousands and millions', () => {
@@ -16,6 +22,54 @@ describe('parseDealNameParts', () => {
       manager: 'Ольга',
       bookingNo: '179037',
     });
+  });
+});
+
+describe('bookingNoFromTonyUrl', () => {
+  it('reads id= from tony orders_edit URL', () => {
+    expect(
+      bookingNoFromTonyUrl('https://crm.apihide.com/orders/orders_edit/?id=178323'),
+    ).toBe('178323');
+  });
+  it('returns empty when no id', () => {
+    expect(bookingNoFromTonyUrl('https://example.com/x')).toBe('');
+    expect(bookingNoFromTonyUrl('')).toBe('');
+  });
+});
+
+describe('bookingNoFromName', () => {
+  it('takes first 5+ digit run', () => {
+    expect(bookingNoFromName('ProInteractive mess 178323 extra')).toBe('178323');
+    expect(bookingNoFromName('no digits')).toBe('');
+  });
+});
+
+describe('resolveBookingNo', () => {
+  it('prefers tony URL over name', () => {
+    expect(
+      resolveBookingNo({
+        tonyUrl: 'https://crm.apihide.com/orders/orders_edit/?id=111111',
+        name: 'x/01.01/M/999999/z',
+      }),
+    ).toBe('111111');
+  });
+  it('falls back to name when tony missing', () => {
+    expect(resolveBookingNo({ tonyUrl: '', name: 'Acme 222222' })).toBe('222222');
+  });
+});
+
+describe('twentyOpportunityUrl', () => {
+  it('uses origin from graphql and bare host URLs', () => {
+    expect(
+      twentyOpportunityUrl('https://crm.example.com/graphql', 'opp-1'),
+    ).toBe('https://crm.example.com/object/opportunity/opp-1');
+    expect(
+      twentyOpportunityUrl('https://crm.example.com/', 'opp-1'),
+    ).toBe('https://crm.example.com/object/opportunity/opp-1');
+  });
+  it('returns empty without id or bad url', () => {
+    expect(twentyOpportunityUrl('https://crm.example.com/graphql', '')).toBe('');
+    expect(twentyOpportunityUrl('not-a-url', 'opp-1')).toBe('');
   });
 });
 
