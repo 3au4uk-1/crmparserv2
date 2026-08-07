@@ -5,6 +5,7 @@ export async function sendDigestText({ client, chatId, threadId, text }) {
   const replyTo = Number.isInteger(threadId) && threadId > 0 ? threadId : undefined;
   await client.sendMessage(chatId, {
     message: messageText,
+    parseMode: 'html',
     ...(replyTo ? { replyTo } : {}),
   });
 }
