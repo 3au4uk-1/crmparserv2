@@ -6,6 +6,9 @@ import { getDigestDayMeta } from './dates.js';
 import { fetchDigestDayData } from './fetch.js';
 import { buildDigestModel } from './compute.js';
 import { renderDigestMessage } from './render.js';
+import { pickOmniCandidates, applyOmniEnrichment } from './omni-merge.js';
+import { getDigestOmniConfig } from './omni-settings.js';
+import { enrichDigestWithOmni } from './omni.js';
 
 export async function runDigestForDay({
   db,
@@ -27,9 +30,25 @@ export async function runDigestForDay({
   const gqlClient = createTwentyGqlClient(apiUrl, apiToken);
   const raw = await fetchDigestDayData(gqlClient, { gte: meta.gte, lt: meta.lt });
   const model = buildDigestModel(raw);
+  const candidates = pickOmniCandidates(model.risks);
+  const config = getDigestOmniConfig(db);
+  let omniRaw = null;
+  try {
+    omniRaw = await enrichDigestWithOmni({
+      config,
+      dayMeta: meta,
+      digestModel: model,
+      candidates,
+    });
+  } catch (err) {
+    console.log(`[digest] omni enrich skipped: ${err.message}`);
+  }
+  const enriched = applyOmniEnrichment(model, omniRaw);
   const text = renderDigestMessage(model, {
     title: meta.title,
     dateLabel: meta.dateLabel,
+    notes: enriched.notes,
+    risksOverride: enriched.risks,
   });
 
   const body = { chat_id: targetChatId, text };
