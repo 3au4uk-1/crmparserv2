@@ -88,13 +88,11 @@ describe('processTelegramUpdate digest commands', () => {
       expect(runDigestForDayMock).toHaveBeenCalledWith({
         db: testDb,
         offsetDays: 1,
-        chatId: '-100',
-        threadId: null,
       });
     });
   });
 
-  it('invokes runDigestForDay for /послезавтра with thread', async () => {
+  it('invokes runDigestForDay for /послезавтра without invoke thread override', async () => {
     processTelegramUpdate(testDb, {
       message: {
         chat: { id: -100, title: 'Forum', type: 'supergroup', is_forum: true },
@@ -106,8 +104,6 @@ describe('processTelegramUpdate digest commands', () => {
       expect(runDigestForDayMock).toHaveBeenCalledWith({
         db: testDb,
         offsetDays: 2,
-        chatId: '-100',
-        threadId: 42,
       });
     });
   });

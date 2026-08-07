@@ -52,17 +52,17 @@ export function processTelegramUpdate(db, update) {
   const text = (msg.text || '').trim();
   const offset = parseDigestCommand(text);
   if (offset != null) {
-    const chatId = String(chat.id);
-    const threadId = msg.message_thread_id || null;
-    void runDigestForDay({ db, offsetDays: offset, chatId, threadId })
+    const invokeChatId = String(chat.id);
+    const invokeThreadId = msg.message_thread_id || null;
+    void runDigestForDay({ db, offsetDays: offset })
       .then((result) => {
         if (result?.ok === false) {
-          sendDigestCommandError(db, chatId, threadId);
+          sendDigestCommandError(db, invokeChatId, invokeThreadId);
         }
       })
       .catch((err) => {
         console.error('[digest] command failed:', err.message);
-        sendDigestCommandError(db, chatId, threadId);
+        sendDigestCommandError(db, invokeChatId, invokeThreadId);
       });
   }
   const created = msg.forum_topic_created;
