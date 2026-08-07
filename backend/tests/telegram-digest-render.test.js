@@ -74,7 +74,7 @@ describe('twentyOpportunityUrl', () => {
 });
 
 describe('formatRiskTitle', () => {
-  it('joins non-empty segments', () => {
+  it('uses booking № only', () => {
     expect(
       formatRiskTitle({
         companyName: 'Acme',
@@ -82,10 +82,13 @@ describe('formatRiskTitle', () => {
         bookingNo: '179037',
         name: 'fallback',
       }),
-    ).toBe('Acme/Ольга/179037');
+    ).toBe('179037');
     expect(
       formatRiskTitle({ companyName: '', manager: '', bookingNo: '', name: 'OnlyName' }),
     ).toBe('OnlyName');
+    expect(
+      formatRiskTitle({ companyName: '', manager: '', bookingNo: '', name: '' }),
+    ).toBe('—');
   });
 });
 
@@ -117,7 +120,7 @@ describe('renderDigestMessage', () => {
     expect(text).toContain('✔️ 1 сделок / 1 позиций · ₽100к');
     expect(text).toContain('❌ 1 сделок / 2 позиций · ₽200к');
     expect(text).toContain('⚠ РИСКИ:');
-    expect(text).toContain('• Big/Mgr/100001 · 0/2 · ₽400к · риск · 0 готово');
+    expect(text).toContain('• 100001 · 0/2 · ₽400к · риск · 0 готово');
   });
 
   it('renders нет when no risks', () => {
@@ -143,8 +146,6 @@ describe('renderDigestMessage', () => {
         notReady: { deals: 1, positions: 1, amountRubles: 1000 },
         risks: [
           {
-            companyName: 'Big',
-            manager: 'M',
             bookingNo: '1',
             ready: 0,
             total: 2,
@@ -158,5 +159,59 @@ describe('renderDigestMessage', () => {
     );
     expect(text).toContain('· риск · 0✓ крупный');
     expect(text).toContain('🧠\nузкое место: печать');
+  });
+
+  it('appends HTML link line and escapes plain text', () => {
+    const text = renderDigestMessage(
+      {
+        totalDeals: 1,
+        totalPositions: 2,
+        ready: { deals: 0, positions: 0, amountRubles: 0 },
+        notReady: { deals: 1, positions: 2, amountRubles: 400_000 },
+        risks: [
+          {
+            bookingNo: '178323',
+            name: 'x',
+            ready: 0,
+            total: 2,
+            amountRubles: 400_000,
+            labels: ['риск'],
+            reason: 'a <b> & c',
+            twentyUrl: 'https://crm.example.com/object/opportunity/o1',
+            tonyUrl: 'https://crm.apihide.com/orders/orders_edit/?id=178323',
+            bitrixUrl: '',
+          },
+        ],
+      },
+      { title: 'ЗАВТРА', dateLabel: '07.08' },
+    );
+    expect(text).toContain('• 178323 · 0/2 · ₽400к · риск · a &lt;b&gt; &amp; c');
+    expect(text).toContain(
+      '(<a href="https://crm.example.com/object/opportunity/o1">Twenty</a> | <a href="https://crm.apihide.com/orders/orders_edit/?id=178323">Tony</a>)',
+    );
+    expect(text).not.toContain('Bitrix');
+  });
+
+  it('omits link line when no URLs', () => {
+    const text = renderDigestMessage(
+      {
+        totalDeals: 1,
+        totalPositions: 1,
+        ready: { deals: 0, positions: 0, amountRubles: 0 },
+        notReady: { deals: 1, positions: 1, amountRubles: 1000 },
+        risks: [
+          {
+            bookingNo: '1',
+            ready: 0,
+            total: 2,
+            amountRubles: 400_000,
+            labels: ['риск'],
+          },
+        ],
+      },
+      { title: 'ЗАВТРА', dateLabel: '07.08' },
+    );
+    expect(text).toContain('• 1 · 0/2 · ₽400к · риск');
+    expect(text).not.toContain('<a href');
   });
 });

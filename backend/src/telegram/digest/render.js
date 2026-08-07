@@ -14,12 +14,38 @@ export function formatCompactRub(n) {
   return `₽${Math.round(v)}`;
 }
 
+export function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function escapeHtmlAttr(s) {
+  return escapeHtml(s).replace(/"/g, '&quot;');
+}
+
 export function formatRiskTitle(risk) {
-  const parts = [risk.companyName, risk.manager, risk.bookingNo]
-    .map((p) => String(p || '').trim())
-    .filter(Boolean);
-  if (parts.length) return parts.join('/');
-  return String(risk.name || risk.opportunityId || '—').trim();
+  const booking = String(risk.bookingNo || '').trim();
+  if (booking) return booking;
+  const name = String(risk.name || '').trim();
+  if (name) return name;
+  return '—';
+}
+
+export function formatRiskLinkLine(risk) {
+  const parts = [];
+  if (risk.twentyUrl) {
+    parts.push(`<a href="${escapeHtmlAttr(risk.twentyUrl)}">Twenty</a>`);
+  }
+  if (risk.tonyUrl) {
+    parts.push(`<a href="${escapeHtmlAttr(risk.tonyUrl)}">Tony</a>`);
+  }
+  if (risk.bitrixUrl) {
+    parts.push(`<a href="${escapeHtmlAttr(risk.bitrixUrl)}">Bitrix</a>`);
+  }
+  if (!parts.length) return '';
+  return `(${parts.join(' | ')})`;
 }
 
 export function renderDigestMessage(
@@ -40,9 +66,11 @@ export function renderDigestMessage(
     lines.push('нет');
   } else {
     for (const r of shown) {
-      let line = `• ${formatRiskTitle(r)} · ${r.ready}/${r.total} · ${formatCompactRub(r.amountRubles)} · ${r.labels.join(' · ')}`;
-      if (r.reason) line += ` · ${r.reason}`;
+      let line = `• ${escapeHtml(formatRiskTitle(r))} · ${r.ready}/${r.total} · ${escapeHtml(formatCompactRub(r.amountRubles))} · ${escapeHtml(r.labels.join(' · '))}`;
+      if (r.reason) line += ` · ${escapeHtml(r.reason)}`;
       lines.push(line);
+      const links = formatRiskLinkLine(r);
+      if (links) lines.push(links);
     }
     if (hiddenCount > 0) lines.push(`… +${hiddenCount}`);
   }
