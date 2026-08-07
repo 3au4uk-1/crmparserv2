@@ -30,6 +30,7 @@ import { initDigestCron } from './telegram/digest/cron.js';
 import { initTelegramPolling } from './telegram/polling.js';
 import { initUserbotReconcile } from './telegram/userbot/reconcile.js';
 import { initMentionForwarding } from './telegram/userbot/mention-forward.js';
+import { initDigestCommands } from './telegram/userbot/digest-commands.js';
 import { recoverStaleParseRuns } from './services/parser.js';
 import { recoverStaleRestoreMissingTwentyJobs } from './services/restore-missing-twenty-jobs.js';
 import { runFreeEntryDuplicateRepairIfNeeded } from './services/free-entry-duplicate-repair.js';
@@ -92,6 +93,7 @@ async function start() {
   initTelegramPolling();
   initUserbotReconcile();
   initMentionForwarding();
+  initDigestCommands();
   app.listen(config.port, () => {
     console.log(`CRM Parser running on port ${config.port}`);
     setImmediate(async () => {
