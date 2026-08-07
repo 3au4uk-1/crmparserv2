@@ -60,7 +60,7 @@ export function buildDigestModel({ deals, lineItemsByOppId }) {
     const amount = amountRubles(d.amount);
     const labels = [];
     let score = 0;
-    const r0 = total >= 2 && pct < RISK_PCT_LT;
+    const r0 = pct < RISK_PCT_LT;
     const r1 = amount >= R1_MIN_RUBLES && pct < 1;
     const r2 = rdy === 0 && total >= 2;
     if (r0) {

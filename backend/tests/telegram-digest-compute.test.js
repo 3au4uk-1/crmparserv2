@@ -57,7 +57,7 @@ describe('buildDigestModel', () => {
         amount: rub(200_000),
         companyName: 'Half',
       },
-      // exactly 30% — not R0; 1 ready of 1? use 3 items 1 ready = 33% not R0; 0 ready 1 item — not R2
+      // R0 only (1 position, 0 ready — pct=0 < 30%; not R2 because total < 2)
       {
         id: 'small',
         name: 'X/01.01/Mgr/100003/z',
@@ -80,13 +80,15 @@ describe('buildDigestModel', () => {
       done: [{ id: 'f', opportunityId: 'done', stage: 'GOTOVO' }],
     };
     const m = buildDigestModel({ deals, lineItemsByOppId });
-    expect(m.risks.map((r) => r.opportunityId)).toEqual(['big0', 'bigHalf']);
+    expect(m.risks.map((r) => r.opportunityId)).toEqual(['big0', 'small', 'bigHalf']);
     expect(m.risks[0].labels).toEqual(
       expect.arrayContaining(['риск', '0 готово', 'крупный готов не полностью']),
     );
     expect(m.risks[0].score).toBeGreaterThan(m.risks[1].score);
-    expect(m.risks[1].labels).toContain('крупный готов не полностью');
-    expect(m.risks[1].labels).not.toContain('риск');
+    expect(m.risks[1].labels).toEqual(['риск']);
+    expect(m.risks[1].labels).not.toContain('0 готово');
+    expect(m.risks[2].labels).toContain('крупный готов не полностью');
+    expect(m.risks[2].labels).not.toContain('риск');
   });
 
   it('caps risks at 7 with remainder hint via buildDigestModel option or separate slice helper', () => {
