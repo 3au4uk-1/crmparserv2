@@ -21,6 +21,7 @@ import exportTwentyRouter from './routes/export-twenty.js';
 import expensesRouter from './routes/expenses.js';
 import authRouter from './routes/auth.js';
 import twentyRouter from './routes/twenty.js';
+import twentyWebhookRouter from './routes/twenty-webhook.js';
 import telegramRouter from './routes/telegram.js';
 import { appAuthMiddleware } from './middleware/app-auth.js';
 import { initScheduler } from './services/scheduler.js';
@@ -37,11 +38,19 @@ import { runFreeEntryDuplicateRepairIfNeeded } from './services/free-entry-dupli
 import { runOpportunityAmountRecalcIfNeeded } from './services/opportunity-amount-recalc.js';
 import { getDb } from './db/connection.js';
 import { registerDefaultTelegramHooks } from './telegram/register-default-hooks.js';
+import { initTwentyEvents } from './services/twenty-events/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
-app.use(express.json());
+// Twenty webhook signatures cover the exact bytes we received, so keep them.
+app.use(
+  express.json({
+    verify: (req, res, buf) => {
+      req.rawBody = buf.toString('utf8');
+    },
+  }),
+);
 
 if (config.twentyAppCorsOrigin) {
   app.use('/api/twenty', (req, res, next) => {
@@ -54,6 +63,7 @@ if (config.twentyAppCorsOrigin) {
 }
 
 app.use('/api/twenty', twentyRouter);
+app.use('/api/twenty-webhook', twentyWebhookRouter);
 app.use('/api/auth', authRouter);
 app.use('/api', appAuthMiddleware);
 app.use('/api/deals', dealsRouter);
@@ -87,6 +97,7 @@ async function start() {
   recoverStaleParseRuns(getDb());
   recoverStaleRestoreMissingTwentyJobs(getDb());
   initScheduler();
+  initTwentyEvents();
   initPrintSheetCron();
   initDigestCron();
   initExpenseSyncCron();

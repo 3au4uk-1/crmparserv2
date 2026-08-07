@@ -44,6 +44,8 @@ export const config = {
   twentyApiTimeoutMs: parseInt(process.env.TWENTY_API_TIMEOUT_MS || '60000', 10),
   twentyApiRateLimitMax: parseInt(process.env.TWENTY_API_RATE_LIMIT_MAX || '95', 10),
   twentyApiRateLimitWindowMs: parseInt(process.env.TWENTY_API_RATE_LIMIT_WINDOW_MS || '60000', 10),
+  twentyEventsEnabled: process.env.TWENTY_EVENTS_ENABLED !== 'false',
+  twentyWebhookSecret: process.env.TWENTY_WEBHOOK_SECRET || '',
   sessionSecret: process.env.SESSION_SECRET || 'dev-secret',
   appPassword: process.env.APP_PASSWORD || '',
   importApiSecret: process.env.IMPORT_API_SECRET || '',
