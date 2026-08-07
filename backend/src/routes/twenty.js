@@ -14,9 +14,40 @@ import { lockDealItemAmount } from '../services/deal-item-amount-lock.js';
 import { scheduleListChangeResync } from '../services/list-change-resync.js';
 import { syncDealToTwenty } from '../services/twenty-sync.js';
 import { handleOkleykaSend } from '../telegram/handle-okleyka-send.js';
+import { getEventJournal, isTwentyEventsEnabled } from '../services/twenty-events/index.js';
+import { waitForEvents } from '../services/twenty-events/wait-for-events.js';
 
 const router = Router();
 router.use(twentyAppAuthMiddleware);
+
+router.get('/events', async (req, res, next) => {
+  try {
+    if (!isTwentyEventsEnabled()) {
+      return res.json({ disabled: true });
+    }
+
+    const journal = getEventJournal();
+    if (!journal) {
+      return res.status(503).json({ error: 'Twenty events journal is not ready' });
+    }
+
+    const sinceRaw = req.query.since;
+    const since =
+      typeof sinceRaw === 'string' && /^\d+$/.test(sinceRaw) ? Number(sinceRaw) : undefined;
+    const epochRaw = req.query.epoch;
+    const epoch = typeof epochRaw === 'string' && epochRaw ? epochRaw : undefined;
+
+    const controller = new AbortController();
+    res.on('close', () => controller.abort());
+
+    const result = await waitForEvents(journal, { since, epoch, signal: controller.signal });
+    if (res.writableEnded) return;
+
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.post('/line-items/list-status', (req, res, next) => {
   try {
