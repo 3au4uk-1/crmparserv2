@@ -79,4 +79,30 @@ describe('renderDigestMessage', () => {
     );
     expect(text).toContain('⚠ РИСКИ:\nнет');
   });
+
+  it('appends reason and notes block', () => {
+    const text = renderDigestMessage(
+      {
+        totalDeals: 1,
+        totalPositions: 1,
+        ready: { deals: 0, positions: 0, amountRubles: 0 },
+        notReady: { deals: 1, positions: 1, amountRubles: 1000 },
+        risks: [
+          {
+            companyName: 'Big',
+            manager: 'M',
+            bookingNo: '1',
+            ready: 0,
+            total: 2,
+            amountRubles: 400_000,
+            labels: ['риск'],
+            reason: '0✓ крупный',
+          },
+        ],
+      },
+      { title: 'ЗАВТРА', dateLabel: '07.08', notes: ['узкое место: печать'] },
+    );
+    expect(text).toContain('· риск · 0✓ крупный');
+    expect(text).toContain('🧠\nузкое место: печать');
+  });
 });
