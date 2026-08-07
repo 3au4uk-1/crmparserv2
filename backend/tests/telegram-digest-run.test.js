@@ -74,4 +74,16 @@ describe('runDigestForDay', () => {
     expect(result.skipped).toBe(true);
     expect(callTelegram).not.toHaveBeenCalled();
   });
+
+  it('returns ok:false and logs when no bot token', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    getTelegramBotToken.mockReturnValue(null);
+
+    const result = await runDigestForDay({ db: {}, offsetDays: 1, chatId: '-1001' });
+
+    expect(result).toEqual({ ok: false, skipped: true, error: 'no bot token' });
+    expect(logSpy).toHaveBeenCalledWith('[digest] skipped: no bot token');
+    expect(callTelegram).not.toHaveBeenCalled();
+    logSpy.mockRestore();
+  });
 });

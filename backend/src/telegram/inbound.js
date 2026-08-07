@@ -7,6 +7,16 @@ import { getTelegramBotToken } from './settings.js';
 
 const MEMBER_OK = new Set(['member', 'administrator', 'creator']);
 
+function sendDigestCommandError(db, chatId, threadId) {
+  const token = getTelegramBotToken(db);
+  if (!token) return;
+  void callTelegram(token, 'sendMessage', {
+    chat_id: chatId,
+    text: 'не удалось загрузить',
+    ...(threadId ? { message_thread_id: threadId } : {}),
+  }).catch(() => {});
+}
+
 /**
  * Legacy bot webhook processor — discovery only (no auto-invite).
  * Auto-invite is triggered by user-bot reconcile.
@@ -44,17 +54,16 @@ export function processTelegramUpdate(db, update) {
   if (offset != null) {
     const chatId = String(chat.id);
     const threadId = msg.message_thread_id || null;
-    void runDigestForDay({ db, offsetDays: offset, chatId, threadId }).catch((err) => {
-      console.error('[digest] command failed:', err.message);
-      const token = getTelegramBotToken(db);
-      if (token) {
-        void callTelegram(token, 'sendMessage', {
-          chat_id: chatId,
-          text: 'не удалось загрузить',
-          ...(threadId ? { message_thread_id: threadId } : {}),
-        }).catch(() => {});
-      }
-    });
+    void runDigestForDay({ db, offsetDays: offset, chatId, threadId })
+      .then((result) => {
+        if (result?.ok === false) {
+          sendDigestCommandError(db, chatId, threadId);
+        }
+      })
+      .catch((err) => {
+        console.error('[digest] command failed:', err.message);
+        sendDigestCommandError(db, chatId, threadId);
+      });
   }
   const created = msg.forum_topic_created;
   const edited = msg.forum_topic_edited;

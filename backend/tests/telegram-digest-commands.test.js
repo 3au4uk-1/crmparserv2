@@ -132,6 +132,42 @@ describe('processTelegramUpdate digest commands', () => {
     });
   });
 
+  it('sends error message when runDigestForDay returns ok:false (no token)', async () => {
+    runDigestForDayMock.mockResolvedValue({ ok: false, skipped: true, error: 'no bot token' });
+    getTelegramBotTokenMock.mockReturnValue('tok');
+    callTelegramMock.mockResolvedValue({});
+
+    processTelegramUpdate(testDb, {
+      message: {
+        chat: { id: -100, title: 'Ops', type: 'supergroup' },
+        text: '/завтра',
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(callTelegramMock).toHaveBeenCalledWith('tok', 'sendMessage', {
+        chat_id: '-100',
+        text: 'не удалось загрузить',
+      });
+    });
+  });
+
+  it('does not send error when runDigestForDay succeeds with ok:true', async () => {
+    runDigestForDayMock.mockResolvedValue({ ok: true, skipped: true });
+
+    processTelegramUpdate(testDb, {
+      message: {
+        chat: { id: -100, title: 'Ops', type: 'supergroup' },
+        text: '/завтра',
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(runDigestForDayMock).toHaveBeenCalled();
+    });
+    expect(callTelegramMock).not.toHaveBeenCalled();
+  });
+
   it('does not invoke run for unrelated messages', () => {
     processTelegramUpdate(testDb, {
       message: {

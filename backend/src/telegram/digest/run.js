@@ -15,7 +15,10 @@ export async function runDigestForDay({
   now = new Date(),
 }) {
   const token = getTelegramBotToken(db);
-  if (!token) return { ok: false, skipped: true, error: 'no bot token' };
+  if (!token) {
+    console.log('[digest] skipped: no bot token');
+    return { ok: false, skipped: true, error: 'no bot token' };
+  }
   const targetChatId = chatId || getTelegramDestination(db, 'digest.morning')?.chatId;
   if (!targetChatId) return { ok: false, skipped: true, error: 'no chat' };
 
