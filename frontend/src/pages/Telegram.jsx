@@ -47,8 +47,8 @@ function FieldLabel({ children }) {
   return <label className="block text-sm font-medium text-ink-muted mb-1.5">{children}</label>;
 }
 
-function readOkleykaDest(chatMap) {
-  const raw = chatMap?.['okleyka.send'];
+function readChatDest(chatMap, key) {
+  const raw = chatMap?.[key];
   if (!raw) return { chatId: '', threadId: '' };
   if (typeof raw === 'string') return { chatId: raw, threadId: '' };
   return {
@@ -118,8 +118,12 @@ export default function Telegram() {
   const [manualChatId, setManualChatId] = useState('');
   const [okleykaChatId, setOkleykaChatId] = useState('');
   const [okleykaThreadId, setOkleykaThreadId] = useState('');
+  const [digestChatId, setDigestChatId] = useState('');
+  const [digestThreadId, setDigestThreadId] = useState('');
   const [manualThreadId, setManualThreadId] = useState('');
   const [manualTopicName, setManualTopicName] = useState('');
+  const [digestManualThreadId, setDigestManualThreadId] = useState('');
+  const [digestManualTopicName, setDigestManualTopicName] = useState('');
   const [autoInviteUsername, setAutoInviteUsername] = useState('');
   const [autoInviteUserId, setAutoInviteUserId] = useState('');
   const [autoInviteDisplayName, setAutoInviteDisplayName] = useState('');
@@ -148,8 +152,13 @@ export default function Telegram() {
   const savedChatInActiveList = Boolean(
     okleykaChatId && chats.some((c) => c.chatId === okleykaChatId),
   );
+  const savedDigestChatInActiveList = Boolean(
+    digestChatId && chats.some((c) => c.chatId === digestChatId),
+  );
   const needsInactiveLookup = Boolean(
-    okleykaChatId && !chatsLoading && !savedChatInActiveList,
+    !chatsLoading &&
+      ((okleykaChatId && !savedChatInActiveList) ||
+        (digestChatId && !savedDigestChatInActiveList)),
   );
   const { data: inactiveChatsData, isLoading: inactiveChatsLoading } = useTelegramChats(
     false,
@@ -168,10 +177,14 @@ export default function Telegram() {
   }, [chats, inactiveLookupChats]);
 
   const selectedChat = allKnownChats.find((c) => c.chatId === okleykaChatId);
+  const digestSelectedChat = allKnownChats.find((c) => c.chatId === digestChatId);
   const inactiveLookupDone = needsInactiveLookup && !inactiveChatsLoading;
   const selectedChatResolved =
     !okleykaChatId || savedChatInActiveList || inactiveLookupDone;
+  const digestSelectedChatResolved =
+    !digestChatId || savedDigestChatInActiveList || inactiveLookupDone;
   const isForum = Boolean(selectedChat?.isForum);
+  const digestIsForum = Boolean(digestSelectedChat?.isForum);
 
   const okleykaChatOptions = useMemo(() => {
     const activeChats = chats.filter((c) => c.active);
@@ -185,8 +198,22 @@ export default function Telegram() {
     return options;
   }, [chats, allKnownChats, okleykaChatId]);
 
+  const digestChatOptions = useMemo(() => {
+    const activeChats = chats.filter((c) => c.active);
+    const options = activeChats.map((chat) => ({ chat, showInactive: false }));
+    if (digestChatId && !activeChats.some((c) => c.chatId === digestChatId)) {
+      const savedChat = allKnownChats.find((c) => c.chatId === digestChatId);
+      if (savedChat) {
+        options.push({ chat: savedChat, showInactive: true });
+      }
+    }
+    return options;
+  }, [chats, allKnownChats, digestChatId]);
+
   const { data: topicsData } = useTelegramTopics(isForum ? okleykaChatId : '');
   const cachedTopics = topicsData?.topics ?? [];
+  const { data: digestTopicsData } = useTelegramTopics(digestIsForum ? digestChatId : '');
+  const digestCachedTopics = digestTopicsData?.topics ?? [];
 
   const topicOptions = useMemo(() => {
     if (!isForum) return [];
@@ -208,10 +235,34 @@ export default function Telegram() {
     return merged;
   }, [isForum, cachedTopics]);
 
+  const digestTopicOptions = useMemo(() => {
+    if (!digestIsForum) return [];
+    const general = { threadId: '1', name: 'General (thread 1)', synthetic: true };
+    const fromDb = digestCachedTopics.map((t) => ({
+      threadId: String(t.threadId),
+      name: formatTopicLabel(t),
+      synthetic: false,
+    }));
+    const seen = new Set();
+    const merged = [general];
+    seen.add('1');
+    for (const t of fromDb) {
+      if (!seen.has(t.threadId)) {
+        merged.push(t);
+        seen.add(t.threadId);
+      }
+    }
+    return merged;
+  }, [digestIsForum, digestCachedTopics]);
+
   useEffect(() => {
-    const dest = readOkleykaDest(telegramSettings?.chatMap);
-    setOkleykaChatId(dest.chatId);
-    setOkleykaThreadId(dest.threadId);
+    const map = telegramSettings?.chatMap;
+    const okleyka = readChatDest(map, 'okleyka.send');
+    setOkleykaChatId(okleyka.chatId);
+    setOkleykaThreadId(okleyka.threadId);
+    const digest = readChatDest(map, 'digest.morning');
+    setDigestChatId(digest.chatId);
+    setDigestThreadId(digest.threadId);
   }, [telegramSettings?.chatMap]);
 
   useEffect(() => {
@@ -245,6 +296,25 @@ export default function Telegram() {
     okleykaThreadId,
     selectedChat,
     selectedChatResolved,
+  ]);
+
+  useEffect(() => {
+    if (chatsLoading || !digestChatId || !digestSelectedChatResolved || !digestSelectedChat) {
+      return;
+    }
+    if (digestSelectedChat.isForum) {
+      if (!digestThreadId) {
+        setDigestThreadId('1');
+      }
+      return;
+    }
+    setDigestThreadId('');
+  }, [
+    chatsLoading,
+    digestChatId,
+    digestThreadId,
+    digestSelectedChat,
+    digestSelectedChatResolved,
   ]);
 
   async function saveToken() {
@@ -354,6 +424,32 @@ export default function Telegram() {
     }
   }
 
+  async function onAddDigestTopic() {
+    setActionError('');
+    setActionSuccess('');
+    const threadId = Number(digestManualThreadId);
+    if (!digestChatId) {
+      setActionError('Сначала выберите чат');
+      return;
+    }
+    if (!Number.isInteger(threadId) || threadId <= 0) {
+      setActionError('Введите положительный thread_id');
+      return;
+    }
+    try {
+      await addTopic.mutateAsync({
+        chatId: digestChatId,
+        threadId,
+        name: digestManualTopicName.trim() || undefined,
+      });
+      setDigestManualThreadId('');
+      setDigestManualTopicName('');
+      setActionSuccess('Тема добавлена');
+    } catch (err) {
+      setActionError(err.response?.data?.error || err.message || 'Не удалось добавить тему');
+    }
+  }
+
   async function saveOkleykaDest() {
     setSaveError('');
     if (!okleykaChatId) {
@@ -381,7 +477,41 @@ export default function Telegram() {
     setActionError('');
     setActionSuccess('');
     try {
-      await testTelegramSend.mutateAsync();
+      await testTelegramSend.mutateAsync({});
+      setActionSuccess('Тестовое сообщение отправлено');
+    } catch (err) {
+      setActionError(err.response?.data?.error || err.message || 'Не удалось отправить тест');
+    }
+  }
+
+  async function saveDigestDest() {
+    setSaveError('');
+    if (!digestChatId) {
+      setSaveError('Выберите чат');
+      return;
+    }
+    if (digestIsForum && !digestThreadId) {
+      setSaveError('Выберите тему форума');
+      return;
+    }
+    const entry = digestIsForum
+      ? { chatId: digestChatId, threadId: Number(digestThreadId || '1') }
+      : { chatId: digestChatId };
+    try {
+      await updateTelegramSettings.mutateAsync({
+        chatMap: { 'digest.morning': entry },
+      });
+      setActionSuccess('Назначение утренней сводки сохранено');
+    } catch (err) {
+      setSaveError(err.response?.data?.error || err.message || 'Не удалось сохранить назначение');
+    }
+  }
+
+  async function onTestDigestSend() {
+    setActionError('');
+    setActionSuccess('');
+    try {
+      await testTelegramSend.mutateAsync({ event: 'digest.morning' });
       setActionSuccess('Тестовое сообщение отправлено');
     } catch (err) {
       setActionError(err.response?.data?.error || err.message || 'Не удалось отправить тест');
@@ -1033,7 +1163,7 @@ export default function Telegram() {
 
       <Section
         title="Оклейка → отправка"
-        description="Куда user-bot отправляет сообщения okleyka.send из Twenty. Утренняя сводка: ключ digest.morning в telegram_chat_map (chatId или {chatId, threadId}). Omni (🧠): digest_omni_api_key в settings или env OMNI_API_KEY; digest_omni_model по умолчанию oc/deepseek-v4-flash-free, fallback auto."
+        description="Куда user-bot отправляет сообщения okleyka.send из Twenty."
       >
         <div className="space-y-4 max-w-xl">
           <div>
@@ -1127,6 +1257,111 @@ export default function Telegram() {
             <button
               type="button"
               onClick={onTestSend}
+              disabled={testTelegramSend.isPending}
+              className="btn-secondary btn-sm"
+            >
+              {testTelegramSend.isPending ? 'Отправка…' : 'Тест в чат'}
+            </button>
+          </div>
+        </div>
+      </Section>
+
+      <Section
+        title="Утренняя сводка"
+        description="Cron 09:00 и команды /завтра /послезавтра → digest.morning. Omni (🧠): digest_omni_api_key или OMNI_API_KEY; модель oc/deepseek-v4-flash-free, fallback auto. Пока чат не выбран — сводка не отправляется."
+      >
+        <div className="space-y-4 max-w-xl">
+          <div>
+            <FieldLabel>Чат</FieldLabel>
+            <select
+              value={digestChatId}
+              onChange={(e) => {
+                setDigestChatId(e.target.value);
+                setDigestThreadId('');
+              }}
+              className="select-field w-full"
+            >
+              <option value="">— выберите чат —</option>
+              {digestChatOptions.map(({ chat, showInactive }) => (
+                <option key={chat.chatId} value={chat.chatId}>
+                  {formatChatLabel(chat, { showInactive })}
+                </option>
+              ))}
+            </select>
+            {digestChatOptions.length === 0 && (
+              <p className="text-xs text-ink-faint mt-1.5">
+                Нет активных чатов — добавьте бота в группу или введите chat_id вручную выше.
+              </p>
+            )}
+          </div>
+
+          {digestIsForum && (
+            <>
+              <div>
+                <FieldLabel>Тема форума</FieldLabel>
+                <select
+                  value={digestThreadId}
+                  onChange={(e) => setDigestThreadId(e.target.value)}
+                  className="select-field w-full"
+                >
+                  {digestTopicOptions.map((t) => (
+                    <option key={t.threadId} value={t.threadId}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+                {digestTopicOptions.length <= 1 && (
+                  <p className="text-xs text-ink-faint mt-1.5 leading-relaxed">
+                    Другие темы появятся после сообщений в форуме или добавьте thread_id вручную ниже.
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2 items-end">
+                <div className="flex-1 min-w-[6rem]">
+                  <FieldLabel>thread_id</FieldLabel>
+                  <input
+                    type="number"
+                    min="1"
+                    value={digestManualThreadId}
+                    onChange={(e) => setDigestManualThreadId(e.target.value)}
+                    className="input-field font-mono w-full"
+                    placeholder="2"
+                  />
+                </div>
+                <div className="flex-[2] min-w-[8rem]">
+                  <FieldLabel>Название (необяз.)</FieldLabel>
+                  <input
+                    type="text"
+                    value={digestManualTopicName}
+                    onChange={(e) => setDigestManualTopicName(e.target.value)}
+                    className="input-field w-full"
+                    placeholder="Утренняя сводка"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={onAddDigestTopic}
+                  disabled={addTopic.isPending}
+                  className="btn-secondary btn-sm"
+                >
+                  Добавить тему
+                </button>
+              </div>
+            </>
+          )}
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            <button
+              type="button"
+              onClick={saveDigestDest}
+              disabled={updateTelegramSettings.isPending}
+              className="btn-primary btn-sm"
+            >
+              Сохранить назначение
+            </button>
+            <button
+              type="button"
+              onClick={onTestDigestSend}
               disabled={testTelegramSend.isPending}
               className="btn-secondary btn-sm"
             >
