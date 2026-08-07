@@ -21,4 +21,38 @@ describe('mergeChatMapEntry', () => {
       'okleyka.send': '',
     });
   });
+
+  it('stores object destination for digest.morning', () => {
+    expect(
+      mergeChatMapEntry({}, { 'digest.morning': { chatId: '-200', threadId: 3 } }),
+    ).toEqual({
+      'digest.morning': { chatId: '-200', threadId: 3 },
+    });
+  });
+
+  it('normalizes legacy string for digest.morning', () => {
+    expect(mergeChatMapEntry({}, { 'digest.morning': '-200' })).toEqual({
+      'digest.morning': { chatId: '-200' },
+    });
+  });
+
+  it('preserves okleyka.send when patching digest.morning', () => {
+    const existing = { 'okleyka.send': { chatId: '-100', threadId: 1 } };
+    expect(
+      mergeChatMapEntry(existing, { 'digest.morning': { chatId: '-200', threadId: 9 } }),
+    ).toEqual({
+      'okleyka.send': { chatId: '-100', threadId: 1 },
+      'digest.morning': { chatId: '-200', threadId: 9 },
+    });
+  });
+
+  it('clears digest.morning when patch is empty or null', () => {
+    const existing = { 'digest.morning': { chatId: '-200', threadId: 3 } };
+    expect(mergeChatMapEntry(existing, { 'digest.morning': '' })).toEqual({
+      'digest.morning': '',
+    });
+    expect(mergeChatMapEntry(existing, { 'digest.morning': null })).toEqual({
+      'digest.morning': '',
+    });
+  });
 });
