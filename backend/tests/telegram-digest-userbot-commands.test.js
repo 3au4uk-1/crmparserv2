@@ -49,6 +49,22 @@ describe('resolveMessageThreadId', () => {
     ).toBe(42);
   });
 
+  it('prefers replyToTopId over replyToMsgId for forumTopic replies', () => {
+    expect(
+      resolveMessageThreadId({
+        replyTo: { forumTopic: true, replyToTopId: 42, replyToMsgId: 99 },
+      }),
+    ).toBe(42);
+  });
+
+  it('uses replyToTopId when replyToMsgId is absent', () => {
+    expect(
+      resolveMessageThreadId({
+        replyTo: { forumTopic: true, replyToTopId: 42 },
+      }),
+    ).toBe(42);
+  });
+
   it('returns null when reply is not a forum topic', () => {
     expect(resolveMessageThreadId({ replyTo: { replyToMsgId: 42 } })).toBe(null);
     expect(resolveMessageThreadId({})).toBe(null);
@@ -93,6 +109,18 @@ describe('handleDigestCommandEvent', () => {
     await handleDigestCommandEvent({ client, db, message: digestMessage() });
     expect(runDigestForDayMock).toHaveBeenCalledWith({ db, offsetDays: 1 });
     expect(sendDigestTextMock).not.toHaveBeenCalled();
+  });
+
+  it('matches digest.morning dest when forum message has replyToTopId only', async () => {
+    const db = memDb();
+    await handleDigestCommandEvent({
+      client,
+      db,
+      message: digestMessage({
+        replyTo: { forumTopic: true, replyToTopId: 42 },
+      }),
+    });
+    expect(runDigestForDayMock).toHaveBeenCalledWith({ db, offsetDays: 1 });
   });
 
   it('runs digest for /послезавтра with offsetDays 2', async () => {

@@ -13,14 +13,14 @@ const DIGEST_ERROR_TEXT = 'не удалось загрузить';
 /**
  * Forum topic root id from GramJS MessageReplyHeader (Bot-API threadId).
  *
- * @param {{ replyTo?: { forumTopic?: boolean, replyToMsgId?: number } } | undefined} message
+ * @param {{ replyTo?: { forumTopic?: boolean, replyToTopId?: number, replyToMsgId?: number } } | undefined} message
  * @returns {number | null}
  */
 export function resolveMessageThreadId(message) {
   const reply = message?.replyTo;
-  return reply?.forumTopic && reply.replyToMsgId != null
-    ? Number(reply.replyToMsgId)
-    : null;
+  if (!reply?.forumTopic) return null;
+  const threadId = reply.replyToTopId ?? reply.replyToMsgId;
+  return threadId != null ? Number(threadId) : null;
 }
 
 /**
