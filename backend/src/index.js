@@ -26,6 +26,7 @@ import { appAuthMiddleware } from './middleware/app-auth.js';
 import { initScheduler } from './services/scheduler.js';
 import { initPrintSheetCron } from './services/print-sheet-cron.js';
 import { initExpenseSyncCron } from './services/expense-sync-cron.js';
+import { initDigestCron } from './telegram/digest/cron.js';
 import { initTelegramPolling } from './telegram/polling.js';
 import { initUserbotReconcile } from './telegram/userbot/reconcile.js';
 import { initMentionForwarding } from './telegram/userbot/mention-forward.js';
@@ -86,6 +87,7 @@ async function start() {
   recoverStaleRestoreMissingTwentyJobs(getDb());
   initScheduler();
   initPrintSheetCron();
+  initDigestCron();
   initExpenseSyncCron();
   initTelegramPolling();
   initUserbotReconcile();

@@ -1,0 +1,55 @@
+import { sliceRisksForMessage } from './compute.js';
+
+export function formatCompactRub(n) {
+  const v = Number(n) || 0;
+  if (v >= 1_000_000) {
+    const m = v / 1_000_000;
+    const s = Number.isInteger(m) ? String(m) : m.toFixed(1).replace(/\.0$/, '');
+    return `₽${s}М`;
+  }
+  if (v >= 1000) {
+    const k = Math.round(v / 1000);
+    return `₽${k}к`;
+  }
+  return `₽${Math.round(v)}`;
+}
+
+export function formatRiskTitle(risk) {
+  const parts = [risk.companyName, risk.manager, risk.bookingNo]
+    .map((p) => String(p || '').trim())
+    .filter(Boolean);
+  if (parts.length) return parts.join('/');
+  return String(risk.name || risk.opportunityId || '—').trim();
+}
+
+export function renderDigestMessage(
+  model,
+  { title, dateLabel, notes, risksOverride },
+) {
+  const lines = [
+    `${title} ${dateLabel} · ${model.totalDeals} сделок / ${model.totalPositions} позиций`,
+    `✔️ ${model.ready.deals} сделок / ${model.ready.positions} позиций · ${formatCompactRub(model.ready.amountRubles)}`,
+    `❌ ${model.notReady.deals} сделок / ${model.notReady.positions} позиций · ${formatCompactRub(model.notReady.amountRubles)}`,
+    '',
+    '⚠ РИСКИ:',
+  ];
+  const { shown, hiddenCount } = sliceRisksForMessage(
+    risksOverride ?? model.risks,
+  );
+  if (!shown.length) {
+    lines.push('нет');
+  } else {
+    for (const r of shown) {
+      let line = `• ${formatRiskTitle(r)} · ${r.ready}/${r.total} · ${formatCompactRub(r.amountRubles)} · ${r.labels.join(' · ')}`;
+      if (r.reason) line += ` · ${r.reason}`;
+      lines.push(line);
+    }
+    if (hiddenCount > 0) lines.push(`… +${hiddenCount}`);
+  }
+  if (notes?.length) {
+    lines.push('');
+    lines.push('🧠');
+    for (const note of notes) lines.push(note);
+  }
+  return lines.join('\n');
+}
