@@ -1033,7 +1033,7 @@ export default function Telegram() {
 
       <Section
         title="Оклейка → отправка"
-        description="Куда user-bot отправляет сообщения okleyka.send из Twenty."
+        description="Куда user-bot отправляет сообщения okleyka.send из Twenty. Утренняя сводка: ключ digest.morning в telegram_chat_map (chatId или {chatId, threadId})."
       >
         <div className="space-y-4 max-w-xl">
           <div>
