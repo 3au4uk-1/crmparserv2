@@ -91,6 +91,37 @@ describe('buildDigestModel', () => {
     expect(m.risks[2].labels).not.toContain('риск');
   });
 
+  it('resolves bookingNo from tonyUrl and builds twentyUrl', () => {
+    const deals = [
+      {
+        id: 'messy',
+        name: 'ProInteractive something',
+        stage: 'V_RABOTE',
+        amount: rub(400_000),
+        companyName: 'ProInteractive',
+        tonyUrl: 'https://crm.apihide.com/orders/orders_edit/?id=178323',
+        bitrixUrl: 'https://bitrix.example/deal/1/',
+      },
+    ];
+    const lineItemsByOppId = {
+      messy: [
+        { id: 'a', opportunityId: 'messy', stage: 'NOVYY' },
+        { id: 'b', opportunityId: 'messy', stage: 'NOVYY' },
+      ],
+    };
+    const m = buildDigestModel(
+      { deals, lineItemsByOppId },
+      { twentyApiUrl: 'https://crm.example.com/graphql' },
+    );
+    const risk = m.risks.find((r) => r.opportunityId === 'messy');
+    expect(risk.bookingNo).toBe('178323');
+    expect(risk.tonyUrl).toContain('id=178323');
+    expect(risk.bitrixUrl).toContain('bitrix.example');
+    expect(risk.twentyUrl).toBe(
+      'https://crm.example.com/object/opportunity/messy',
+    );
+  });
+
   it('caps risks at 7 with remainder hint via buildDigestModel option or separate slice helper', () => {
     const deals = Array.from({ length: 10 }, (_, i) => ({
       id: `d${i}`,

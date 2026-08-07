@@ -19,6 +19,14 @@ describe('fetchDigestDayData', () => {
                     loadDate: '2026-08-07',
                     amount: { amountMicros: 1e6 },
                     company: { name: 'Co' },
+                    tonyLink: {
+                      primaryLinkUrl:
+                        'https://crm.apihide.com/orders/orders_edit/?id=178323',
+                    },
+                    bitrixLink: {
+                      primaryLinkUrl:
+                        'https://prointeractive.bitrix24.ru/crm/deal/details/42/',
+                    },
                   },
                 },
               ],
@@ -45,7 +53,11 @@ describe('fetchDigestDayData', () => {
       lt: '2026-08-08T00:00:00+03:00',
     });
     expect(data.deals).toHaveLength(1);
-    expect(data.deals[0].companyName).toBe('Co');
+    expect(data.deals[0]).toMatchObject({
+      companyName: 'Co',
+      tonyUrl: 'https://crm.apihide.com/orders/orders_edit/?id=178323',
+      bitrixUrl: 'https://prointeractive.bitrix24.ru/crm/deal/details/42/',
+    });
     expect(data.lineItemsByOppId.o1).toHaveLength(2);
     expect(gqlClient).toHaveBeenCalled();
   });

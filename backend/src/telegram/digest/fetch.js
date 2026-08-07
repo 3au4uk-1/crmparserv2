@@ -13,6 +13,8 @@ const DIGEST_OPPS = `
           loadDate
           amount { amountMicros currencyCode }
           company { name }
+          tonyLink { primaryLinkUrl }
+          bitrixLink { primaryLinkUrl }
         }
       }
     }
@@ -36,6 +38,8 @@ function mapOpportunity(node) {
     loadDate: node.loadDate,
     amount: node.amount,
     companyName: node.companyName ?? node.company?.name ?? '',
+    tonyUrl: node.tonyLink?.primaryLinkUrl || node.tonyUrl || '',
+    bitrixUrl: node.bitrixLink?.primaryLinkUrl || node.bitrixUrl || '',
   };
 }
 
