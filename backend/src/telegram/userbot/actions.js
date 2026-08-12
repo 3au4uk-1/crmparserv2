@@ -39,9 +39,13 @@ export async function joinChatByInviteLink(client, inviteLink) {
   await client.invoke(new Api.messages.ImportChatInvite({ hash }));
 }
 
+/** Max messages Telegram forwards to a newly added basic-group member (history access). */
+export const ADD_CHAT_USER_FWD_LIMIT = 100;
+
 /**
  * Invites a user into a chat. Basic groups (InputPeerChat) require
  * messages.AddChatUser; supergroups/channels use channels.InviteToChannel.
+ * fwdLimit > 0 grants chat history to the invitee in basic groups.
  *
  * @param {{ invoke: (request: unknown) => Promise<unknown>, getInputEntity: (input: string | number | bigint) => Promise<object> }} client
  * @param {string | number | bigint} chatId
@@ -54,7 +58,7 @@ export async function inviteUserToChat(client, chatId, userId) {
       new Api.messages.AddChatUser({
         chatId: inputPeer.chatId,
         userId,
-        fwdLimit: 0,
+        fwdLimit: ADD_CHAT_USER_FWD_LIMIT,
       }),
     );
     return;
