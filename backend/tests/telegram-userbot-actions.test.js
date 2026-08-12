@@ -131,7 +131,7 @@ describe('inviteUserToChat', () => {
     expect(request).toBeInstanceOf(Api.messages.AddChatUser);
     expect(request.chatId).toBe(5490992591n);
     expect(request.userId).toBe('456789');
-    expect(request.fwdLimit).toBe(0);
+    expect(request.fwdLimit).toBe(100);
   });
 });
 
