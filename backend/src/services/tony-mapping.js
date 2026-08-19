@@ -11,9 +11,9 @@ export function normalizeFreeEntryItem(item) {
   }
   const trimmedComment = (item.comment ?? '').trim();
   if (trimmedComment) {
-    return { ...item, name: trimmedComment, comment: '' };
+    return { ...item, name: trimmedComment, comment: '', isFreeEntry: true };
   }
-  return { ...item, comment: '' };
+  return { ...item, comment: '', isFreeEntry: true };
 }
 
 /** "16.06.2026" -> "2026-06-16" (or '' when not parseable). */
