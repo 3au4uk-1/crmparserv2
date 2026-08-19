@@ -20,6 +20,13 @@ export function keywordMatchesItemName(itemName, keyword) {
 
 export function classifyByKeywords(items, keywords) {
   return items.map(item => {
+    if (item.isFreeEntry) {
+      return {
+        ...item,
+        classification: 'keyword_match',
+        classification_confidence: 1.0,
+      };
+    }
     const matched = keywords.some((kw) => keywordMatchesItemName(item.name, kw));
     return {
       ...item,

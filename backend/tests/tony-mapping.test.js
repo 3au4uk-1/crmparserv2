@@ -103,6 +103,7 @@ describe('tony-mapping', () => {
         name: 'Наклейка на зеркало',
         comment: '',
         price: 5950,
+        isFreeEntry: true,
       });
     });
 
@@ -113,7 +114,26 @@ describe('tony-mapping', () => {
           comment: '   ',
           price: 0,
         }),
-      ).toMatchObject({ name: FREE_ENTRY_NAME, comment: '' });
+      ).toMatchObject({ name: FREE_ENTRY_NAME, comment: '', isFreeEntry: true });
+    });
+
+    it('sets isFreeEntry on free-entry even when comment is empty', () => {
+      expect(
+        normalizeFreeEntryItem({
+          name: FREE_ENTRY_NAME,
+          comment: '',
+        }).isFreeEntry,
+      ).toBe(true);
+    });
+
+    it('does not set isFreeEntry on ordinary items', () => {
+      expect(
+        normalizeFreeEntryItem({
+          name: 'Навигационные наклейки',
+          comment: '+ монтаж',
+          price: 2640,
+        }).isFreeEntry,
+      ).toBeUndefined();
     });
 
     it('leaves ordinary items unchanged', () => {
@@ -154,6 +174,7 @@ describe('tony-mapping', () => {
 
       expect(items.map((i) => i.name)).toEqual(['ПВХ', 'Наклейка на зеркало']);
       expect(items.every((i) => i.comment === '')).toBe(true);
+      expect(items.every((i) => i.isFreeEntry === true)).toBe(true);
     });
 
     it('detects free-entry case-insensitively', () => {
@@ -197,5 +218,6 @@ describe('disambiguateDuplicateNames', () => {
     });
     expect(items.map((i) => i.name)).toEqual(['Макет', 'Макет (#2)']);
     expect(items.every((i) => i.comment === '')).toBe(true);
+    expect(items.every((i) => i.isFreeEntry === true)).toBe(true);
   });
 });
