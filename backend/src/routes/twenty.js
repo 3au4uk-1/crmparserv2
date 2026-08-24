@@ -14,6 +14,7 @@ import { lockDealItemAmount } from '../services/deal-item-amount-lock.js';
 import { scheduleListChangeResync } from '../services/list-change-resync.js';
 import { syncDealToTwenty } from '../services/twenty-sync.js';
 import { handleOkleykaSend } from '../telegram/handle-okleyka-send.js';
+import { queueBannerPodryadCatchUp } from '../telegram/banner-podryad/run.js';
 import { getEventJournal, isTwentyEventsEnabled } from '../services/twenty-events/index.js';
 import { waitForEvents } from '../services/twenty-events/wait-for-events.js';
 
@@ -128,11 +129,18 @@ router.post('/telegram/events', async (req, res, next) => {
   try {
     const db = getDb();
     const body = req.body ?? {};
-    if (body.event !== 'okleyka.send') {
-      return res.status(400).json({ error: `Unsupported event: ${body.event}` });
+    if (body.event === 'okleyka.send') {
+      const result = await handleOkleykaSend(db, body);
+      return res.status(200).json(result);
     }
-    const result = await handleOkleykaSend(db, body);
-    return res.status(200).json(result);
+    if (body.event === 'banner_podryad.catchup') {
+      const lineItemId = typeof body.lineItemId === 'string' ? body.lineItemId.trim() : '';
+      if (lineItemId) {
+        queueBannerPodryadCatchUp([lineItemId], { db });
+      }
+      return res.status(200).json({ ok: true, queued: Boolean(lineItemId) });
+    }
+    return res.status(400).json({ error: `Unsupported event: ${body.event}` });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);
