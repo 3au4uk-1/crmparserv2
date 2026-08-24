@@ -77,7 +77,11 @@ export function setMentionForwardSettings(db, value = {}) {
   return { chatId, topicId };
 }
 
-const CHAT_DESTINATION_KEYS = new Set(['okleyka.send', 'digest.morning']);
+const CHAT_DESTINATION_KEYS = new Set([
+  'okleyka.send',
+  'digest.morning',
+  'banner_podryad.evening',
+]);
 
 function applyDestinationPatch(result, key, raw) {
   if (raw == null || raw === '') {
@@ -104,4 +108,26 @@ export function mergeChatMapEntry(existing, incoming) {
     }
   }
   return result;
+}
+
+export const BANNER_PODRYAD_HOUR_KEY = 'telegram_banner_podryad_hour';
+export const DEFAULT_BANNER_PODRYAD_HOUR = 18;
+
+export function getBannerPodryadHour(db) {
+  const row = db.prepare(`SELECT value FROM settings WHERE key = ?`).get(BANNER_PODRYAD_HOUR_KEY);
+  const n = Number.parseInt(row?.value ?? '', 10);
+  if (Number.isInteger(n) && n >= 0 && n <= 23) return n;
+  return DEFAULT_BANNER_PODRYAD_HOUR;
+}
+
+export function setBannerPodryadHour(db, hour) {
+  const n = Number(hour);
+  if (!Number.isInteger(n) || n < 0 || n > 23) {
+    throw Object.assign(new Error('hour must be 0–23'), { status: 400 });
+  }
+  db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`).run(
+    BANNER_PODRYAD_HOUR_KEY,
+    String(n),
+  );
+  return n;
 }

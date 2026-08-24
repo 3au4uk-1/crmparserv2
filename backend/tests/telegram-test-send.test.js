@@ -113,4 +113,71 @@ describe('POST /telegram/test-send', () => {
     expect(res.body).toEqual({ ok: false, error: 'User-bot not configured' });
     expect(sendDigestTextMock).not.toHaveBeenCalled();
   });
+
+  it('sends banner_podryad.evening ping via Bot API', async () => {
+    globalThis.__testSendDb
+      .prepare(`INSERT INTO settings (key, value) VALUES ('telegram_bot_token', ?)`)
+      .run('123:abc');
+    globalThis.__testSendDb
+      .prepare(`INSERT INTO settings (key, value) VALUES ('telegram_chat_map', ?)`)
+      .run(JSON.stringify({ 'banner_podryad.evening': { chatId: '-300', threadId: 7 } }));
+
+    const res = await request(app)
+      .post('/telegram/test-send')
+      .send({ event: 'banner_podryad.evening' });
+    expect(res.status).toBe(200);
+    expect(callTelegramMock).toHaveBeenCalledWith('123:abc', 'sendMessage', {
+      chat_id: '-300',
+      text: 'Тест пачки баннер/подряд',
+      message_thread_id: 7,
+    });
+    expect(sendOkleykaMock).not.toHaveBeenCalled();
+    expect(sendDigestTextMock).not.toHaveBeenCalled();
+  });
+
+  it('omits message_thread_id when banner_podryad.evening has no thread', async () => {
+    globalThis.__testSendDb
+      .prepare(`INSERT INTO settings (key, value) VALUES ('telegram_bot_token', ?)`)
+      .run('123:abc');
+    globalThis.__testSendDb
+      .prepare(`INSERT INTO settings (key, value) VALUES ('telegram_chat_map', ?)`)
+      .run(JSON.stringify({ 'banner_podryad.evening': { chatId: '-300' } }));
+
+    const res = await request(app)
+      .post('/telegram/test-send')
+      .send({ event: 'banner_podryad.evening' });
+    expect(res.status).toBe(200);
+    expect(callTelegramMock).toHaveBeenCalledWith('123:abc', 'sendMessage', {
+      chat_id: '-300',
+      text: 'Тест пачки баннер/подряд',
+    });
+  });
+
+  it('returns 400 when banner_podryad.evening chat is missing', async () => {
+    globalThis.__testSendDb
+      .prepare(`INSERT INTO settings (key, value) VALUES ('telegram_bot_token', ?)`)
+      .run('123:abc');
+
+    const res = await request(app)
+      .post('/telegram/test-send')
+      .send({ event: 'banner_podryad.evening' });
+    expect(res.status).toBe(400);
+    expect(res.body.ok).toBe(false);
+    expect(res.body.error).toMatch(/banner_podryad\.evening/);
+    expect(callTelegramMock).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when bot token is missing for banner_podryad.evening', async () => {
+    globalThis.__testSendDb
+      .prepare(`INSERT INTO settings (key, value) VALUES ('telegram_chat_map', ?)`)
+      .run(JSON.stringify({ 'banner_podryad.evening': { chatId: '-300', threadId: 7 } }));
+
+    const res = await request(app)
+      .post('/telegram/test-send')
+      .send({ event: 'banner_podryad.evening' });
+    expect(res.status).toBe(400);
+    expect(res.body.ok).toBe(false);
+    expect(res.body.error).toMatch(/[Tt]oken/);
+    expect(callTelegramMock).not.toHaveBeenCalled();
+  });
 });

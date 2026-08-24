@@ -55,4 +55,44 @@ describe('mergeChatMapEntry', () => {
       'digest.morning': '',
     });
   });
+
+  it('stores object destination for banner_podryad.evening', () => {
+    expect(
+      mergeChatMapEntry({}, { 'banner_podryad.evening': { chatId: '-300', threadId: 7 } }),
+    ).toEqual({
+      'banner_podryad.evening': { chatId: '-300', threadId: 7 },
+    });
+  });
+
+  it('normalizes legacy string for banner_podryad.evening', () => {
+    expect(mergeChatMapEntry({}, { 'banner_podryad.evening': '-300' })).toEqual({
+      'banner_podryad.evening': { chatId: '-300' },
+    });
+  });
+
+  it('preserves okleyka.send and digest.morning when patching banner_podryad.evening', () => {
+    const existing = {
+      'okleyka.send': { chatId: '-100', threadId: 1 },
+      'digest.morning': { chatId: '-200', threadId: 9 },
+    };
+    expect(
+      mergeChatMapEntry(existing, {
+        'banner_podryad.evening': { chatId: '-300', threadId: 7 },
+      }),
+    ).toEqual({
+      'okleyka.send': { chatId: '-100', threadId: 1 },
+      'digest.morning': { chatId: '-200', threadId: 9 },
+      'banner_podryad.evening': { chatId: '-300', threadId: 7 },
+    });
+  });
+
+  it('clears banner_podryad.evening when patch is empty or null', () => {
+    const existing = { 'banner_podryad.evening': { chatId: '-300', threadId: 7 } };
+    expect(mergeChatMapEntry(existing, { 'banner_podryad.evening': '' })).toEqual({
+      'banner_podryad.evening': '',
+    });
+    expect(mergeChatMapEntry(existing, { 'banner_podryad.evening': null })).toEqual({
+      'banner_podryad.evening': '',
+    });
+  });
 });
