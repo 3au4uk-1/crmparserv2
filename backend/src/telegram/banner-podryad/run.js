@@ -83,18 +83,28 @@ async function sendAndLog({ db, dest, token, mode, loadDateYmd, items }) {
 
   const messageId = result?.message_id;
   for (const item of items) {
-    insertSendLog(db, {
-      event: BANNER_PODRYAD_EVENT,
-      lineItemId: item.id,
-      opportunityId: item.opportunityId,
-      chatId: dest.chatId,
-      sentBy: 'bot',
-      payloadHash: hashOkleykaPayload(text, []),
-      telegramMessageIds: messageId != null ? [messageId] : [],
-      loadDate: loadDateYmd,
-    });
+    try {
+      insertSendLog(db, {
+        event: BANNER_PODRYAD_EVENT,
+        lineItemId: item.id,
+        opportunityId: item.opportunityId,
+        chatId: dest.chatId,
+        sentBy: 'bot',
+        payloadHash: hashOkleykaPayload(text, []),
+        telegramMessageIds: messageId != null ? [messageId] : [],
+        loadDate: loadDateYmd,
+      });
+    } catch (err) {
+      if (!isUniqueConstraintError(err)) throw err;
+    }
   }
   return { ok: true, sent: true };
+}
+
+function isUniqueConstraintError(err) {
+  const code = String(err?.code ?? '');
+  if (code === 'SQLITE_CONSTRAINT_UNIQUE' || code === 'SQLITE_CONSTRAINT') return true;
+  return /unique constraint/i.test(String(err?.message ?? ''));
 }
 
 export async function runEveningBatch({ db, now = new Date() }) {

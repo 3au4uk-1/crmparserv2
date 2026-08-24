@@ -162,6 +162,19 @@ describe('runEveningBatch', () => {
     expect(insertSendLog).not.toHaveBeenCalled();
     expect(callTelegram).not.toHaveBeenCalled();
   });
+
+  it('treats UNIQUE constraint on insert after send as already-logged', async () => {
+    insertSendLog.mockImplementation(() => {
+      const err = new Error('UNIQUE constraint failed: telegram_send_log.event, line_item_id, load_date');
+      err.code = 'SQLITE_CONSTRAINT_UNIQUE';
+      throw err;
+    });
+
+    const result = await runEveningBatch({ db: {}, now: NOW });
+
+    expect(result).toEqual({ ok: true, sent: true });
+    expect(callTelegram).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('runCatchUpSweep', () => {
@@ -221,6 +234,29 @@ describe('runCatchUpSweep', () => {
       {},
       expect.objectContaining({ lineItemId: 'li-2' }),
     );
+  });
+
+  it('at 18:00 tomorrow universe is one evening send, not two', async () => {
+    const eveningNow = new Date('2026-08-24T15:00:00.000Z');
+    const logged = new Set();
+    findSendForLoadDate.mockImplementation((_db, _event, id, loadDate) =>
+      logged.has(`${id}|${loadDate}`) ? { id: 1 } : undefined,
+    );
+    insertSendLog.mockImplementation((_db, row) => {
+      logged.add(`${row.lineItemId}|${row.loadDate}`);
+      return 1;
+    });
+    fetchBannerPodryadDayData.mockImplementation(async (_gql, { gte }) => {
+      if (String(gte).startsWith(TOMORROW)) return reminderDay();
+      return { deals: [], lineItemsByOppId: {} };
+    });
+
+    await runEveningBatch({ db: {}, now: eveningNow });
+    await runCatchUpSweep({ db: {}, now: eveningNow });
+
+    expect(callTelegram).toHaveBeenCalledTimes(1);
+    expect(callTelegram.mock.calls[0][2].text).toContain('Накануне отгрузки 25.08');
+    expect(callTelegram.mock.calls[0][2].text).not.toContain('Догон');
   });
 });
 

@@ -58,4 +58,23 @@ describe('initBannerPodryadCron', () => {
     expect(runEveningBatch).toHaveBeenCalledTimes(1);
     expect(isEveningTick).toHaveBeenCalledWith(expect.any(Date), 18);
   });
+
+  it('on evening tick awaits evening batch before catch-up', async () => {
+    const order = [];
+    isEveningTick.mockReturnValue(true);
+    runEveningBatch.mockImplementation(async () => {
+      order.push('evening-start');
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      order.push('evening-done');
+    });
+    runCatchUpSweep.mockImplementation(async () => {
+      order.push('catch-up');
+    });
+    initBannerPodryadCron();
+    const tick = scheduleMock.mock.calls[0][1];
+
+    await tick();
+
+    expect(order).toEqual(['evening-start', 'evening-done', 'catch-up']);
+  });
 });

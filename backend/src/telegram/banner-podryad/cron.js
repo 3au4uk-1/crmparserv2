@@ -11,16 +11,16 @@ export function initBannerPodryadCron() {
   if (cronTask) cronTask.stop();
   cronTask = cron.schedule(
     '0 * * * *',
-    () => {
+    async () => {
       const db = getDb();
       const now = new Date();
-      runCatchUpSweep({ db, now }).catch((err) => {
-        console.error('[banner-podryad] catch-up cron error:', err.message);
-      });
-      if (isEveningTick(now, getBannerPodryadHour(db))) {
-        runEveningBatch({ db, now }).catch((err) => {
-          console.error('[banner-podryad] evening cron error:', err.message);
-        });
+      try {
+        if (isEveningTick(now, getBannerPodryadHour(db))) {
+          await runEveningBatch({ db, now });
+        }
+        await runCatchUpSweep({ db, now });
+      } catch (err) {
+        console.error('[banner-podryad] cron error:', err.message);
       }
     },
     { timezone: CRM_TIMEZONE },
