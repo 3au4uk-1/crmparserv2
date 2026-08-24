@@ -361,12 +361,19 @@ export function migrate() {
       sent_by TEXT,
       payload_hash TEXT,
       telegram_message_ids TEXT,
+      load_date TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+  ensureColumn(db, 'telegram_send_log', 'load_date', 'TEXT');
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_telegram_send_log_event_line
      ON telegram_send_log(event, line_item_id);`,
+  );
+  db.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_telegram_send_log_event_line_load
+     ON telegram_send_log(event, line_item_id, load_date)
+     WHERE load_date IS NOT NULL;`,
   );
 
   db.exec(`
