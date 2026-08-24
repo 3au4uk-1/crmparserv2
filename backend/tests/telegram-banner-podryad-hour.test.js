@@ -44,6 +44,17 @@ describe('getBannerPodryadHour / setBannerPodryadHour', () => {
     expect(setBannerPodryadHour(db, 20)).toBe(20);
     expect(getBannerPodryadHour(db)).toBe(20);
   });
+
+  it('rejects hour outside 0–23 with status 400', () => {
+    const db = openDb();
+    try {
+      setBannerPodryadHour(db, 24);
+      expect.unreachable();
+    } catch (err) {
+      expect(err.status).toBe(400);
+      expect(err.message).toMatch(/0–23/);
+    }
+  });
 });
 
 describe('GET/PUT /telegram/settings bannerPodryadHour', () => {
