@@ -17,6 +17,16 @@ export function findLastSend(db, event, lineItemId) {
     .get(event, lineItemId);
 }
 
+export function findSendForLoadDate(db, event, lineItemId, loadDate) {
+  return db
+    .prepare(
+      `SELECT * FROM telegram_send_log
+       WHERE event = ? AND line_item_id = ? AND load_date = ?
+       ORDER BY id DESC LIMIT 1`,
+    )
+    .get(event, lineItemId, loadDate);
+}
+
 export function insertSendLog(db, {
   event,
   lineItemId,
@@ -25,12 +35,13 @@ export function insertSendLog(db, {
   sentBy,
   payloadHash,
   telegramMessageIds,
+  loadDate,
 }) {
   const info = db
     .prepare(
       `INSERT INTO telegram_send_log
-        (event, line_item_id, opportunity_id, chat_id, sent_by, payload_hash, telegram_message_ids)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        (event, line_item_id, opportunity_id, chat_id, sent_by, payload_hash, telegram_message_ids, load_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       event,
@@ -40,6 +51,7 @@ export function insertSendLog(db, {
       sentBy ?? null,
       payloadHash ?? null,
       JSON.stringify(telegramMessageIds ?? []),
+      loadDate ?? null,
     );
   return Number(info.lastInsertRowid);
 }

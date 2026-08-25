@@ -16,6 +16,7 @@ function memoryDb() {
       sent_by TEXT,
       payload_hash TEXT,
       telegram_message_ids TEXT,
+      load_date TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);

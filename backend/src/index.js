@@ -28,6 +28,7 @@ import { initScheduler } from './services/scheduler.js';
 import { initPrintSheetCron } from './services/print-sheet-cron.js';
 import { initExpenseSyncCron } from './services/expense-sync-cron.js';
 import { initDigestCron } from './telegram/digest/cron.js';
+import { initBannerPodryadCron } from './telegram/banner-podryad/cron.js';
 import { initTelegramPolling } from './telegram/polling.js';
 import { initUserbotReconcile } from './telegram/userbot/reconcile.js';
 import { initMentionForwarding } from './telegram/userbot/mention-forward.js';
@@ -100,6 +101,7 @@ async function start() {
   initTwentyEvents();
   initPrintSheetCron();
   initDigestCron();
+  initBannerPodryadCron();
   initExpenseSyncCron();
   initTelegramPolling();
   initUserbotReconcile();

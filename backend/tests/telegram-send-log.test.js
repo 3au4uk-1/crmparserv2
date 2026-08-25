@@ -5,7 +5,7 @@ import {
   getTelegramChatId,
   getTelegramDestination,
 } from '../src/telegram/settings.js';
-import { findLastSend, insertSendLog } from '../src/telegram/send-log.js';
+import { findLastSend, findSendForLoadDate, insertSendLog } from '../src/telegram/send-log.js';
 
 function memoryDb() {
   const db = new Database(':memory:');
@@ -20,10 +20,14 @@ function memoryDb() {
       sent_by TEXT,
       payload_hash TEXT,
       telegram_message_ids TEXT,
+      load_date TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX idx_telegram_send_log_event_line
       ON telegram_send_log(event, line_item_id);
+    CREATE UNIQUE INDEX idx_telegram_send_log_event_line_load
+      ON telegram_send_log(event, line_item_id, load_date)
+      WHERE load_date IS NOT NULL;
   `);
   return db;
 }
@@ -81,5 +85,40 @@ describe('telegram settings + send-log', () => {
     const last = findLastSend(db, 'okleyka.send', 'li-1');
     expect(last.line_item_id).toBe('li-1');
     expect(JSON.parse(last.telegram_message_ids)).toEqual([1, 2]);
+  });
+
+  it('finds send by event, line item and load_date', () => {
+    expect(
+      findSendForLoadDate(db, 'banner_podryad.evening', 'li-1', '2026-08-25'),
+    ).toBeUndefined();
+    insertSendLog(db, {
+      event: 'banner_podryad.evening',
+      lineItemId: 'li-1',
+      opportunityId: 'opp-1',
+      chatId: '-100123',
+      sentBy: 'cron',
+      payloadHash: 'hash',
+      telegramMessageIds: [9],
+      loadDate: '2026-08-25',
+    });
+    const row = findSendForLoadDate(db, 'banner_podryad.evening', 'li-1', '2026-08-25');
+    expect(row.load_date).toBe('2026-08-25');
+    expect(row.line_item_id).toBe('li-1');
+    expect(
+      findSendForLoadDate(db, 'banner_podryad.evening', 'li-1', '2026-08-26'),
+    ).toBeUndefined();
+  });
+
+  it('enforces unique event+line_item+load_date when load_date is set', () => {
+    const payload = {
+      event: 'banner_podryad.evening',
+      lineItemId: 'li-2',
+      loadDate: '2026-08-25',
+    };
+    insertSendLog(db, payload);
+    expect(() => insertSendLog(db, payload)).toThrow();
+    expect(() =>
+      insertSendLog(db, { ...payload, loadDate: '2026-08-26' }),
+    ).not.toThrow();
   });
 });

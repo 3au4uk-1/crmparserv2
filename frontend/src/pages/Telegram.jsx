@@ -120,10 +120,15 @@ export default function Telegram() {
   const [okleykaThreadId, setOkleykaThreadId] = useState('');
   const [digestChatId, setDigestChatId] = useState('');
   const [digestThreadId, setDigestThreadId] = useState('');
+  const [bannerChatId, setBannerChatId] = useState('');
+  const [bannerThreadId, setBannerThreadId] = useState('');
+  const [bannerHour, setBannerHour] = useState('18');
   const [manualThreadId, setManualThreadId] = useState('');
   const [manualTopicName, setManualTopicName] = useState('');
   const [digestManualThreadId, setDigestManualThreadId] = useState('');
   const [digestManualTopicName, setDigestManualTopicName] = useState('');
+  const [bannerManualThreadId, setBannerManualThreadId] = useState('');
+  const [bannerManualTopicName, setBannerManualTopicName] = useState('');
   const [autoInviteUsername, setAutoInviteUsername] = useState('');
   const [autoInviteUserId, setAutoInviteUserId] = useState('');
   const [autoInviteDisplayName, setAutoInviteDisplayName] = useState('');
@@ -155,10 +160,14 @@ export default function Telegram() {
   const savedDigestChatInActiveList = Boolean(
     digestChatId && chats.some((c) => c.chatId === digestChatId),
   );
+  const savedBannerChatInActiveList = Boolean(
+    bannerChatId && chats.some((c) => c.chatId === bannerChatId),
+  );
   const needsInactiveLookup = Boolean(
     !chatsLoading &&
       ((okleykaChatId && !savedChatInActiveList) ||
-        (digestChatId && !savedDigestChatInActiveList)),
+        (digestChatId && !savedDigestChatInActiveList) ||
+        (bannerChatId && !savedBannerChatInActiveList)),
   );
   const { data: inactiveChatsData, isLoading: inactiveChatsLoading } = useTelegramChats(
     false,
@@ -178,13 +187,17 @@ export default function Telegram() {
 
   const selectedChat = allKnownChats.find((c) => c.chatId === okleykaChatId);
   const digestSelectedChat = allKnownChats.find((c) => c.chatId === digestChatId);
+  const bannerSelectedChat = allKnownChats.find((c) => c.chatId === bannerChatId);
   const inactiveLookupDone = needsInactiveLookup && !inactiveChatsLoading;
   const selectedChatResolved =
     !okleykaChatId || savedChatInActiveList || inactiveLookupDone;
   const digestSelectedChatResolved =
     !digestChatId || savedDigestChatInActiveList || inactiveLookupDone;
+  const bannerSelectedChatResolved =
+    !bannerChatId || savedBannerChatInActiveList || inactiveLookupDone;
   const isForum = Boolean(selectedChat?.isForum);
   const digestIsForum = Boolean(digestSelectedChat?.isForum);
+  const bannerIsForum = Boolean(bannerSelectedChat?.isForum);
 
   const okleykaChatOptions = useMemo(() => {
     const activeChats = chats.filter((c) => c.active);
@@ -210,10 +223,24 @@ export default function Telegram() {
     return options;
   }, [chats, allKnownChats, digestChatId]);
 
+  const bannerChatOptions = useMemo(() => {
+    const activeChats = chats.filter((c) => c.active);
+    const options = activeChats.map((chat) => ({ chat, showInactive: false }));
+    if (bannerChatId && !activeChats.some((c) => c.chatId === bannerChatId)) {
+      const savedChat = allKnownChats.find((c) => c.chatId === bannerChatId);
+      if (savedChat) {
+        options.push({ chat: savedChat, showInactive: true });
+      }
+    }
+    return options;
+  }, [chats, allKnownChats, bannerChatId]);
+
   const { data: topicsData } = useTelegramTopics(isForum ? okleykaChatId : '');
   const cachedTopics = topicsData?.topics ?? [];
   const { data: digestTopicsData } = useTelegramTopics(digestIsForum ? digestChatId : '');
   const digestCachedTopics = digestTopicsData?.topics ?? [];
+  const { data: bannerTopicsData } = useTelegramTopics(bannerIsForum ? bannerChatId : '');
+  const bannerCachedTopics = bannerTopicsData?.topics ?? [];
 
   const topicOptions = useMemo(() => {
     if (!isForum) return [];
@@ -255,6 +282,26 @@ export default function Telegram() {
     return merged;
   }, [digestIsForum, digestCachedTopics]);
 
+  const bannerTopicOptions = useMemo(() => {
+    if (!bannerIsForum) return [];
+    const general = { threadId: '1', name: 'General (thread 1)', synthetic: true };
+    const fromDb = bannerCachedTopics.map((t) => ({
+      threadId: String(t.threadId),
+      name: formatTopicLabel(t),
+      synthetic: false,
+    }));
+    const seen = new Set();
+    const merged = [general];
+    seen.add('1');
+    for (const t of fromDb) {
+      if (!seen.has(t.threadId)) {
+        merged.push(t);
+        seen.add(t.threadId);
+      }
+    }
+    return merged;
+  }, [bannerIsForum, bannerCachedTopics]);
+
   useEffect(() => {
     const map = telegramSettings?.chatMap;
     const okleyka = readChatDest(map, 'okleyka.send');
@@ -263,7 +310,20 @@ export default function Telegram() {
     const digest = readChatDest(map, 'digest.morning');
     setDigestChatId(digest.chatId);
     setDigestThreadId(digest.threadId);
+    const banner = readChatDest(map, 'banner_podryad.evening');
+    setBannerChatId(banner.chatId);
+    setBannerThreadId(banner.threadId);
   }, [telegramSettings?.chatMap]);
+
+  useEffect(() => {
+    if (
+      telegramSettings?.bannerPodryadHour == null ||
+      telegramSettings.bannerPodryadHour === ''
+    ) {
+      return;
+    }
+    setBannerHour(String(telegramSettings.bannerPodryadHour));
+  }, [telegramSettings?.bannerPodryadHour]);
 
   useEffect(() => {
     const s = mentionForwardData?.settings;
@@ -315,6 +375,25 @@ export default function Telegram() {
     digestThreadId,
     digestSelectedChat,
     digestSelectedChatResolved,
+  ]);
+
+  useEffect(() => {
+    if (chatsLoading || !bannerChatId || !bannerSelectedChatResolved || !bannerSelectedChat) {
+      return;
+    }
+    if (bannerSelectedChat.isForum) {
+      if (!bannerThreadId) {
+        setBannerThreadId('1');
+      }
+      return;
+    }
+    setBannerThreadId('');
+  }, [
+    chatsLoading,
+    bannerChatId,
+    bannerThreadId,
+    bannerSelectedChat,
+    bannerSelectedChatResolved,
   ]);
 
   async function saveToken() {
@@ -512,6 +591,72 @@ export default function Telegram() {
     setActionSuccess('');
     try {
       await testTelegramSend.mutateAsync({ event: 'digest.morning' });
+      setActionSuccess('Тестовое сообщение отправлено');
+    } catch (err) {
+      setActionError(err.response?.data?.error || err.message || 'Не удалось отправить тест');
+    }
+  }
+
+  async function onAddBannerTopic() {
+    setActionError('');
+    setActionSuccess('');
+    const threadId = Number(bannerManualThreadId);
+    if (!bannerChatId) {
+      setActionError('Сначала выберите чат');
+      return;
+    }
+    if (!Number.isInteger(threadId) || threadId <= 0) {
+      setActionError('Введите положительный thread_id');
+      return;
+    }
+    try {
+      await addTopic.mutateAsync({
+        chatId: bannerChatId,
+        threadId,
+        name: bannerManualTopicName.trim() || undefined,
+      });
+      setBannerManualThreadId('');
+      setBannerManualTopicName('');
+      setActionSuccess('Тема добавлена');
+    } catch (err) {
+      setActionError(err.response?.data?.error || err.message || 'Не удалось добавить тему');
+    }
+  }
+
+  async function saveBannerDest() {
+    setSaveError('');
+    const hour = Number(bannerHour);
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+      setSaveError('Час должен быть от 0 до 23');
+      return;
+    }
+    if (!bannerChatId) {
+      setSaveError('Выберите чат');
+      return;
+    }
+    if (bannerIsForum && !bannerThreadId) {
+      setSaveError('Выберите тему форума');
+      return;
+    }
+    const entry = bannerIsForum
+      ? { chatId: bannerChatId, threadId: Number(bannerThreadId || '1') }
+      : { chatId: bannerChatId };
+    try {
+      await updateTelegramSettings.mutateAsync({
+        chatMap: { 'banner_podryad.evening': entry },
+        bannerPodryadHour: hour,
+      });
+      setActionSuccess('Назначение баннер/подряд сохранено');
+    } catch (err) {
+      setSaveError(err.response?.data?.error || err.message || 'Не удалось сохранить назначение');
+    }
+  }
+
+  async function onTestBannerSend() {
+    setActionError('');
+    setActionSuccess('');
+    try {
+      await testTelegramSend.mutateAsync({ event: 'banner_podryad.evening' });
       setActionSuccess('Тестовое сообщение отправлено');
     } catch (err) {
       setActionError(err.response?.data?.error || err.message || 'Не удалось отправить тест');
@@ -1362,6 +1507,123 @@ export default function Telegram() {
             <button
               type="button"
               onClick={onTestDigestSend}
+              disabled={testTelegramSend.isPending}
+              className="btn-secondary btn-sm"
+            >
+              {testTelegramSend.isPending ? 'Отправка…' : 'Тест в чат'}
+            </button>
+          </div>
+        </div>
+      </Section>
+
+      <Section
+        title="Баннер/подряд · вечер"
+        description="Ежечасный догон и вечерняя пачка → banner_podryad.evening через Bot API. Час (0–23) — когда слать пачку накануне. Пока чат не выбран — пачка не отправляется."
+      >
+        <div className="space-y-4 max-w-xl">
+          <div>
+            <FieldLabel>Чат</FieldLabel>
+            <select
+              value={bannerChatId}
+              onChange={(e) => {
+                setBannerChatId(e.target.value);
+                setBannerThreadId('');
+              }}
+              className="select-field w-full"
+            >
+              <option value="">— выберите чат —</option>
+              {bannerChatOptions.map(({ chat, showInactive }) => (
+                <option key={chat.chatId} value={chat.chatId}>
+                  {formatChatLabel(chat, { showInactive })}
+                </option>
+              ))}
+            </select>
+            {bannerChatOptions.length === 0 && (
+              <p className="text-xs text-ink-faint mt-1.5">
+                Нет активных чатов — добавьте бота в группу или введите chat_id вручную выше.
+              </p>
+            )}
+          </div>
+
+          {bannerIsForum && (
+            <>
+              <div>
+                <FieldLabel>Тема форума</FieldLabel>
+                <select
+                  value={bannerThreadId}
+                  onChange={(e) => setBannerThreadId(e.target.value)}
+                  className="select-field w-full"
+                >
+                  {bannerTopicOptions.map((t) => (
+                    <option key={t.threadId} value={t.threadId}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+                {bannerTopicOptions.length <= 1 && (
+                  <p className="text-xs text-ink-faint mt-1.5 leading-relaxed">
+                    Другие темы появятся после сообщений в форуме или добавьте thread_id вручную ниже.
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2 items-end">
+                <div className="flex-1 min-w-[6rem]">
+                  <FieldLabel>thread_id</FieldLabel>
+                  <input
+                    type="number"
+                    min="1"
+                    value={bannerManualThreadId}
+                    onChange={(e) => setBannerManualThreadId(e.target.value)}
+                    className="input-field font-mono w-full"
+                    placeholder="2"
+                  />
+                </div>
+                <div className="flex-[2] min-w-[8rem]">
+                  <FieldLabel>Название (необяз.)</FieldLabel>
+                  <input
+                    type="text"
+                    value={bannerManualTopicName}
+                    onChange={(e) => setBannerManualTopicName(e.target.value)}
+                    className="input-field w-full"
+                    placeholder="Баннер/подряд"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={onAddBannerTopic}
+                  disabled={addTopic.isPending}
+                  className="btn-secondary btn-sm"
+                >
+                  Добавить тему
+                </button>
+              </div>
+            </>
+          )}
+
+          <div>
+            <FieldLabel>Час (0–23)</FieldLabel>
+            <input
+              type="number"
+              min="0"
+              max="23"
+              value={bannerHour}
+              onChange={(e) => setBannerHour(e.target.value)}
+              className="input-field font-mono w-24"
+            />
+          </div>
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            <button
+              type="button"
+              onClick={saveBannerDest}
+              disabled={updateTelegramSettings.isPending}
+              className="btn-primary btn-sm"
+            >
+              Сохранить назначение
+            </button>
+            <button
+              type="button"
+              onClick={onTestBannerSend}
               disabled={testTelegramSend.isPending}
               className="btn-secondary btn-sm"
             >

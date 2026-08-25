@@ -10,6 +10,8 @@ import {
   mergeChatMapEntry,
   getMentionForwardSettings,
   setMentionForwardSettings,
+  getBannerPodryadHour,
+  setBannerPodryadHour,
 } from '../telegram/settings.js';
 import {
   listTelegramChats,
@@ -129,27 +131,39 @@ router.get('/settings', (req, res) => {
     tokenSet: Boolean(token),
     tokenPreview: buildTokenPreview(token),
     chatMap: readChatMap(db),
+    bannerPodryadHour: getBannerPodryadHour(db),
   });
 });
 
-router.put('/settings', (req, res) => {
-  const db = getDb();
-  const { token, chatMap } = req.body ?? {};
+router.put('/settings', (req, res, next) => {
+  try {
+    const db = getDb();
+    const { token, chatMap, bannerPodryadHour } = req.body ?? {};
 
-  if (typeof token === 'string' && token.trim()) {
-    db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('telegram_bot_token', ?)`).run(
-      token.trim(),
-    );
+    if (typeof token === 'string' && token.trim()) {
+      db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('telegram_bot_token', ?)`).run(
+        token.trim(),
+      );
+    }
+
+    if (chatMap && typeof chatMap === 'object' && !Array.isArray(chatMap)) {
+      const merged = mergeChatMapEntry(readChatMap(db), chatMap);
+      db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('telegram_chat_map', ?)`).run(
+        JSON.stringify(merged),
+      );
+    }
+
+    if (bannerPodryadHour !== undefined) {
+      setBannerPodryadHour(db, bannerPodryadHour);
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    if (err?.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    next(err);
   }
-
-  if (chatMap && typeof chatMap === 'object' && !Array.isArray(chatMap)) {
-    const merged = mergeChatMapEntry(readChatMap(db), chatMap);
-    db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('telegram_chat_map', ?)`).run(
-      JSON.stringify(merged),
-    );
-  }
-
-  res.json({ success: true });
 });
 
 router.post('/test-bot', async (req, res, next) => {
@@ -170,13 +184,33 @@ router.post('/test-send', async (req, res, next) => {
   try {
     const db = getDb();
     const event =
-      req.body?.event === 'digest.morning' ? 'digest.morning' : 'okleyka.send';
+      req.body?.event === 'digest.morning'
+        ? 'digest.morning'
+        : req.body?.event === 'banner_podryad.evening'
+          ? 'banner_podryad.evening'
+          : 'okleyka.send';
     const dest = getTelegramDestination(db, event);
     if (!dest?.chatId) {
       return res.status(400).json({
         ok: false,
         error: `${event} chat_id not configured`,
       });
+    }
+
+    if (event === 'banner_podryad.evening') {
+      const token = getTelegramBotToken(db);
+      if (!token) {
+        return res.status(400).json({ ok: false, error: 'Bot token not configured' });
+      }
+      const payload = {
+        chat_id: dest.chatId,
+        text: 'Тест пачки баннер/подряд',
+      };
+      if (dest.threadId != null) {
+        payload.message_thread_id = dest.threadId;
+      }
+      await callTelegram(token, 'sendMessage', payload);
+      return res.json({ ok: true });
     }
 
     if (event === 'digest.morning') {
