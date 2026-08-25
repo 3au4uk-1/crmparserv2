@@ -208,10 +208,6 @@ CREATE TABLE IF NOT EXISTS telegram_send_log (
 CREATE INDEX IF NOT EXISTS idx_telegram_send_log_event_line
   ON telegram_send_log(event, line_item_id);
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_telegram_send_log_event_line_load
-  ON telegram_send_log(event, line_item_id, load_date)
-  WHERE load_date IS NOT NULL;
-
 CREATE TABLE IF NOT EXISTS telegram_chats (
   chat_id TEXT PRIMARY KEY,
   title TEXT NOT NULL DEFAULT '',

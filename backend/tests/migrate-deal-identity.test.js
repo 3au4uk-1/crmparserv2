@@ -147,4 +147,23 @@ describe('migrate', () => {
     const indexes = db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='deals'").all();
     expect(indexes.map((i) => i.name)).toContain('idx_deals_deal_key');
   });
+
+  it('adds load_date on a legacy telegram_send_log before creating the unique index', () => {
+    db.exec(`
+      CREATE TABLE telegram_send_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event TEXT NOT NULL,
+        line_item_id TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+    expect(() => migrate()).not.toThrow();
+    const cols = db.prepare('PRAGMA table_info(telegram_send_log)').all().map((c) => c.name);
+    expect(cols).toContain('load_date');
+    const indexes = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='telegram_send_log'")
+      .all()
+      .map((row) => row.name);
+    expect(indexes).toContain('idx_telegram_send_log_event_line_load');
+  });
 });
