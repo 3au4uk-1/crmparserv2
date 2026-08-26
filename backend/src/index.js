@@ -47,7 +47,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 // Large base64 attachments for Team App mirror; mount before the default json parser.
-app.use('/internal/team-app', express.json({ limit: '25mb' }), teamAppMirrorRouter);
+app.use('/internal/team-app', express.json({ limit: '30mb' }), teamAppMirrorRouter);
 // Twenty webhook signatures cover the exact bytes we received, so keep them.
 const globalJson = express.json({
   verify: (req, res, buf) => {

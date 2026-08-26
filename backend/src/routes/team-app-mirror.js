@@ -9,6 +9,18 @@ import {
 } from '../telegram/userbot/team-app-mirror.js';
 
 const router = Router();
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
+export function decodeMirrorAttachment(attachment) {
+  if (!attachment?.bytesBase64) {
+    return undefined;
+  }
+  const buffer = Buffer.from(attachment.bytesBase64, 'base64');
+  if (buffer.length > MAX_ATTACHMENT_BYTES) {
+    throw Object.assign(new Error('File too large (max. 20 MB)'), { status: 413 });
+  }
+  return buffer;
+}
 
 router.post('/mirror-send', async (req, res, next) => {
   try {
@@ -24,9 +36,7 @@ router.post('/mirror-send', async (req, res, next) => {
 
     const payload = req.body ?? {};
     const attachment = payload.attachment;
-    const fileBuffer = attachment?.bytesBase64
-      ? Buffer.from(attachment.bytesBase64, 'base64')
-      : undefined;
+    const fileBuffer = decodeMirrorAttachment(attachment);
 
     const client = await getUserbotClient(getDb());
     const telegramMessageId = await sendTopicMessage({
