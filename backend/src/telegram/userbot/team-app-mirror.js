@@ -1,4 +1,18 @@
+import { guessUploadFileName } from '../outbound.js';
+
 const LINK_CODE_RE = /^[A-Za-z0-9]{8}$/;
+
+/**
+ * GramJS uses `buffer.name` for upload filename / photo-vs-document detection.
+ * @param {Buffer} fileBuffer
+ * @param {string | undefined} filename
+ * @param {string | undefined} mime
+ */
+function prepareUploadBuffer(fileBuffer, filename, mime) {
+  const buf = Buffer.isBuffer(fileBuffer) ? fileBuffer : Buffer.from(fileBuffer);
+  buf.name = String(filename ?? '').trim() || guessUploadFileName('', mime);
+  return buf;
+}
 const OUTBOX_CAP = 500;
 const knownOutboxOrder = [];
 
@@ -55,7 +69,12 @@ export async function sendTopicMessage({
   const replyTo = threadId;
   const useFile = Boolean(fileBuffer) && kind !== 'text';
   const result = useFile
-    ? await client.sendFile(chatId, { file: fileBuffer, caption, replyTo, filename, mime })
+    ? await client.sendFile(chatId, {
+        file: prepareUploadBuffer(fileBuffer, filename, mime),
+        caption,
+        replyTo,
+        forceDocument: false,
+      })
     : await client.sendMessage(chatId, { message: caption, replyTo });
   return String(result.id);
 }

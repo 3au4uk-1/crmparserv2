@@ -45,10 +45,9 @@ import {
   sendTopicMessage,
 } from '../src/telegram/userbot/team-app-mirror.js';
 
-function createApp() {
+function createApp(jsonLimit = '25mb') {
   const app = express();
-  app.use(express.json());
-  app.use('/internal/team-app', teamAppMirrorRouter);
+  app.use('/internal/team-app', express.json({ limit: jsonLimit }), teamAppMirrorRouter);
   return app;
 }
 
@@ -93,12 +92,12 @@ describe('sendTopicMessage', () => {
     });
     expect(id).toBe('88');
     expect(client.sendFile).toHaveBeenCalledWith('-1001', {
-      file: buf,
+      file: expect.objectContaining({ name: 'a.jpg' }),
       caption: 'Вася',
       replyTo: 42,
-      filename: 'a.jpg',
-      mime: 'image/jpeg',
+      forceDocument: false,
     });
+    expect(client.sendFile.mock.calls[0][1].file).toBe(buf);
   });
 });
 
@@ -139,6 +138,40 @@ describe('POST /internal/team-app/mirror-send', () => {
       .send({ authorLabel: 'A', kind: 'text', body: 'hi' });
     expect(res.status).toBe(503);
     expect(res.body).toEqual({ error: 'mirror not configured' });
+  });
+
+  it('accepts base64 attachments above the default express json limit', async () => {
+    const bytes = Buffer.alloc(150 * 1024, 'x');
+    const res = await request(createApp())
+      .post('/internal/team-app/mirror-send')
+      .set('X-Chat-Secret', 's3cret')
+      .send({
+        authorLabel: 'A',
+        kind: 'photo',
+        body: '',
+        attachment: {
+          bytesBase64: bytes.toString('base64'),
+          filename: 'big.jpg',
+          mime: 'image/jpeg',
+        },
+      });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ telegramMessageId: '102' });
+    expect(gram.sendFile).toHaveBeenCalled();
+  });
+
+  it('rejects large payloads when mounted with the default json limit', async () => {
+    const bytes = Buffer.alloc(150 * 1024, 'x');
+    const res = await request(createApp('100kb'))
+      .post('/internal/team-app/mirror-send')
+      .set('X-Chat-Secret', 's3cret')
+      .send({
+        authorLabel: 'A',
+        kind: 'photo',
+        body: '',
+        attachment: { bytesBase64: bytes.toString('base64') },
+      });
+    expect(res.status).toBe(413);
   });
 
   it('sends into the topic and returns camelCase telegramMessageId', async () => {

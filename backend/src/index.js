@@ -45,14 +45,18 @@ import { initTwentyEvents } from './services/twenty-events/index.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
+// Large base64 attachments for Team App mirror; mount before the default json parser.
+app.use('/internal/team-app', express.json({ limit: '25mb' }), teamAppMirrorRouter);
 // Twenty webhook signatures cover the exact bytes we received, so keep them.
-app.use(
-  express.json({
-    verify: (req, res, buf) => {
-      req.rawBody = buf.toString('utf8');
-    },
-  }),
-);
+const globalJson = express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf.toString('utf8');
+  },
+});
+app.use((req, res, next) => {
+  if (req.path.startsWith('/internal/team-app')) return next();
+  globalJson(req, res, next);
+});
 
 if (config.twentyAppCorsOrigin) {
   app.use('/api/twenty', (req, res, next) => {
@@ -67,7 +71,6 @@ if (config.twentyAppCorsOrigin) {
 app.use('/api/twenty', twentyRouter);
 app.use('/api/twenty-webhook', twentyWebhookRouter);
 app.use('/api/auth', authRouter);
-app.use('/internal/team-app', teamAppMirrorRouter);
 app.use('/api', appAuthMiddleware);
 app.use('/api/deals', dealsRouter);
 app.use('/api/parsing', parsingRouter);
