@@ -1,4 +1,64 @@
 const LINK_CODE_RE = /^[A-Za-z0-9]{8}$/;
+const OUTBOX_CAP = 500;
+const knownOutboxOrder = [];
+
+/** Module-scope outbox ids for classify `originatedByOutbox`. */
+export const knownOutboxTelegramIds = new Set();
+
+/**
+ * @param {string | number} id
+ */
+export function rememberOutboxTelegramId(id) {
+  const s = String(id);
+  if (!s || knownOutboxTelegramIds.has(s)) return;
+  knownOutboxTelegramIds.add(s);
+  knownOutboxOrder.push(s);
+  while (knownOutboxTelegramIds.size > OUTBOX_CAP) {
+    const oldest = knownOutboxOrder.shift();
+    if (oldest != null) knownOutboxTelegramIds.delete(oldest);
+  }
+}
+
+function formatCaption(authorLabel, body) {
+  const label = String(authorLabel ?? '');
+  const text = String(body ?? '');
+  if (!text) return label;
+  return `${label}: ${text}`;
+}
+
+/**
+ * @param {{
+ *   client: { sendMessage: Function, sendFile: Function },
+ *   chatId: string,
+ *   threadId: number,
+ *   authorLabel?: string,
+ *   kind?: string,
+ *   body?: string,
+ *   fileBuffer?: Buffer,
+ *   filename?: string,
+ *   mime?: string,
+ * }} opts
+ * @returns {Promise<string>}
+ */
+export async function sendTopicMessage({
+  client,
+  chatId,
+  threadId,
+  authorLabel,
+  kind,
+  body,
+  fileBuffer,
+  filename,
+  mime,
+}) {
+  const caption = formatCaption(authorLabel, body);
+  const replyTo = threadId;
+  const useFile = Boolean(fileBuffer) && kind !== 'text';
+  const result = useFile
+    ? await client.sendFile(chatId, { file: fileBuffer, caption, replyTo, filename, mime })
+    : await client.sendMessage(chatId, { message: caption, replyTo });
+  return String(result.id);
+}
 
 /**
  * Pure inbound classifier for the Team App userbot mirror. No Bot API.

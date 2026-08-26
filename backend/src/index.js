@@ -23,6 +23,7 @@ import authRouter from './routes/auth.js';
 import twentyRouter from './routes/twenty.js';
 import twentyWebhookRouter from './routes/twenty-webhook.js';
 import telegramRouter from './routes/telegram.js';
+import teamAppMirrorRouter from './routes/team-app-mirror.js';
 import { appAuthMiddleware } from './middleware/app-auth.js';
 import { initScheduler } from './services/scheduler.js';
 import { initPrintSheetCron } from './services/print-sheet-cron.js';
@@ -66,6 +67,7 @@ if (config.twentyAppCorsOrigin) {
 app.use('/api/twenty', twentyRouter);
 app.use('/api/twenty-webhook', twentyWebhookRouter);
 app.use('/api/auth', authRouter);
+app.use('/internal/team-app', teamAppMirrorRouter);
 app.use('/api', appAuthMiddleware);
 app.use('/api/deals', dealsRouter);
 app.use('/api/parsing', parsingRouter);
