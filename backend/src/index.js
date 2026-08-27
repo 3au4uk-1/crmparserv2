@@ -23,6 +23,7 @@ import authRouter from './routes/auth.js';
 import twentyRouter from './routes/twenty.js';
 import twentyWebhookRouter from './routes/twenty-webhook.js';
 import telegramRouter from './routes/telegram.js';
+import teamAppMirrorRouter from './routes/team-app-mirror.js';
 import { appAuthMiddleware } from './middleware/app-auth.js';
 import { initScheduler } from './services/scheduler.js';
 import { initPrintSheetCron } from './services/print-sheet-cron.js';
@@ -32,6 +33,7 @@ import { initBannerPodryadCron } from './telegram/banner-podryad/cron.js';
 import { initTelegramPolling } from './telegram/polling.js';
 import { initUserbotReconcile } from './telegram/userbot/reconcile.js';
 import { initMentionForwarding } from './telegram/userbot/mention-forward.js';
+import { initTeamAppMirror } from './telegram/userbot/team-app-mirror.js';
 import { initDigestCommands } from './telegram/userbot/digest-commands.js';
 import { recoverStaleParseRuns } from './services/parser.js';
 import { recoverStaleRestoreMissingTwentyJobs } from './services/restore-missing-twenty-jobs.js';
@@ -49,14 +51,18 @@ import { initTwentyEvents } from './services/twenty-events/index.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
+// Large base64 attachments for Team App mirror; mount before the default json parser.
+app.use('/internal/team-app', express.json({ limit: '30mb' }), teamAppMirrorRouter);
 // Twenty webhook signatures cover the exact bytes we received, so keep them.
-app.use(
-  express.json({
-    verify: (req, res, buf) => {
-      req.rawBody = buf.toString('utf8');
-    },
-  }),
-);
+const globalJson = express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf.toString('utf8');
+  },
+});
+app.use((req, res, next) => {
+  if (req.path.startsWith('/internal/team-app')) return next();
+  globalJson(req, res, next);
+});
 
 if (config.twentyAppCorsOrigin) {
   app.use('/api/twenty', (req, res, next) => {
@@ -112,6 +118,7 @@ async function start() {
   initTelegramPolling();
   initUserbotReconcile();
   initMentionForwarding();
+  initTeamAppMirror();
   initDigestCommands();
   app.listen(config.port, () => {
     console.log(`CRM Parser running on port ${config.port}`);
