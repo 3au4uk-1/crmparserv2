@@ -35,6 +35,11 @@ import { initMentionForwarding } from './telegram/userbot/mention-forward.js';
 import { initDigestCommands } from './telegram/userbot/digest-commands.js';
 import { recoverStaleParseRuns } from './services/parser.js';
 import { recoverStaleRestoreMissingTwentyJobs } from './services/restore-missing-twenty-jobs.js';
+import {
+  createExpenseJob,
+  executeExpenseJob,
+  recoverStaleExpenseRuns,
+} from './services/expense-jobs.js';
 import { runFreeEntryDuplicateRepairIfNeeded } from './services/free-entry-duplicate-repair.js';
 import { runOpportunityAmountRecalcIfNeeded } from './services/opportunity-amount-recalc.js';
 import { getDb } from './db/connection.js';
@@ -97,6 +102,7 @@ async function start() {
   registerDefaultTelegramHooks();
   recoverStaleParseRuns(getDb());
   recoverStaleRestoreMissingTwentyJobs(getDb());
+  const recoveredExpenseRuns = recoverStaleExpenseRuns();
   initScheduler();
   initTwentyEvents();
   initPrintSheetCron();
@@ -119,6 +125,13 @@ async function start() {
         await runOpportunityAmountRecalcIfNeeded();
       } catch (err) {
         console.error('[opportunity-amount-recalc] startup failed', err);
+      }
+      if (recoveredExpenseRuns > 0) {
+        const job = createExpenseJob({ trigger: 'startup-recover' });
+        console.warn(`[expense-sync] retrying interrupted sync as job ${job.jobId}`);
+        executeExpenseJob(job.jobId).catch((err) => {
+          console.error(`[expense-sync] startup-recover job ${job.jobId} failed:`, err.message);
+        });
       }
     });
   });
