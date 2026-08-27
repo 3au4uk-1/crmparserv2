@@ -13,12 +13,14 @@ import {
   fetchAllDealLineItems,
   buildRowsFromLineItems,
   runTwentyExport,
+  attachDealExpensesOnce,
 } from '../src/services/twenty-export.js';
 import {
   createExportJob,
   getExportJob,
   resetExportJobsForTests,
 } from '../src/services/export-jobs.js';
+import { EXPENSE_FIELDS } from '../src/services/expense-field-names.js';
 
 describe('extractLinkUrl', () => {
   it('reads primaryLinkUrl', () => {
@@ -87,6 +89,7 @@ describe('mapLineItemToRow', () => {
     amount: { amountMicros: 1_000_000 },
     ssylkaNaMakety: { primaryLinkUrl: 'https://disk.example/m' },
     opportunity: {
+      id: 'opp-1',
       name: 'АРЕНДА/тест',
       closeDate: '2026-06-04',
       loadDate: '2026-06-01',
@@ -146,6 +149,154 @@ describe('mapLineItemToRow', () => {
     expect(row.quantity).toBeNull();
     expect(row.lineSum).toBeNull();
   });
+
+  it('maps opportunity id and expense amounts from micros', () => {
+    const row = mapLineItemToRow(
+      {
+        ...base,
+        opportunity: {
+          ...base.opportunity,
+          id: 'opp-1',
+          rashodPechat: { amountMicros: 10_000_000 },
+          rashodFrezerovka: { amountMicros: 20_000_000 },
+          rashodLogistika: { amountMicros: 5_000_000 },
+          rashodVyezdnayaKomanda: { amountMicros: 30_000_000 },
+          rashodBeznal: { amountMicros: 35_000_000 },
+          rashodItogo: { amountMicros: 100_000_000 },
+        },
+      },
+      { from: '2026-06-01', to: '2026-06-30', includeCancelled: false }
+    );
+    expect(row.opportunityId).toBe('opp-1');
+    expect(row.rashodPechat).toBe(10);
+    expect(row.rashodFrezerovka).toBe(20);
+    expect(row.rashodLogistika).toBe(5);
+    expect(row.rashodVyezdnayaKomanda).toBe(30);
+    expect(row.rashodBeznal).toBe(35);
+    expect(row.rashodItogo).toBe(100);
+  });
+
+  it('maps missing expenses to null, not zero', () => {
+    const row = mapLineItemToRow(base, {
+      from: '2026-06-01',
+      to: '2026-06-30',
+      includeCancelled: false,
+    });
+    expect(row.opportunityId).toBe('opp-1');
+    expect(expenseSlice(row)).toEqual(EXPENSE_NULL);
+  });
+
+  it('does not recompute rashodItogo from articles', () => {
+    const row = mapLineItemToRow(
+      {
+        ...base,
+        opportunity: {
+          ...base.opportunity,
+          id: 'opp-1',
+          rashodPechat: { amountMicros: 10_000_000 },
+          rashodItogo: { amountMicros: 1_000_000 },
+        },
+      },
+      { from: '2026-06-01', to: '2026-06-30', includeCancelled: false }
+    );
+    expect(row.rashodItogo).toBe(1);
+    expect(row.rashodPechat).toBe(10);
+  });
+});
+
+function expenseSlice(row) {
+  return {
+    rashodPechat: row.rashodPechat,
+    rashodFrezerovka: row.rashodFrezerovka,
+    rashodLogistika: row.rashodLogistika,
+    rashodVyezdnayaKomanda: row.rashodVyezdnayaKomanda,
+    rashodBeznal: row.rashodBeznal,
+    rashodItogo: row.rashodItogo,
+  };
+}
+
+const EXPENSE_100 = {
+  rashodPechat: 10,
+  rashodFrezerovka: 20,
+  rashodLogistika: 5,
+  rashodVyezdnayaKomanda: 30,
+  rashodBeznal: 35,
+  rashodItogo: 100,
+};
+
+const EXPENSE_NULL = {
+  rashodPechat: null,
+  rashodFrezerovka: null,
+  rashodLogistika: null,
+  rashodVyezdnayaKomanda: null,
+  rashodBeznal: null,
+  rashodItogo: null,
+};
+
+const EXPENSE_ROW_KEYS = [
+  EXPENSE_FIELDS.printing,
+  EXPENSE_FIELDS.milling,
+  EXPENSE_FIELDS.logistics,
+  EXPENSE_FIELDS.fieldTeam,
+  EXPENSE_FIELDS.beznal,
+  EXPENSE_FIELDS.total,
+];
+
+describe('expense field names', () => {
+  it('uses EXPENSE_FIELDS for the six row keys (minus syncedAt)', () => {
+    expect(EXPENSE_ROW_KEYS).toEqual([
+      'rashodPechat',
+      'rashodFrezerovka',
+      'rashodLogistika',
+      'rashodVyezdnayaKomanda',
+      'rashodBeznal',
+      'rashodItogo',
+    ]);
+    expect(
+      new Set(Object.values(EXPENSE_FIELDS).filter((name) => name !== EXPENSE_FIELDS.syncedAt))
+    ).toEqual(new Set(EXPENSE_ROW_KEYS));
+    expect(EXPENSE_ROW_KEYS).not.toContain(EXPENSE_FIELDS.syncedAt);
+  });
+});
+
+describe('attachDealExpensesOnce', () => {
+  it('keeps expenses only on the first row of the same opportunityId', () => {
+    const rows = attachDealExpensesOnce([
+      { opportunityId: 'a', positionName: '1', ...EXPENSE_100 },
+      { opportunityId: 'a', positionName: '2', ...EXPENSE_100 },
+    ]);
+    expect(expenseSlice(rows[0])).toEqual(EXPENSE_100);
+    expect(expenseSlice(rows[1])).toEqual(EXPENSE_NULL);
+  });
+
+  it('keeps expenses only on the first occurrence when the same opportunityId is non-contiguous', () => {
+    const rows = attachDealExpensesOnce([
+      { opportunityId: 'a', positionName: '1', ...EXPENSE_100 },
+      { opportunityId: 'b', positionName: '2', rashodItogo: 7, rashodPechat: 7, rashodFrezerovka: null, rashodLogistika: null, rashodVyezdnayaKomanda: null, rashodBeznal: null },
+      { opportunityId: 'a', positionName: '3', ...EXPENSE_100 },
+    ]);
+    expect(expenseSlice(rows[0])).toEqual(EXPENSE_100);
+    expect(rows[1].rashodItogo).toBe(7);
+    expect(expenseSlice(rows[2])).toEqual(EXPENSE_NULL);
+  });
+
+  it('does not merge different ids with the same name', () => {
+    const rows = attachDealExpensesOnce([
+      { opportunityId: 'a', opportunityName: 'Same', ...EXPENSE_100 },
+      { opportunityId: 'b', opportunityName: 'Same', rashodItogo: 7, rashodPechat: 7, rashodFrezerovka: null, rashodLogistika: null, rashodVyezdnayaKomanda: null, rashodBeznal: null },
+    ]);
+    expect(rows[0].rashodItogo).toBe(100);
+    expect(rows[1].rashodItogo).toBe(7);
+  });
+
+  it('does not group two rows that both lack opportunityId', () => {
+    const rows = attachDealExpensesOnce([
+      { opportunityId: null, rashodItogo: 1, rashodPechat: null, rashodFrezerovka: null, rashodLogistika: null, rashodVyezdnayaKomanda: null, rashodBeznal: null },
+      { opportunityId: null, rashodItogo: 2, rashodPechat: null, rashodFrezerovka: null, rashodLogistika: null, rashodVyezdnayaKomanda: null, rashodBeznal: null },
+    ]);
+    expect(rows[0].rashodItogo).toBe(1);
+    expect(rows[1].rashodItogo).toBe(2);
+  });
 });
 
 describe('sortExportRows', () => {
@@ -174,6 +325,12 @@ describe('buildTwentyExportWorkbook', () => {
         statusLabel: 'Новый',
         tonyUrl: 'https://tony.example/1',
         bitrixUrl: 'https://bitrix.example/1',
+        rashodPechat: 10,
+        rashodFrezerovka: 20,
+        rashodLogistika: 5,
+        rashodVyezdnayaKomanda: 30,
+        rashodBeznal: 35,
+        rashodItogo: 100,
       },
     ]);
     const wb = new ExcelJS.Workbook();
@@ -191,12 +348,48 @@ describe('buildTwentyExportWorkbook', () => {
       'Статус',
       'Ссылка на тони',
       'Ссылка на битрикс',
+      'Расход: печать',
+      'Расход: фреза',
+      'Расход: логистика',
+      'Расход: выездная команда',
+      'Расход: безнал',
+      'Расход итого',
     ]);
     expect(sheet.getRow(2).getCell(1).value).toBe('04.06.2026');
+    expect([12, 13, 14, 15, 16, 17].map((col) => sheet.getRow(2).getCell(col).value)).toEqual([
+      10, 20, 5, 30, 35, 100,
+    ]);
     expect(sheet.getRow(2).getCell(4).value).toEqual({
       text: 'https://disk.example/m',
       hyperlink: 'https://disk.example/m',
     });
+  });
+
+  it('leaves later-row expense cells empty, not zero', async () => {
+    const baseRow = {
+      dateDisplay: '04.06.2026',
+      opportunityName: 'Заказ',
+      positionName: 'Баннер',
+      layoutUrl: '',
+      comment: '',
+      unitPrice: 100,
+      lineSum: 200,
+      quantity: 2,
+      statusLabel: 'Новый',
+      tonyUrl: '',
+      bitrixUrl: '',
+    };
+    const buffer = await buildTwentyExportWorkbook([
+      { ...baseRow, ...EXPENSE_100 },
+      { ...baseRow, positionName: 'Стикер', ...EXPENSE_NULL },
+    ]);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer);
+    const sheet = wb.getWorksheet('Заказы');
+    for (let col = 12; col <= 17; col += 1) {
+      expect(sheet.getRow(3).getCell(col).value).not.toBe(0);
+      expect(sheet.getRow(3).getCell(col).value == null).toBe(true);
+    }
   });
 
   it('writes headers only when rows empty', async () => {
@@ -314,6 +507,32 @@ describe('fetchAllDealLineItems', () => {
       'Twenty GraphQL response has hasNextPage but is missing endCursor for dealLineItems'
     );
   });
+
+  it('requests opportunity expense fields', async () => {
+    let query = '';
+    async function fakeGql(_url, _token, q) {
+      query = q;
+      return {
+        status: 200,
+        data: {
+          data: {
+            dealLineItems: {
+              edges: [],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        },
+      };
+    }
+    await fetchAllDealLineItems(fakeGql, 'http://gql', 'tok');
+    expect(query).toContain('rashodItogo');
+    expect(query).toContain('rashodPechat');
+    expect(query).toContain('rashodFrezerovka');
+    expect(query).toContain('rashodLogistika');
+    expect(query).toContain('rashodVyezdnayaKomanda');
+    expect(query).toContain('rashodBeznal');
+    expect(query).not.toContain('rashodSyncedAt');
+  });
 });
 
 describe('buildRowsFromLineItems', () => {
@@ -339,6 +558,45 @@ describe('buildRowsFromLineItems', () => {
     );
 
     expect(rows.map((row) => row.positionName)).toEqual(['A', 'B']);
+  });
+});
+
+describe('buildRowsFromLineItems expenses', () => {
+  it('writes deal expenses only on the first sorted row of a deal', () => {
+    const rows = buildRowsFromLineItems(
+      [
+        {
+          name: 'B',
+          stage: 'NOVYY',
+          kolichestvo: 1,
+          amount: { amountMicros: 1_000_000 },
+          opportunity: {
+            id: 'same',
+            name: 'Z',
+            closeDate: '2026-06-01',
+            stage: 'NOVYY',
+            rashodItogo: { amountMicros: 50_000_000 },
+          },
+        },
+        {
+          name: 'A',
+          stage: 'NOVYY',
+          kolichestvo: 1,
+          amount: { amountMicros: 1_000_000 },
+          opportunity: {
+            id: 'same',
+            name: 'Z',
+            closeDate: '2026-06-01',
+            stage: 'NOVYY',
+            rashodItogo: { amountMicros: 50_000_000 },
+          },
+        },
+      ],
+      { from: '2026-06-01', to: '2026-06-30', includeCancelled: false }
+    );
+    expect(rows.map((row) => row.positionName)).toEqual(['A', 'B']);
+    expect(rows[0].rashodItogo).toBe(50);
+    expect(rows[1].rashodItogo).toBeNull();
   });
 });
 

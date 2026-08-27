@@ -9,6 +9,7 @@ import { PRINT_COMMENT_FIELD } from './print-sheet-field-names.js';
 import { assertGqlSuccess, assertHttpSuccess, gql } from './twenty-gql.js';
 import { requireTwentyConfig } from './twenty-config.js';
 import { getExportJob, setExportJobFile, updateExportJob } from './export-jobs.js';
+import { EXPENSE_FIELDS } from './expense-field-names.js';
 
 const STAGE_LABEL_BY_VALUE = Object.fromEntries(
   OPPORTUNITY_STAGE_OPTIONS.map((o) => [o.value, o.label])
@@ -65,6 +66,15 @@ function parseQuantity(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+const DEAL_EXPENSE_ROW_KEYS = [
+  EXPENSE_FIELDS.printing,
+  EXPENSE_FIELDS.milling,
+  EXPENSE_FIELDS.logistics,
+  EXPENSE_FIELDS.fieldTeam,
+  EXPENSE_FIELDS.beznal,
+  EXPENSE_FIELDS.total,
+];
+
 /**
  * @returns {object|null} Excel row or null if filtered out
  */
@@ -82,6 +92,8 @@ export function mapLineItemToRow(lineItem, { from, to, includeCancelled = false 
   const lineSum =
     unitPrice != null && quantity != null ? unitPrice * quantity : null;
 
+  const opportunityId = opportunity.id || null;
+
   return {
     date,
     dateDisplay: formatDisplayDate(date),
@@ -96,7 +108,27 @@ export function mapLineItemToRow(lineItem, { from, to, includeCancelled = false 
     statusLabel: resolveStageLabel(stage),
     tonyUrl: extractLinkUrl(opportunity.tonyLink),
     bitrixUrl: extractLinkUrl(opportunity.bitrixLink),
+    opportunityId,
+    ...Object.fromEntries(
+      DEAL_EXPENSE_ROW_KEYS.map((key) => [key, amountMicrosToNumber(opportunity[key])])
+    ),
   };
+}
+
+function clearDealExpenses(row) {
+  const next = { ...row };
+  for (const key of DEAL_EXPENSE_ROW_KEYS) next[key] = null;
+  return next;
+}
+
+export function attachDealExpensesOnce(rows) {
+  const seen = new Set();
+  return rows.map((row, index) => {
+    const key = row.opportunityId == null ? `__row_${index}` : row.opportunityId;
+    if (seen.has(key)) return clearDealExpenses(row);
+    seen.add(key);
+    return { ...row };
+  });
 }
 
 export function sortExportRows(rows) {
@@ -120,6 +152,12 @@ const HEADERS = [
   'Статус',
   'Ссылка на тони',
   'Ссылка на битрикс',
+  'Расход: печать',
+  'Расход: фреза',
+  'Расход: логистика',
+  'Расход: выездная команда',
+  'Расход: безнал',
+  'Расход итого',
 ];
 
 function cellLink(url) {
@@ -146,6 +184,7 @@ export async function buildTwentyExportWorkbook(rows) {
       row.statusLabel,
       cellLink(row.tonyUrl),
       cellLink(row.bitrixUrl),
+      ...DEAL_EXPENSE_ROW_KEYS.map((key) => row[key]),
     ]);
   }
 
@@ -173,6 +212,12 @@ const LINE_ITEM_EXPORT_FIELDS = `
     stage
     tonyLink { primaryLinkUrl }
     bitrixLink { primaryLinkUrl }
+    ${EXPENSE_FIELDS.printing} { amountMicros }
+    ${EXPENSE_FIELDS.milling} { amountMicros }
+    ${EXPENSE_FIELDS.logistics} { amountMicros }
+    ${EXPENSE_FIELDS.fieldTeam} { amountMicros }
+    ${EXPENSE_FIELDS.beznal} { amountMicros }
+    ${EXPENSE_FIELDS.total} { amountMicros }
   }
 `;
 
@@ -245,7 +290,7 @@ export function buildRowsFromLineItems(lineItems, options) {
     const row = mapLineItemToRow(lineItem, options);
     if (row) rows.push(row);
   }
-  return sortExportRows(rows);
+  return attachDealExpensesOnce(sortExportRows(rows));
 }
 
 export async function runTwentyExport(
