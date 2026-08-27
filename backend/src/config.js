@@ -79,4 +79,6 @@ export const config = {
   ),
   /** User-bot dialog reconcile interval (ms). Discovery + auto-invite trigger. */
   telegramReconcileIntervalMs: parseInt(process.env.TELEGRAM_RECONCILE_INTERVAL_MS || '30000', 10),
+  teamAppBaseUrl: process.env.TEAM_APP_BASE_URL || '',
+  teamAppChatSecret: process.env.TEAM_APP_CHAT_SECRET || '',
 };

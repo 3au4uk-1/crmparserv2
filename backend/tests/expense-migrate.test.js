@@ -31,4 +31,21 @@ describe('expense tables migration', () => {
     expect(runs).toBeTruthy();
     expect(uploads).toBeTruthy();
   });
+
+  it('moves default expense_sync_schedule off 06:00', async () => {
+    const { initDb, getDb } = await import('../src/db/connection.js');
+    const { migrate } = await import('../src/db/migrate.js');
+    initDb();
+    const db = getDb();
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+    `);
+    db.prepare("INSERT INTO settings (key, value) VALUES ('expense_sync_schedule', '0 6 * * *')").run();
+    migrate();
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'expense_sync_schedule'").get();
+    expect(row.value).toBe('30 7 * * *');
+  });
 });

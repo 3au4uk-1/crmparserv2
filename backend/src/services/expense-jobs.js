@@ -36,6 +36,32 @@ export function resetExpenseJobsForTests() {
   jobs.clear();
 }
 
+export function recoverStaleExpenseRuns() {
+  const db = getDb();
+  const error = 'Interrupted: server restarted while expense sync was in progress';
+  const result = db
+    .prepare(
+      `UPDATE expense_sync_runs
+       SET status = 'failed',
+           finished_at = datetime('now'),
+           error = ?
+       WHERE status IN ('queued', 'running')`,
+    )
+    .run(error);
+
+  for (const [jobId, job] of jobs.entries()) {
+    if (ACTIVE_STATUSES.has(job.status)) {
+      jobs.delete(jobId);
+    }
+  }
+
+  if (result.changes > 0) {
+    console.warn(`[expense-sync] marked ${result.changes} stale run(s) as failed`);
+  }
+
+  return result.changes;
+}
+
 export function createExpenseJob({ trigger = 'manual' } = {}) {
   const db = getDb();
   const result = db

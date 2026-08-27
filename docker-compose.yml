@@ -50,6 +50,11 @@ services:
       - TELEGRAM_RECONCILE_INTERVAL_MS=${TELEGRAM_RECONCILE_INTERVAL_MS:-30000}
     networks:
       - twenty
+    # Host default is Beget 198.18.18.18 only; when it stalls, Node gets EAI_AGAIN.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+      - 198.18.18.18
     restart: unless-stopped
 
   # VLESS → SOCKS5/HTTP proxy for Telegram when direct access is blocked.

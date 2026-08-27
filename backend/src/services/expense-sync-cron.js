@@ -13,7 +13,7 @@ function getExpenseSyncSchedule() {
   const db = getDb();
   return (
     db.prepare('SELECT value FROM settings WHERE key = ?').get('expense_sync_schedule')?.value ||
-    '0 6 * * *'
+    '30 7 * * *'
   );
 }
 
@@ -21,6 +21,11 @@ export function initExpenseSyncCron() {
   if (cronTask) {
     cronTask.stop();
   }
+
+  const db = getDb();
+  db.prepare(
+    "UPDATE settings SET value = '30 7 * * *' WHERE key = 'expense_sync_schedule' AND value = '0 6 * * *'",
+  ).run();
 
   const scheduleExpression = getExpenseSyncSchedule();
 

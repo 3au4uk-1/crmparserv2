@@ -1,15 +1,16 @@
 # STAGING twenty compose: cap each service.
-# Chosen caps (raised after OOM): server 956m, worker 956m, db 300m, redis 320m (aligned with Task2 maxmemory 256mb) (initial brief: 700/400/300/128).
+# Caps raised 2026-08-25 for stability: total 3584m (3.5 GiB).
+# Prior: 956/956/300/320 (raised after OOM from brief 700/400/300/128).
 # Neighbors (separate composes, not applied here): n8n 400m, twentydash+staging 128m each.
 services:
   server:
-    mem_limit: 956m
+    mem_limit: 1280m
   worker:
-    mem_limit: 956m
+    mem_limit: 1280m
   db:
-    mem_limit: 300m
+    mem_limit: 640m
   redis:
-    mem_limit: 320m
+    mem_limit: 384m
 
 ---
 # PROD twenty compose: soft reservation hints (best-effort on non-swarm).

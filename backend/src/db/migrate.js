@@ -339,11 +339,14 @@ export function migrate() {
     ['expense_sheet_milling', '1fKlBKDQlOQgvqyEz-qVDWIE5oBKin40RSuRkWvrw-xA'],
     ['expense_sheet_logistics', '1MtGMGzsSS-0ci1HVwdjXcapQQrkaC6qOdI8MdH2mTFM'],
     ['expense_sheet_beznal', ''],
-    ['expense_sync_schedule', '0 6 * * *'],
+    ['expense_sync_schedule', '30 7 * * *'],
   ];
   for (const [key, value] of expenseDefaults) {
     db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run(key, value);
   }
+  db.prepare(
+    "UPDATE settings SET value = '30 7 * * *' WHERE key = 'expense_sync_schedule' AND value = '0 6 * * *'",
+  ).run();
 
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('decor_keywords', '[]')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('mk_keywords', '[]')").run();

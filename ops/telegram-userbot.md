@@ -56,7 +56,35 @@ Pending login is in-memory — restart mid-wizard → start from phone again.
 
 On `/telegram` → **Оклейка → отправка**: pick chat (and forum topic if needed). Twenty calls `okleyka.send`; crmparser sends via user-bot MTProto (user-bot must already be in that chat).
 
-## 6. CLI login (emergency only)
+## 6. Team App chat mirror (PWA ↔ Telegram topic)
+
+Mirrors the Team App company chat into one forum topic and handles DM link codes. User-bot must be logged in (§3) and a member of the target supergroup.
+
+### Dokploy env
+
+| Key | Value |
+|-----|-------|
+| `TEAM_APP_BASE_URL` | Team App API origin, e.g. `https://team.dosugmayak.ru` (no trailing slash) |
+| `TEAM_APP_CHAT_SECRET` | Same value as Team App `CHAT_SECRET`; used as `X-Chat-Secret` on both sides |
+
+Compose `environment` must list these vars (same pitfall as `PUBLIC_BASE_URL`).
+
+When either env var is empty, inbound topic forwarding and link-code consumption to Team App are skipped; DM link replies may still work if only base URL is missing.
+
+### Mirror destination (Telegram admin UI)
+
+Stored in SQLite as `team_app_chat_mirror` (`chatId` + `topicId`). Mirror outbound/inbound is disabled until both are set.
+
+| Method | Path | Body / response |
+|--------|------|-----------------|
+| `GET` | `/api/telegram/team-app-mirror` | `{ settings: { chatId, topicId } }` — empty `chatId` or null `topicId` = disabled |
+| `PUT` | `/api/telegram/team-app-mirror` | `{ chatId, topicId }` → `{ settings }` — `topicId` must be a positive integer |
+
+Configure on `/telegram` (Team App mirror section): pick the company supergroup and forum topic. User-bot must already see the chat (reconcile or **Обновить чаты из user-bot**).
+
+Team App pushes outbound messages to `POST /internal/team-app/mirror-send` (also `X-Chat-Secret`). Inbound topic replies are forwarded to Team App `POST /internal/chat/telegram-inbound`.
+
+## 7. CLI login (emergency only)
 
 ```bash
 node backend/scripts/telegram-userbot-login.mjs
@@ -64,12 +92,12 @@ node backend/scripts/telegram-userbot-login.mjs
 
 Paste StringSession into `TELEGRAM_USER_SESSION` only if UI login is unavailable.
 
-## 7. Logout
+## 8. Logout
 
 - UI **Выйти** clears DB session.
 - Also clear `TELEGRAM_USER_SESSION` env if set.
 
-## 8. Staging checklist
+## 9. Staging checklist
 
 1. [ ] API id/hash (+ proxy) set; compose passthrough OK.
 2. [ ] UI login → user-bot connected; auto-invite `configured=true`.
@@ -80,7 +108,7 @@ Paste StringSession into `TELEGRAM_USER_SESSION` only if UI login is unavailable
 7. [ ] Okleyka test-send to configured chat/topic.
 8. [ ] Manually remove branding bot from groups if present.
 
-## 9. Proxy (RKN)
+## 10. Proxy (RKN)
 
 See xray sidecar: `TELEGRAM_PROXY_URL=socks5://xray:1080`. User-bot MTProto goes through SOCKS5. Bot long-polling (`TELEGRAM_POLLING`) is unused for the user-bot-only path.
 

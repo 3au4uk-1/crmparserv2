@@ -39,6 +39,10 @@ import {
   cancelLogin,
   logout,
 } from '../telegram/userbot/auth-login.js';
+import {
+  getTeamAppMirrorSettings,
+  setTeamAppMirrorSettings,
+} from '../telegram/team-app-mirror-settings.js';
 
 const router = Router();
 
@@ -251,6 +255,22 @@ router.get('/mention-forward', (req, res) => {
 router.put('/mention-forward', (req, res, next) => {
   try {
     const settings = setMentionForwardSettings(getDb(), req.body ?? {});
+    res.json({ settings });
+  } catch (err) {
+    if (err?.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    next(err);
+  }
+});
+
+router.get('/team-app-mirror', (req, res) => {
+  res.json({ settings: getTeamAppMirrorSettings(getDb()) });
+});
+
+router.put('/team-app-mirror', (req, res, next) => {
+  try {
+    const settings = setTeamAppMirrorSettings(getDb(), req.body ?? {});
     res.json({ settings });
   } catch (err) {
     if (err?.status) {

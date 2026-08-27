@@ -19,6 +19,7 @@ import {
   executeExpenseJob,
   getActiveExpenseJob,
   getExpenseJob,
+  recoverStaleExpenseRuns,
   resetExpenseJobsForTests,
 } from '../src/services/expense-jobs.js';
 
@@ -141,5 +142,34 @@ describe('expense-jobs', () => {
       deals_with_expenses: 2,
       error: 'Deal 101: update failed',
     });
+  });
+
+  it('recovers stale running jobs so a new sync can start', async () => {
+    const stale = createExpenseJob({ trigger: 'cron' });
+    testDb
+      .prepare(`UPDATE expense_sync_runs SET status = 'running', started_at = ? WHERE id = ?`)
+      .run(new Date().toISOString(), Number(stale.jobId));
+    resetExpenseJobsForTests();
+    expect(getActiveExpenseJob()?.jobId).toBe(stale.jobId);
+
+    const recovered = recoverStaleExpenseRuns();
+    expect(recovered).toBe(1);
+    expect(getActiveExpenseJob()).toBeNull();
+    expect(getExpenseJob(stale.jobId)).toMatchObject({
+      status: 'failed',
+      error: 'Interrupted: server restarted while expense sync was in progress',
+    });
+
+    runExpenseSyncMock.mockResolvedValue({
+      dealsTargeted: 1,
+      dealsUpdated: 1,
+      dealsWithExpenses: 0,
+      errors: [],
+    });
+    const app = createApp();
+    const response = await requestJson(app, 'POST', '/sync');
+    expect(response.status).toBe(201);
+    expect(response.body.jobId).toBeTruthy();
+    expect(response.body.jobId).not.toBe(stale.jobId);
   });
 });
