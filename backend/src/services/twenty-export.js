@@ -99,6 +99,31 @@ export function mapLineItemToRow(lineItem, { from, to, includeCancelled = false 
   };
 }
 
+const DEAL_EXPENSE_ROW_KEYS = [
+  'rashodPechat',
+  'rashodFrezerovka',
+  'rashodLogistika',
+  'rashodVyezdnayaKomanda',
+  'rashodBeznal',
+  'rashodItogo',
+];
+
+function clearDealExpenses(row) {
+  const next = { ...row };
+  for (const key of DEAL_EXPENSE_ROW_KEYS) next[key] = null;
+  return next;
+}
+
+export function attachDealExpensesOnce(rows) {
+  const seen = new Set();
+  return rows.map((row, index) => {
+    const key = row.opportunityId || `__row_${index}`;
+    if (seen.has(key)) return clearDealExpenses(row);
+    seen.add(key);
+    return { ...row };
+  });
+}
+
 export function sortExportRows(rows) {
   return [...rows].sort((a, b) => {
     if (a.date !== b.date) return a.date < b.date ? -1 : 1;

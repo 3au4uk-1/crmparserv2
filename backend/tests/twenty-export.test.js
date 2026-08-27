@@ -13,6 +13,7 @@ import {
   fetchAllDealLineItems,
   buildRowsFromLineItems,
   runTwentyExport,
+  attachDealExpensesOnce,
 } from '../src/services/twenty-export.js';
 import {
   createExportJob,
@@ -145,6 +146,62 @@ describe('mapLineItemToRow', () => {
     );
     expect(row.quantity).toBeNull();
     expect(row.lineSum).toBeNull();
+  });
+});
+
+function expenseSlice(row) {
+  return {
+    rashodPechat: row.rashodPechat,
+    rashodFrezerovka: row.rashodFrezerovka,
+    rashodLogistika: row.rashodLogistika,
+    rashodVyezdnayaKomanda: row.rashodVyezdnayaKomanda,
+    rashodBeznal: row.rashodBeznal,
+    rashodItogo: row.rashodItogo,
+  };
+}
+
+const EXPENSE_100 = {
+  rashodPechat: 10,
+  rashodFrezerovka: 20,
+  rashodLogistika: 5,
+  rashodVyezdnayaKomanda: 30,
+  rashodBeznal: 35,
+  rashodItogo: 100,
+};
+
+describe('attachDealExpensesOnce', () => {
+  it('keeps expenses only on the first row of the same opportunityId', () => {
+    const rows = attachDealExpensesOnce([
+      { opportunityId: 'a', positionName: '1', ...EXPENSE_100 },
+      { opportunityId: 'a', positionName: '2', ...EXPENSE_100 },
+    ]);
+    expect(expenseSlice(rows[0])).toEqual(EXPENSE_100);
+    expect(expenseSlice(rows[1])).toEqual({
+      rashodPechat: null,
+      rashodFrezerovka: null,
+      rashodLogistika: null,
+      rashodVyezdnayaKomanda: null,
+      rashodBeznal: null,
+      rashodItogo: null,
+    });
+  });
+
+  it('does not merge different ids with the same name', () => {
+    const rows = attachDealExpensesOnce([
+      { opportunityId: 'a', opportunityName: 'Same', ...EXPENSE_100 },
+      { opportunityId: 'b', opportunityName: 'Same', rashodItogo: 7, rashodPechat: 7, rashodFrezerovka: null, rashodLogistika: null, rashodVyezdnayaKomanda: null, rashodBeznal: null },
+    ]);
+    expect(rows[0].rashodItogo).toBe(100);
+    expect(rows[1].rashodItogo).toBe(7);
+  });
+
+  it('does not group two rows that both lack opportunityId', () => {
+    const rows = attachDealExpensesOnce([
+      { opportunityId: null, rashodItogo: 1, rashodPechat: null, rashodFrezerovka: null, rashodLogistika: null, rashodVyezdnayaKomanda: null, rashodBeznal: null },
+      { opportunityId: null, rashodItogo: 2, rashodPechat: null, rashodFrezerovka: null, rashodLogistika: null, rashodVyezdnayaKomanda: null, rashodBeznal: null },
+    ]);
+    expect(rows[0].rashodItogo).toBe(1);
+    expect(rows[1].rashodItogo).toBe(2);
   });
 });
 
