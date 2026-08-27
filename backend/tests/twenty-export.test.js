@@ -20,6 +20,7 @@ import {
   getExportJob,
   resetExportJobsForTests,
 } from '../src/services/export-jobs.js';
+import { EXPENSE_FIELDS } from '../src/services/expense-field-names.js';
 
 describe('extractLinkUrl', () => {
   it('reads primaryLinkUrl', () => {
@@ -182,8 +183,7 @@ describe('mapLineItemToRow', () => {
       includeCancelled: false,
     });
     expect(row.opportunityId).toBe('opp-1');
-    expect(row.rashodItogo).toBeNull();
-    expect(row.rashodPechat).toBeNull();
+    expect(expenseSlice(row)).toEqual(EXPENSE_NULL);
   });
 
   it('does not recompute rashodItogo from articles', () => {
@@ -224,6 +224,41 @@ const EXPENSE_100 = {
   rashodItogo: 100,
 };
 
+const EXPENSE_NULL = {
+  rashodPechat: null,
+  rashodFrezerovka: null,
+  rashodLogistika: null,
+  rashodVyezdnayaKomanda: null,
+  rashodBeznal: null,
+  rashodItogo: null,
+};
+
+const EXPENSE_ROW_KEYS = [
+  EXPENSE_FIELDS.printing,
+  EXPENSE_FIELDS.milling,
+  EXPENSE_FIELDS.logistics,
+  EXPENSE_FIELDS.fieldTeam,
+  EXPENSE_FIELDS.beznal,
+  EXPENSE_FIELDS.total,
+];
+
+describe('expense field names', () => {
+  it('uses EXPENSE_FIELDS for the six row keys (minus syncedAt)', () => {
+    expect(EXPENSE_ROW_KEYS).toEqual([
+      'rashodPechat',
+      'rashodFrezerovka',
+      'rashodLogistika',
+      'rashodVyezdnayaKomanda',
+      'rashodBeznal',
+      'rashodItogo',
+    ]);
+    expect(
+      new Set(Object.values(EXPENSE_FIELDS).filter((name) => name !== EXPENSE_FIELDS.syncedAt))
+    ).toEqual(new Set(EXPENSE_ROW_KEYS));
+    expect(EXPENSE_ROW_KEYS).not.toContain(EXPENSE_FIELDS.syncedAt);
+  });
+});
+
 describe('attachDealExpensesOnce', () => {
   it('keeps expenses only on the first row of the same opportunityId', () => {
     const rows = attachDealExpensesOnce([
@@ -231,14 +266,18 @@ describe('attachDealExpensesOnce', () => {
       { opportunityId: 'a', positionName: '2', ...EXPENSE_100 },
     ]);
     expect(expenseSlice(rows[0])).toEqual(EXPENSE_100);
-    expect(expenseSlice(rows[1])).toEqual({
-      rashodPechat: null,
-      rashodFrezerovka: null,
-      rashodLogistika: null,
-      rashodVyezdnayaKomanda: null,
-      rashodBeznal: null,
-      rashodItogo: null,
-    });
+    expect(expenseSlice(rows[1])).toEqual(EXPENSE_NULL);
+  });
+
+  it('keeps expenses only on the first occurrence when the same opportunityId is non-contiguous', () => {
+    const rows = attachDealExpensesOnce([
+      { opportunityId: 'a', positionName: '1', ...EXPENSE_100 },
+      { opportunityId: 'b', positionName: '2', rashodItogo: 7, rashodPechat: 7, rashodFrezerovka: null, rashodLogistika: null, rashodVyezdnayaKomanda: null, rashodBeznal: null },
+      { opportunityId: 'a', positionName: '3', ...EXPENSE_100 },
+    ]);
+    expect(expenseSlice(rows[0])).toEqual(EXPENSE_100);
+    expect(rows[1].rashodItogo).toBe(7);
+    expect(expenseSlice(rows[2])).toEqual(EXPENSE_NULL);
   });
 
   it('does not merge different ids with the same name', () => {
@@ -317,12 +356,40 @@ describe('buildTwentyExportWorkbook', () => {
       'Расход итого',
     ]);
     expect(sheet.getRow(2).getCell(1).value).toBe('04.06.2026');
-    expect(sheet.getRow(2).getCell(12).value).toBe(10);
-    expect(sheet.getRow(2).getCell(17).value).toBe(100);
+    expect([12, 13, 14, 15, 16, 17].map((col) => sheet.getRow(2).getCell(col).value)).toEqual([
+      10, 20, 5, 30, 35, 100,
+    ]);
     expect(sheet.getRow(2).getCell(4).value).toEqual({
       text: 'https://disk.example/m',
       hyperlink: 'https://disk.example/m',
     });
+  });
+
+  it('leaves later-row expense cells empty, not zero', async () => {
+    const baseRow = {
+      dateDisplay: '04.06.2026',
+      opportunityName: 'Заказ',
+      positionName: 'Баннер',
+      layoutUrl: '',
+      comment: '',
+      unitPrice: 100,
+      lineSum: 200,
+      quantity: 2,
+      statusLabel: 'Новый',
+      tonyUrl: '',
+      bitrixUrl: '',
+    };
+    const buffer = await buildTwentyExportWorkbook([
+      { ...baseRow, ...EXPENSE_100 },
+      { ...baseRow, positionName: 'Стикер', ...EXPENSE_NULL },
+    ]);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer);
+    const sheet = wb.getWorksheet('Заказы');
+    for (let col = 12; col <= 17; col += 1) {
+      expect(sheet.getRow(3).getCell(col).value).not.toBe(0);
+      expect(sheet.getRow(3).getCell(col).value == null).toBe(true);
+    }
   });
 
   it('writes headers only when rows empty', async () => {
@@ -464,6 +531,7 @@ describe('fetchAllDealLineItems', () => {
     expect(query).toContain('rashodLogistika');
     expect(query).toContain('rashodVyezdnayaKomanda');
     expect(query).toContain('rashodBeznal');
+    expect(query).not.toContain('rashodSyncedAt');
   });
 });
 

@@ -66,6 +66,15 @@ function parseQuantity(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+const DEAL_EXPENSE_ROW_KEYS = [
+  EXPENSE_FIELDS.printing,
+  EXPENSE_FIELDS.milling,
+  EXPENSE_FIELDS.logistics,
+  EXPENSE_FIELDS.fieldTeam,
+  EXPENSE_FIELDS.beznal,
+  EXPENSE_FIELDS.total,
+];
+
 /**
  * @returns {object|null} Excel row or null if filtered out
  */
@@ -100,23 +109,11 @@ export function mapLineItemToRow(lineItem, { from, to, includeCancelled = false 
     tonyUrl: extractLinkUrl(opportunity.tonyLink),
     bitrixUrl: extractLinkUrl(opportunity.bitrixLink),
     opportunityId,
-    rashodPechat: amountMicrosToNumber(opportunity.rashodPechat),
-    rashodFrezerovka: amountMicrosToNumber(opportunity.rashodFrezerovka),
-    rashodLogistika: amountMicrosToNumber(opportunity.rashodLogistika),
-    rashodVyezdnayaKomanda: amountMicrosToNumber(opportunity.rashodVyezdnayaKomanda),
-    rashodBeznal: amountMicrosToNumber(opportunity.rashodBeznal),
-    rashodItogo: amountMicrosToNumber(opportunity.rashodItogo),
+    ...Object.fromEntries(
+      DEAL_EXPENSE_ROW_KEYS.map((key) => [key, amountMicrosToNumber(opportunity[key])])
+    ),
   };
 }
-
-const DEAL_EXPENSE_ROW_KEYS = [
-  'rashodPechat',
-  'rashodFrezerovka',
-  'rashodLogistika',
-  'rashodVyezdnayaKomanda',
-  'rashodBeznal',
-  'rashodItogo',
-];
 
 function clearDealExpenses(row) {
   const next = { ...row };
@@ -127,7 +124,7 @@ function clearDealExpenses(row) {
 export function attachDealExpensesOnce(rows) {
   const seen = new Set();
   return rows.map((row, index) => {
-    const key = row.opportunityId || `__row_${index}`;
+    const key = row.opportunityId == null ? `__row_${index}` : row.opportunityId;
     if (seen.has(key)) return clearDealExpenses(row);
     seen.add(key);
     return { ...row };
@@ -187,12 +184,7 @@ export async function buildTwentyExportWorkbook(rows) {
       row.statusLabel,
       cellLink(row.tonyUrl),
       cellLink(row.bitrixUrl),
-      row.rashodPechat,
-      row.rashodFrezerovka,
-      row.rashodLogistika,
-      row.rashodVyezdnayaKomanda,
-      row.rashodBeznal,
-      row.rashodItogo,
+      ...DEAL_EXPENSE_ROW_KEYS.map((key) => row[key]),
     ]);
   }
 
