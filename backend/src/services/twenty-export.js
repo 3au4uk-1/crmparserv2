@@ -82,6 +82,8 @@ export function mapLineItemToRow(lineItem, { from, to, includeCancelled = false 
   const lineSum =
     unitPrice != null && quantity != null ? unitPrice * quantity : null;
 
+  const opportunityId = opportunity.id || null;
+
   return {
     date,
     dateDisplay: formatDisplayDate(date),
@@ -96,6 +98,13 @@ export function mapLineItemToRow(lineItem, { from, to, includeCancelled = false 
     statusLabel: resolveStageLabel(stage),
     tonyUrl: extractLinkUrl(opportunity.tonyLink),
     bitrixUrl: extractLinkUrl(opportunity.bitrixLink),
+    opportunityId,
+    rashodPechat: amountMicrosToNumber(opportunity.rashodPechat),
+    rashodFrezerovka: amountMicrosToNumber(opportunity.rashodFrezerovka),
+    rashodLogistika: amountMicrosToNumber(opportunity.rashodLogistika),
+    rashodVyezdnayaKomanda: amountMicrosToNumber(opportunity.rashodVyezdnayaKomanda),
+    rashodBeznal: amountMicrosToNumber(opportunity.rashodBeznal),
+    rashodItogo: amountMicrosToNumber(opportunity.rashodItogo),
   };
 }
 

@@ -88,6 +88,7 @@ describe('mapLineItemToRow', () => {
     amount: { amountMicros: 1_000_000 },
     ssylkaNaMakety: { primaryLinkUrl: 'https://disk.example/m' },
     opportunity: {
+      id: 'opp-1',
       name: 'АРЕНДА/тест',
       closeDate: '2026-06-04',
       loadDate: '2026-06-01',
@@ -146,6 +147,60 @@ describe('mapLineItemToRow', () => {
     );
     expect(row.quantity).toBeNull();
     expect(row.lineSum).toBeNull();
+  });
+
+  it('maps opportunity id and expense amounts from micros', () => {
+    const row = mapLineItemToRow(
+      {
+        ...base,
+        opportunity: {
+          ...base.opportunity,
+          id: 'opp-1',
+          rashodPechat: { amountMicros: 10_000_000 },
+          rashodFrezerovka: { amountMicros: 20_000_000 },
+          rashodLogistika: { amountMicros: 5_000_000 },
+          rashodVyezdnayaKomanda: { amountMicros: 30_000_000 },
+          rashodBeznal: { amountMicros: 35_000_000 },
+          rashodItogo: { amountMicros: 100_000_000 },
+        },
+      },
+      { from: '2026-06-01', to: '2026-06-30', includeCancelled: false }
+    );
+    expect(row.opportunityId).toBe('opp-1');
+    expect(row.rashodPechat).toBe(10);
+    expect(row.rashodFrezerovka).toBe(20);
+    expect(row.rashodLogistika).toBe(5);
+    expect(row.rashodVyezdnayaKomanda).toBe(30);
+    expect(row.rashodBeznal).toBe(35);
+    expect(row.rashodItogo).toBe(100);
+  });
+
+  it('maps missing expenses to null, not zero', () => {
+    const row = mapLineItemToRow(base, {
+      from: '2026-06-01',
+      to: '2026-06-30',
+      includeCancelled: false,
+    });
+    expect(row.opportunityId).toBe('opp-1');
+    expect(row.rashodItogo).toBeNull();
+    expect(row.rashodPechat).toBeNull();
+  });
+
+  it('does not recompute rashodItogo from articles', () => {
+    const row = mapLineItemToRow(
+      {
+        ...base,
+        opportunity: {
+          ...base.opportunity,
+          id: 'opp-1',
+          rashodPechat: { amountMicros: 10_000_000 },
+          rashodItogo: { amountMicros: 1_000_000 },
+        },
+      },
+      { from: '2026-06-01', to: '2026-06-30', includeCancelled: false }
+    );
+    expect(row.rashodItogo).toBe(1);
+    expect(row.rashodPechat).toBe(10);
   });
 });
 
