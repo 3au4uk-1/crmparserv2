@@ -286,6 +286,12 @@ describe('buildTwentyExportWorkbook', () => {
         statusLabel: 'Новый',
         tonyUrl: 'https://tony.example/1',
         bitrixUrl: 'https://bitrix.example/1',
+        rashodPechat: 10,
+        rashodFrezerovka: 20,
+        rashodLogistika: 5,
+        rashodVyezdnayaKomanda: 30,
+        rashodBeznal: 35,
+        rashodItogo: 100,
       },
     ]);
     const wb = new ExcelJS.Workbook();
@@ -303,8 +309,16 @@ describe('buildTwentyExportWorkbook', () => {
       'Статус',
       'Ссылка на тони',
       'Ссылка на битрикс',
+      'Расход: печать',
+      'Расход: фреза',
+      'Расход: логистика',
+      'Расход: выездная команда',
+      'Расход: безнал',
+      'Расход итого',
     ]);
     expect(sheet.getRow(2).getCell(1).value).toBe('04.06.2026');
+    expect(sheet.getRow(2).getCell(12).value).toBe(10);
+    expect(sheet.getRow(2).getCell(17).value).toBe(100);
     expect(sheet.getRow(2).getCell(4).value).toEqual({
       text: 'https://disk.example/m',
       hyperlink: 'https://disk.example/m',
@@ -426,6 +440,31 @@ describe('fetchAllDealLineItems', () => {
       'Twenty GraphQL response has hasNextPage but is missing endCursor for dealLineItems'
     );
   });
+
+  it('requests opportunity expense fields', async () => {
+    let query = '';
+    async function fakeGql(_url, _token, q) {
+      query = q;
+      return {
+        status: 200,
+        data: {
+          data: {
+            dealLineItems: {
+              edges: [],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        },
+      };
+    }
+    await fetchAllDealLineItems(fakeGql, 'http://gql', 'tok');
+    expect(query).toContain('rashodItogo');
+    expect(query).toContain('rashodPechat');
+    expect(query).toContain('rashodFrezerovka');
+    expect(query).toContain('rashodLogistika');
+    expect(query).toContain('rashodVyezdnayaKomanda');
+    expect(query).toContain('rashodBeznal');
+  });
 });
 
 describe('buildRowsFromLineItems', () => {
@@ -451,6 +490,45 @@ describe('buildRowsFromLineItems', () => {
     );
 
     expect(rows.map((row) => row.positionName)).toEqual(['A', 'B']);
+  });
+});
+
+describe('buildRowsFromLineItems expenses', () => {
+  it('writes deal expenses only on the first sorted row of a deal', () => {
+    const rows = buildRowsFromLineItems(
+      [
+        {
+          name: 'B',
+          stage: 'NOVYY',
+          kolichestvo: 1,
+          amount: { amountMicros: 1_000_000 },
+          opportunity: {
+            id: 'same',
+            name: 'Z',
+            closeDate: '2026-06-01',
+            stage: 'NOVYY',
+            rashodItogo: { amountMicros: 50_000_000 },
+          },
+        },
+        {
+          name: 'A',
+          stage: 'NOVYY',
+          kolichestvo: 1,
+          amount: { amountMicros: 1_000_000 },
+          opportunity: {
+            id: 'same',
+            name: 'Z',
+            closeDate: '2026-06-01',
+            stage: 'NOVYY',
+            rashodItogo: { amountMicros: 50_000_000 },
+          },
+        },
+      ],
+      { from: '2026-06-01', to: '2026-06-30', includeCancelled: false }
+    );
+    expect(rows.map((row) => row.positionName)).toEqual(['A', 'B']);
+    expect(rows[0].rashodItogo).toBe(50);
+    expect(rows[1].rashodItogo).toBeNull();
   });
 });
 

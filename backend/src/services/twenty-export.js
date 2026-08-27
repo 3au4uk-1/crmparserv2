@@ -9,6 +9,7 @@ import { PRINT_COMMENT_FIELD } from './print-sheet-field-names.js';
 import { assertGqlSuccess, assertHttpSuccess, gql } from './twenty-gql.js';
 import { requireTwentyConfig } from './twenty-config.js';
 import { getExportJob, setExportJobFile, updateExportJob } from './export-jobs.js';
+import { EXPENSE_FIELDS } from './expense-field-names.js';
 
 const STAGE_LABEL_BY_VALUE = Object.fromEntries(
   OPPORTUNITY_STAGE_OPTIONS.map((o) => [o.value, o.label])
@@ -154,6 +155,12 @@ const HEADERS = [
   'Статус',
   'Ссылка на тони',
   'Ссылка на битрикс',
+  'Расход: печать',
+  'Расход: фреза',
+  'Расход: логистика',
+  'Расход: выездная команда',
+  'Расход: безнал',
+  'Расход итого',
 ];
 
 function cellLink(url) {
@@ -180,6 +187,12 @@ export async function buildTwentyExportWorkbook(rows) {
       row.statusLabel,
       cellLink(row.tonyUrl),
       cellLink(row.bitrixUrl),
+      row.rashodPechat,
+      row.rashodFrezerovka,
+      row.rashodLogistika,
+      row.rashodVyezdnayaKomanda,
+      row.rashodBeznal,
+      row.rashodItogo,
     ]);
   }
 
@@ -207,6 +220,12 @@ const LINE_ITEM_EXPORT_FIELDS = `
     stage
     tonyLink { primaryLinkUrl }
     bitrixLink { primaryLinkUrl }
+    ${EXPENSE_FIELDS.printing} { amountMicros }
+    ${EXPENSE_FIELDS.milling} { amountMicros }
+    ${EXPENSE_FIELDS.logistics} { amountMicros }
+    ${EXPENSE_FIELDS.fieldTeam} { amountMicros }
+    ${EXPENSE_FIELDS.beznal} { amountMicros }
+    ${EXPENSE_FIELDS.total} { amountMicros }
   }
 `;
 
@@ -279,7 +298,7 @@ export function buildRowsFromLineItems(lineItems, options) {
     const row = mapLineItemToRow(lineItem, options);
     if (row) rows.push(row);
   }
-  return sortExportRows(rows);
+  return attachDealExpensesOnce(sortExportRows(rows));
 }
 
 export async function runTwentyExport(
