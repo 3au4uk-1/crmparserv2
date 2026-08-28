@@ -339,6 +339,32 @@ describe('syncDealToTwenty', () => {
     expect(runPrintSheetRefreshMock).not.toHaveBeenCalled();
   });
 
+  it('skips Twenty calls when productStreams filter leaves no items', async () => {
+    const dealId = dbMock.__seedDeal({
+      id: 11,
+      twenty_id: 'opp-streams',
+      approval_status: 'synced',
+      title: 'Branding only',
+      start_date: '2026-06-10',
+      crm_event_id: 'e11',
+    });
+    dbMock.__seedItem({
+      deal_id: dealId,
+      name: 'Баннер',
+      price: 1000,
+      classification: 'keyword_match',
+      sync_override: null,
+    });
+
+    const result = await syncDealToTwenty(dealId, {
+      productStreams: ['DECOR', 'MK'],
+      skipPrintSheetRefresh: true,
+    });
+
+    expect(result).toEqual({ action: 'skipped', itemCount: 0 });
+    expect(axiosPost).not.toHaveBeenCalled();
+  });
+
   it('refreshes plenka for print-stage line items after sync', async () => {
     const dealId = dbMock.__seedDeal({
       id: 5,

@@ -280,48 +280,51 @@ async function updateDealInTwenty(
   neNasheBrandingList,
   neNasheDecorMkList,
   tipRules,
-  { ignoreLineItemStageProtection = false } = {},
+  { ignoreLineItemStageProtection = false, productStreams } = {},
 ) {
   const db = getDb();
   const oppId = deal.twenty_id;
+  const scoped = Array.isArray(productStreams) && productStreams.length > 0;
 
-  logTwentyStep('update.resolve_company_person', {
-    companyCode: deal.company_code || null,
-    managerName: deal.manager_name || null,
-  });
+  if (!scoped) {
+    logTwentyStep('update.resolve_company_person', {
+      companyCode: deal.company_code || null,
+      managerName: deal.manager_name || null,
+    });
 
-  const { companyTwentyId, personTwentyId } = await resolveCompanyAndPerson(deal, twenty);
+    const { companyTwentyId, personTwentyId } = await resolveCompanyAndPerson(deal, twenty);
 
-  logTwentyStep('update.resolve_company_person.done', {
-    companyTwentyId,
-    personTwentyId,
-  });
+    logTwentyStep('update.resolve_company_person.done', {
+      companyTwentyId,
+      personTwentyId,
+    });
 
-  const oppInput = buildOpportunityInput(deal, items, {
-    includeStage: false,
-    companyTwentyId,
-    personTwentyId,
-    restorationList,
-    neNasheBrandingList,
-    neNasheDecorMkList,
-  });
+    const oppInput = buildOpportunityInput(deal, items, {
+      includeStage: false,
+      companyTwentyId,
+      personTwentyId,
+      restorationList,
+      neNasheBrandingList,
+      neNasheDecorMkList,
+    });
 
-  logTwentyStep('update.opportunity', {
-    oppId,
-    eligibleItems: items.length,
-    amountMicros: oppInput.amount?.amountMicros,
-  });
+    logTwentyStep('update.opportunity', {
+      oppId,
+      eligibleItems: items.length,
+      amountMicros: oppInput.amount?.amountMicros,
+    });
 
-  const oppResp = await gql(
-    twenty.apiUrl,
-    twenty.apiToken,
-    `mutation UpdateOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
-      updateOpportunity(id: $id, data: $input) { id }
-    }`,
-    { id: oppId, input: oppInput }
-  );
-  assertHttpSuccess(oppResp, twenty.apiUrl);
-  assertGqlSuccess(oppResp, 'Failed to update opportunity in Twenty');
+    const oppResp = await gql(
+      twenty.apiUrl,
+      twenty.apiToken,
+      `mutation UpdateOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
+        updateOpportunity(id: $id, data: $input) { id }
+      }`,
+      { id: oppId, input: oppInput }
+    );
+    assertHttpSuccess(oppResp, twenty.apiUrl);
+    assertGqlSuccess(oppResp, 'Failed to update opportunity in Twenty');
+  }
 
   logTwentyStep('update.list_line_items', { oppId });
 
@@ -332,6 +335,7 @@ async function updateDealInTwenty(
   logTwentyStep('update.line_items_diff', {
     existingCount: existingLineItems.length,
     eligibleCount: items.length,
+    scoped,
   });
 
   const warehouseCache = new Map();
@@ -349,6 +353,7 @@ async function updateDealInTwenty(
     neNasheDecorMkList,
     tipRules,
     ignoreStageProtection: ignoreLineItemStageProtection,
+    scoped,
   });
 
   await updateOpportunityAmountFromLineItems(twenty, oppId);
@@ -488,7 +493,11 @@ export async function resyncDealIfSynced(dealId) {
 
 export async function syncDealToTwenty(
   dealId,
-  { skipPrintSheetRefresh = false, ignoreLineItemStageProtection = false } = {},
+  {
+    skipPrintSheetRefresh = false,
+    ignoreLineItemStageProtection = false,
+    productStreams,
+  } = {},
 ) {
   const twenty = requireTwentyConfig();
   const db = getDb();
@@ -502,6 +511,15 @@ export async function syncDealToTwenty(
   const neNasheDecorMkList = loadNeNasheDecorMkList(db);
   const tipRules = loadTipRules(db);
   const items = getItemsForTwenty(allItems, streamContext);
+  const streamFilterActive = Array.isArray(productStreams) && productStreams.length > 0;
+  const scopedItems = streamFilterActive
+    ? items.filter((item) => productStreams.includes(item.productStream))
+    : items;
+
+  if (streamFilterActive && scopedItems.length === 0) {
+    return { action: 'skipped', itemCount: 0 };
+  }
+
   const mode = deal.twenty_id ? 'update' : 'create';
 
   beginTwentySyncContext({
@@ -517,8 +535,9 @@ export async function syncDealToTwenty(
     configSource: twenty.source,
     timeoutMs: config.twentyApiTimeoutMs,
     totalItems: allItems.length,
-    eligibleItems: items.length,
-    eligibleNames: items.map((i) => i.name).slice(0, 10),
+    eligibleItems: scopedItems.length,
+    eligibleNames: scopedItems.map((i) => i.name).slice(0, 10),
+    productStreams: streamFilterActive ? productStreams : undefined,
   });
 
   try {
@@ -527,16 +546,16 @@ export async function syncDealToTwenty(
       result = await updateDealInTwenty(
         dealId,
         deal,
-        items,
+        scopedItems,
         twenty,
         restorationList,
         neNasheBrandingList,
         neNasheDecorMkList,
         tipRules,
-        { ignoreLineItemStageProtection },
+        { ignoreLineItemStageProtection, productStreams },
       );
     } else {
-      if (items.length === 0) {
+      if (scopedItems.length === 0) {
         const message = 'Нет позиций для переноса в Twenty';
         db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(message, dealId);
         logSyncRun(dealId, 'failed', null, message, 'created');
@@ -547,7 +566,7 @@ export async function syncDealToTwenty(
       result = await createDealInTwenty(
         dealId,
         deal,
-        items,
+        scopedItems,
         twenty,
         restorationList,
         neNasheBrandingList,
