@@ -3,6 +3,25 @@ import { getDb } from '../db/connection.js';
 
 const router = Router();
 
+function readKeywordSetting(res, settingKey) {
+  const db = getDb();
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(settingKey);
+  res.json(JSON.parse(row?.value || '[]'));
+}
+
+function writeKeywordSetting(req, res, settingKey) {
+  const { keywords } = req.body;
+  if (!Array.isArray(keywords)) {
+    return res.status(400).json({ error: 'keywords array required' });
+  }
+  const db = getDb();
+  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(
+    settingKey,
+    JSON.stringify(keywords),
+  );
+  res.json({ success: true, count: keywords.length });
+}
+
 router.get('/', (req, res) => {
   const db = getDb();
   const rows = db.prepare('SELECT key, value FROM settings').all();
@@ -14,21 +33,27 @@ router.get('/', (req, res) => {
 });
 
 router.get('/keywords', (req, res) => {
-  const db = getDb();
-  const row = db.prepare("SELECT value FROM settings WHERE key = 'keywords'").get();
-  res.json(JSON.parse(row?.value || '[]'));
+  readKeywordSetting(res, 'keywords');
 });
 
 router.put('/keywords', (req, res) => {
-  const { keywords } = req.body;
-  if (!Array.isArray(keywords)) {
-    return res.status(400).json({ error: 'keywords array required' });
-  }
-  const db = getDb();
-  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('keywords', ?)").run(
-    JSON.stringify(keywords)
-  );
-  res.json({ success: true, count: keywords.length });
+  writeKeywordSetting(req, res, 'keywords');
+});
+
+router.get('/decor-keywords', (req, res) => {
+  readKeywordSetting(res, 'decor_keywords');
+});
+
+router.put('/decor-keywords', (req, res) => {
+  writeKeywordSetting(req, res, 'decor_keywords');
+});
+
+router.get('/mk-keywords', (req, res) => {
+  readKeywordSetting(res, 'mk_keywords');
+});
+
+router.put('/mk-keywords', (req, res) => {
+  writeKeywordSetting(req, res, 'mk_keywords');
 });
 
 router.get('/companies', (req, res) => {
@@ -67,7 +92,7 @@ router.post('/clear-parsing-data', (req, res) => {
 
 /** Generic setting update — must be after specific /keywords, /companies/* routes */
 router.put('/:key', (req, res) => {
-  const reserved = new Set(['keywords', 'companies']);
+  const reserved = new Set(['keywords', 'decor-keywords', 'mk-keywords', 'companies']);
   if (reserved.has(req.params.key)) {
     return res.status(400).json({ error: 'Use dedicated endpoint for this setting' });
   }
