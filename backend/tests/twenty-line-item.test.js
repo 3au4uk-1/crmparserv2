@@ -246,3 +246,24 @@ describe('tip rule line items', () => {
     expect(input.tipDetail).toBeUndefined();
   });
 });
+
+describe('productStream on line item GraphQL input', () => {
+  it('buildLineItemCreateInput includes productStream DECOR', () => {
+    const input = buildLineItemCreateInput(
+      { name: 'Гирлянда', price: 1500, quantity: '1', productStream: 'DECOR' },
+      'wh-001',
+      'opp-456',
+    );
+    expect(input.productStream).toBe('DECOR');
+  });
+
+  it('buildLineItemUpdateInput includes productStream DECOR', () => {
+    const input = buildLineItemUpdateInput({
+      name: 'Гирлянда',
+      price: 1500,
+      quantity: '1',
+      productStream: 'DECOR',
+    });
+    expect(input.productStream).toBe('DECOR');
+  });
+});

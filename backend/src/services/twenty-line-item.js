@@ -28,6 +28,10 @@ function buildLineItemFields(item, options = {}) {
     },
   };
 
+  if (item.productStream === 'BRANDING' || item.productStream === 'DECOR' || item.productStream === 'MK') {
+    fields.productStream = item.productStream;
+  }
+
   const comment = (item.comment || '').trim();
   if (comment) fields.kommentariy = comment;
 

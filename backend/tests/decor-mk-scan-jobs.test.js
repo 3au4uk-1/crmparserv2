@@ -233,6 +233,37 @@ describe('decor-mk-scan-jobs', () => {
     expect(listDecorMkScanDealIds('2026-08-01', '2026-08-31')).toEqual([1]);
   });
 
+  it('does not select a deal when the matching decor item is sync_override exclude', () => {
+    insertDeal({ id: 1, load_date: '2026-08-15' });
+    insertItem({ deal_id: 1, name: 'Гирлянда', sync_override: 'exclude' });
+
+    expect(listDecorMkScanDealIds('2026-08-01', '2026-08-31')).toEqual([]);
+  });
+
+  it('does not select a branding-only deal with sync_override include', () => {
+    insertDeal({ id: 1, load_date: '2026-08-15' });
+    insertItem({
+      deal_id: 1,
+      name: 'Баннер',
+      classification: 'keyword_match',
+      sync_override: 'include',
+    });
+
+    expect(listDecorMkScanDealIds('2026-08-01', '2026-08-31')).toEqual([]);
+  });
+
+  it('does not select a non-stream item with sync_override include', () => {
+    insertDeal({ id: 1, load_date: '2026-08-15' });
+    insertItem({
+      deal_id: 1,
+      name: 'Скотч',
+      classification: 'unclassified',
+      sync_override: 'include',
+    });
+
+    expect(listDecorMkScanDealIds('2026-08-01', '2026-08-31')).toEqual([]);
+  });
+
   it('parseDecorMkScanRange throws statusCode 400 when from > to', () => {
     expect(() => parseDecorMkScanRange('2026-08-02', '2026-08-01')).toThrow();
     try {
@@ -241,6 +272,16 @@ describe('decor-mk-scan-jobs', () => {
       expect(err.statusCode).toBe(400);
       expect(err.message).toBe('Дата «с» не может быть позже «по»');
     }
+  });
+
+  it('marks job failed when listing deals throws', async () => {
+    testDb.prepare("UPDATE settings SET value = ? WHERE key = 'keywords'").run('not-json');
+
+    const job = createDecorMkScanJob({ from: '2026-08-01', to: '2026-08-31' });
+    const finished = await executeDecorMkScanJob(job.jobId);
+
+    expect(finished.status).toBe('failed');
+    expect(finished.error).toBeTruthy();
   });
 
   it('executeDecorMkScanJob syncs with productStreams and does not count skipped as updated', async () => {

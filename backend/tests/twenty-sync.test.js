@@ -439,6 +439,12 @@ describe('syncDealToTwenty', () => {
     );
     expect(deleteCalls.every(([, body]) => body.variables.id !== 'li-branding')).toBe(true);
     expect(deleteCalls).toHaveLength(0);
+
+    const lineItemUpdates = axiosPost.mock.calls.filter(([_, body]) =>
+      body.query.includes('updateDealLineItem')
+    );
+    expect(lineItemUpdates).toHaveLength(1);
+    expect(lineItemUpdates[0][1].variables.input.productStream).toBe('DECOR');
   });
 
   it('refreshes plenka for print-stage line items after sync', async () => {

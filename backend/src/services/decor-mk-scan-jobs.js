@@ -183,27 +183,28 @@ export async function executeDecorMkScanJob(jobId) {
 
   const db = getDb();
   const startedAt = new Date().toISOString();
-  const dealIds = listDecorMkScanDealIds(job.from, job.to);
-
-  updateJob(job.jobId, {
-    status: 'running',
-    startedAt,
-    finishedAt: null,
-    error: null,
-    dealsTotal: dealIds.length,
-    dealsDone: 0,
-    dealsUpdated: 0,
-    dealsFailed: 0,
-    errors: [],
-  });
-
-  db.prepare(
-    `UPDATE decor_mk_scan_runs
-     SET status = ?, started_at = ?, finished_at = NULL, error = NULL, deals_total = ?
-     WHERE id = ?`,
-  ).run('running', startedAt, dealIds.length, Number(job.jobId));
 
   try {
+    const dealIds = listDecorMkScanDealIds(job.from, job.to);
+
+    updateJob(job.jobId, {
+      status: 'running',
+      startedAt,
+      finishedAt: null,
+      error: null,
+      dealsTotal: dealIds.length,
+      dealsDone: 0,
+      dealsUpdated: 0,
+      dealsFailed: 0,
+      errors: [],
+    });
+
+    db.prepare(
+      `UPDATE decor_mk_scan_runs
+       SET status = ?, started_at = ?, finished_at = NULL, error = NULL, deals_total = ?
+       WHERE id = ?`,
+    ).run('running', startedAt, dealIds.length, Number(job.jobId));
+
     for (let i = 0; i < dealIds.length; i++) {
       if (i > 0) await delay(DELAY_MS);
       const dealId = dealIds[i];
