@@ -1,3 +1,4 @@
+import express from 'express';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -44,6 +45,34 @@ function createDb() {
       deals_total INTEGER DEFAULT 0,
       deals_done INTEGER DEFAULT 0,
       deals_updated INTEGER DEFAULT 0,
+      deals_failed INTEGER DEFAULT 0,
+      errors_json TEXT,
+      error TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE bulk_resync_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      status TEXT NOT NULL DEFAULT 'queued',
+      trigger TEXT NOT NULL DEFAULT 'manual',
+      started_at TEXT,
+      finished_at TEXT,
+      deals_total INTEGER DEFAULT 0,
+      deals_done INTEGER DEFAULT 0,
+      deals_updated INTEGER DEFAULT 0,
+      deals_failed INTEGER DEFAULT 0,
+      errors_json TEXT,
+      error TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE restore_missing_twenty_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      status TEXT NOT NULL DEFAULT 'queued',
+      trigger TEXT NOT NULL DEFAULT 'manual',
+      started_at TEXT,
+      finished_at TEXT,
+      deals_total INTEGER DEFAULT 0,
+      deals_done INTEGER DEFAULT 0,
+      deals_restored INTEGER DEFAULT 0,
       deals_failed INTEGER DEFAULT 0,
       errors_json TEXT,
       error TEXT,
@@ -114,6 +143,22 @@ function insertItem({ deal_id, name, classification = null, sync_override = null
        VALUES (?, ?, ?, ?)`,
     )
     .run(deal_id, name, classification, sync_override);
+}
+
+async function requestJson(app, method, path, body) {
+  const server = app.listen(0);
+  const { port } = server.address();
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const text = await response.text();
+    return { status: response.status, body: text ? JSON.parse(text) : null };
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 }
 
 describe('decor-mk-scan-jobs', () => {
@@ -217,5 +262,111 @@ describe('decor-mk-scan-jobs', () => {
     expect(finished.dealsDone).toBe(1);
     expect(finished.dealsUpdated).toBe(0);
     expect(finished.status).toBe('completed');
+  });
+});
+
+describe('decor-mk-scan routes', () => {
+  let dealsRouter;
+  let createDecorMkScanJob;
+  let createBulkResyncJob;
+  let resetDecorMkScanJobsForTests;
+  let resetBulkResyncJobsForTests;
+  let resetRestoreMissingTwentyJobsForTests;
+
+  beforeEach(async () => {
+    testDb = createDb();
+    syncDealToTwentyMock.mockReset();
+    syncDealToTwentyMock.mockResolvedValue({ action: 'updated', twentyId: 'opp-1' });
+    vi.resetModules();
+
+    dealsRouter = (await import('../src/routes/deals.js')).default;
+    ({
+      createDecorMkScanJob,
+      resetDecorMkScanJobsForTests,
+    } = await import('../src/services/decor-mk-scan-jobs.js'));
+    ({
+      createBulkResyncJob,
+      resetBulkResyncJobsForTests,
+    } = await import('../src/services/bulk-resync-jobs.js'));
+    ({
+      resetRestoreMissingTwentyJobsForTests,
+    } = await import('../src/services/restore-missing-twenty-jobs.js'));
+
+    resetDecorMkScanJobsForTests();
+    resetBulkResyncJobsForTests();
+    resetRestoreMissingTwentyJobsForTests();
+  });
+
+  afterEach(() => {
+    testDb?.close?.();
+  });
+
+  function mountApp() {
+    const app = express();
+    app.use(express.json());
+    app.use('/deals', dealsRouter);
+    return app;
+  }
+
+  it('GET preview without dates returns 400', async () => {
+    const result = await requestJson(mountApp(), 'GET', '/deals/decor-mk-scan/preview');
+    expect(result.status).toBe(400);
+  });
+
+  it('GET preview with valid range returns count', async () => {
+    insertDeal({ id: 1, load_date: '2026-08-15' });
+    insertItem({ deal_id: 1, name: 'Гирлянда' });
+
+    const result = await requestJson(
+      mountApp(),
+      'GET',
+      '/deals/decor-mk-scan/preview?from=2026-08-01&to=2026-08-31',
+    );
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({
+      count: 1,
+      from: '2026-08-01',
+      to: '2026-08-31',
+    });
+  });
+
+  it('POST without body dates returns 400', async () => {
+    const result = await requestJson(mountApp(), 'POST', '/deals/decor-mk-scan', {});
+    expect(result.status).toBe(400);
+  });
+
+  it('POST returns 409 when decor-mk-scan already active', async () => {
+    createDecorMkScanJob({ from: '2026-08-01', to: '2026-08-31' });
+    const result = await requestJson(mountApp(), 'POST', '/deals/decor-mk-scan', {
+      from: '2026-08-01',
+      to: '2026-08-31',
+    });
+    expect(result.status).toBe(409);
+    expect(result.body.error).toBe('Проверка ключевых слов декора и МК уже выполняется');
+  });
+
+  it('POST returns 409 when bulk-resync is active', async () => {
+    createBulkResyncJob({ trigger: 'manual' });
+    const result = await requestJson(mountApp(), 'POST', '/deals/decor-mk-scan', {
+      from: '2026-08-01',
+      to: '2026-08-31',
+    });
+    expect(result.status).toBe(409);
+    expect(result.body.error).toBe('Массовая пересинхронизация уже выполняется');
+  });
+
+  it('POST when idle returns 201 with jobId', async () => {
+    const result = await requestJson(mountApp(), 'POST', '/deals/decor-mk-scan', {
+      from: '2026-08-01',
+      to: '2026-08-31',
+    });
+    expect(result.status).toBe(201);
+    expect(result.body.jobId).toBeTruthy();
+  });
+
+  it('GET missing job id returns 404', async () => {
+    const result = await requestJson(mountApp(), 'GET', '/deals/decor-mk-scan/jobs/999');
+    expect(result.status).toBe(404);
+    expect(result.body.error).toBe('Задача не найдена');
   });
 });

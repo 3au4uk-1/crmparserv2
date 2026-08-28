@@ -109,6 +109,21 @@ function createDb() {
       error TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE decor_mk_scan_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      status TEXT NOT NULL DEFAULT 'queued',
+      from_date TEXT NOT NULL,
+      to_date TEXT NOT NULL,
+      started_at TEXT,
+      finished_at TEXT,
+      deals_total INTEGER DEFAULT 0,
+      deals_done INTEGER DEFAULT 0,
+      deals_updated INTEGER DEFAULT 0,
+      deals_failed INTEGER DEFAULT 0,
+      errors_json TEXT,
+      error TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
   return db;
 }
@@ -224,5 +239,17 @@ describe('bulk-resync routes', () => {
     const result = await requestJson(app, 'POST', '/deals/bulk-resync');
     expect(result.status).toBe(201);
     expect(result.body.jobId).toBeTruthy();
+  });
+
+  it('POST /bulk-resync returns 409 when decor-mk-scan is active', async () => {
+    const { createDecorMkScanJob } = await import('../src/services/decor-mk-scan-jobs.js');
+    createDecorMkScanJob({ from: '2026-08-01', to: '2026-08-31' });
+    const app = express();
+    app.use(express.json());
+    app.use('/deals', dealsRouter);
+
+    const result = await requestJson(app, 'POST', '/deals/bulk-resync');
+    expect(result.status).toBe(409);
+    expect(result.body.error).toBe('Проверка ключевых слов декора и МК уже выполняется');
   });
 });
