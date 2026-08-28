@@ -7,6 +7,7 @@ import {
 import { sendOkleykaToTelegram } from './outbound.js';
 import { patchOkleykaTelegramFields } from './crm-log.js';
 import { getUserbotClient, isUserbotConfigured } from './userbot/client.js';
+import { createWrapOkleykaTask } from './create-wrap-task.js';
 
 function resolveSentBy(sentBy) {
   if (!sentBy) return null;
@@ -94,6 +95,20 @@ export async function handleOkleykaSend(db, body, deps = {}) {
   } catch (err) {
     console.error('[telegram] CRM patch failed:', err.message);
     warning = 'crm_patch_failed';
+  }
+
+  try {
+    const createWrap = deps.createWrapOkleykaTask ?? createWrapOkleykaTask;
+    await createWrap({
+      lineItemId,
+      opportunityId: body?.opportunityId,
+      text,
+      fileUrls,
+      force,
+    });
+  } catch (err) {
+    console.error('[telegram] wrap task failed:', err.message);
+    warning = warning ? `${warning},wrap_task_failed` : 'wrap_task_failed';
   }
 
   return {

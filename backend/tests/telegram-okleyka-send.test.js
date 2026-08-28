@@ -77,6 +77,7 @@ describe('handleOkleykaSend', () => {
         patchOkleykaTelegramFields: patch,
         isUserbotConfigured: () => true,
         getUserbotClient: async () => ({ id: 'client' }),
+        createWrapOkleykaTask: vi.fn().mockResolvedValue({ id: 't1' }),
       },
     );
     expect(result.ok).toBe(true);
@@ -106,6 +107,7 @@ describe('handleOkleykaSend', () => {
         patchOkleykaTelegramFields: patch,
         isUserbotConfigured: () => true,
         getUserbotClient: async () => ({ id: 'client' }),
+        createWrapOkleykaTask: vi.fn().mockResolvedValue({ id: 't1' }),
       },
     );
     expect(send).toHaveBeenCalledWith(expect.objectContaining({
@@ -113,5 +115,152 @@ describe('handleOkleykaSend', () => {
       threadId: 42,
       client: { id: 'client' },
     }));
+  });
+
+  it('creates wrap task after telegram success with text and fileUrls', async () => {
+    const db = memoryDb();
+    const send = vi.fn(async () => ({ messageIds: [7] }));
+    const patch = vi.fn(async () => {});
+    const createWrap = vi.fn().mockResolvedValue({ id: 't1' });
+    const result = await handleOkleykaSend(
+      db,
+      {
+        event: 'okleyka.send',
+        lineItemId: 'li-wrap',
+        opportunityId: 'opp-wrap',
+        text: 'Заказ: wrap',
+        fileUrls: ['https://cdn.example.com/a.jpg'],
+        force: false,
+      },
+      {
+        sendOkleykaToTelegram: send,
+        patchOkleykaTelegramFields: patch,
+        isUserbotConfigured: () => true,
+        getUserbotClient: async () => ({}),
+        createWrapOkleykaTask: createWrap,
+      },
+    );
+    expect(result.ok).toBe(true);
+    expect(createWrap).toHaveBeenCalledWith({
+      lineItemId: 'li-wrap',
+      opportunityId: 'opp-wrap',
+      text: 'Заказ: wrap',
+      fileUrls: ['https://cdn.example.com/a.jpg'],
+      force: false,
+    });
+  });
+
+  it('keeps telegram ok when wrap task throws and sets wrap_task_failed warning', async () => {
+    const db = memoryDb();
+    const send = vi.fn(async () => ({ messageIds: [7] }));
+    const patch = vi.fn(async () => {});
+    const createWrap = vi.fn().mockRejectedValue(new Error('twenty down'));
+    const result = await handleOkleykaSend(
+      db,
+      {
+        event: 'okleyka.send',
+        lineItemId: 'li-wrap-fail',
+        opportunityId: 'opp-wrap',
+        text: 'Заказ: wrap',
+        fileUrls: [],
+        force: false,
+      },
+      {
+        sendOkleykaToTelegram: send,
+        patchOkleykaTelegramFields: patch,
+        isUserbotConfigured: () => true,
+        getUserbotClient: async () => ({}),
+        createWrapOkleykaTask: createWrap,
+      },
+    );
+    expect(result.ok).toBe(true);
+    expect(result.warning).toBeTruthy();
+    expect(result.warning).toContain('wrap_task_failed');
+  });
+
+  it('does not create wrap task when alreadySent', async () => {
+    const db = memoryDb();
+    db.prepare(
+      `INSERT INTO telegram_send_log (event, line_item_id, chat_id, telegram_message_ids)
+       VALUES ('okleyka.send', 'li-1', '-1001', '[1]')`,
+    ).run();
+    const send = vi.fn();
+    const patch = vi.fn();
+    const createWrap = vi.fn();
+    const result = await handleOkleykaSend(
+      db,
+      {
+        event: 'okleyka.send',
+        lineItemId: 'li-1',
+        text: 'x',
+        fileUrls: [],
+        force: false,
+      },
+      {
+        sendOkleykaToTelegram: send,
+        patchOkleykaTelegramFields: patch,
+        isUserbotConfigured: () => true,
+        getUserbotClient: async () => ({}),
+        createWrapOkleykaTask: createWrap,
+      },
+    );
+    expect(result.alreadySent).toBe(true);
+    expect(createWrap).not.toHaveBeenCalled();
+  });
+
+  it('does not create wrap task when telegram send throws', async () => {
+    const db = memoryDb();
+    const send = vi.fn(async () => {
+      throw new Error('telegram down');
+    });
+    const createWrap = vi.fn();
+    await expect(
+      handleOkleykaSend(
+        db,
+        {
+          event: 'okleyka.send',
+          lineItemId: 'li-throw',
+          text: 'x',
+          fileUrls: [],
+          force: false,
+        },
+        {
+          sendOkleykaToTelegram: send,
+          patchOkleykaTelegramFields: vi.fn(),
+          isUserbotConfigured: () => true,
+          getUserbotClient: async () => ({}),
+          createWrapOkleykaTask: createWrap,
+        },
+      ),
+    ).rejects.toThrow('telegram down');
+    expect(createWrap).not.toHaveBeenCalled();
+  });
+
+  it('appends wrap_task_failed when CRM patch already warned', async () => {
+    const db = memoryDb();
+    const send = vi.fn(async () => ({ messageIds: [7] }));
+    const patch = vi.fn(async () => {
+      throw new Error('crm down');
+    });
+    const createWrap = vi.fn().mockRejectedValue(new Error('twenty down'));
+    const result = await handleOkleykaSend(
+      db,
+      {
+        event: 'okleyka.send',
+        lineItemId: 'li-both',
+        text: 'x',
+        fileUrls: [],
+        force: false,
+      },
+      {
+        sendOkleykaToTelegram: send,
+        patchOkleykaTelegramFields: patch,
+        isUserbotConfigured: () => true,
+        getUserbotClient: async () => ({}),
+        createWrapOkleykaTask: createWrap,
+      },
+    );
+    expect(result.ok).toBe(true);
+    expect(result.warning).toBe('crm_patch_failed,wrap_task_failed');
   });
 });
