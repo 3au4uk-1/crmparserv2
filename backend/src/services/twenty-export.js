@@ -75,6 +75,8 @@ const DEAL_EXPENSE_ROW_KEYS = [
   EXPENSE_FIELDS.total,
 ];
 
+const DEAL_ONCE_ROW_KEYS = [...DEAL_EXPENSE_ROW_KEYS, 'amountDeal'];
+
 /**
  * @returns {object|null} Excel row or null if filtered out
  */
@@ -109,6 +111,7 @@ export function mapLineItemToRow(lineItem, { from, to, includeCancelled = false 
     tonyUrl: extractLinkUrl(opportunity.tonyLink),
     bitrixUrl: extractLinkUrl(opportunity.bitrixLink),
     opportunityId,
+    amountDeal: amountMicrosToNumber(opportunity.amount),
     ...Object.fromEntries(
       DEAL_EXPENSE_ROW_KEYS.map((key) => [key, amountMicrosToNumber(opportunity[key])])
     ),
@@ -117,7 +120,7 @@ export function mapLineItemToRow(lineItem, { from, to, includeCancelled = false 
 
 function clearDealExpenses(row) {
   const next = { ...row };
-  for (const key of DEAL_EXPENSE_ROW_KEYS) next[key] = null;
+  for (const key of DEAL_ONCE_ROW_KEYS) next[key] = null;
   return next;
 }
 
@@ -140,58 +143,92 @@ export function sortExportRows(rows) {
   });
 }
 
-const HEADERS = [
-  'Дата',
-  'Название',
-  'Позиция',
-  'Ссылка на макет',
-  'Комментарий',
-  'Цена за ед.',
-  'Сумма позиции',
-  'Количество',
-  'Статус',
-  'Ссылка на тони',
-  'Ссылка на битрикс',
-  'Расход: печать',
-  'Расход: фреза',
-  'Расход: логистика',
-  'Расход: выездная команда',
-  'Расход: безнал',
-  'Расход итого',
+export const TWENTY_EXPORT_COLUMNS = [
+  { key: 'date', header: 'Дата', sheets: ['lineItems', 'deals'], rowKey: 'dateDisplay' },
+  { key: 'opportunityName', header: 'Название', sheets: ['lineItems', 'deals'] },
+  { key: 'positionName', header: 'Позиция', sheets: ['lineItems'] },
+  { key: 'layoutUrl', header: 'Ссылка на макет', sheets: ['lineItems'], kind: 'link' },
+  { key: 'comment', header: 'Комментарий', sheets: ['lineItems'] },
+  { key: 'unitPrice', header: 'Цена за ед.', sheets: ['lineItems'] },
+  { key: 'lineSum', header: 'Сумма позиции', sheets: ['lineItems'] },
+  { key: 'quantity', header: 'Количество', sheets: ['lineItems'] },
+  { key: 'status', header: 'Статус', sheets: ['lineItems', 'deals'], rowKey: 'statusLabel' },
+  { key: 'tonyUrl', header: 'Ссылка на тони', sheets: ['lineItems', 'deals'], kind: 'link' },
+  { key: 'bitrixUrl', header: 'Ссылка на битрикс', sheets: ['lineItems', 'deals'], kind: 'link' },
+  { key: EXPENSE_FIELDS.printing, header: 'Расход: печать', sheets: ['lineItems', 'deals'] },
+  { key: EXPENSE_FIELDS.milling, header: 'Расход: фреза', sheets: ['lineItems', 'deals'] },
+  { key: EXPENSE_FIELDS.logistics, header: 'Расход: логистика', sheets: ['lineItems', 'deals'] },
+  { key: EXPENSE_FIELDS.fieldTeam, header: 'Расход: выездная команда', sheets: ['lineItems', 'deals'] },
+  { key: EXPENSE_FIELDS.beznal, header: 'Расход: безнал', sheets: ['lineItems', 'deals'] },
+  { key: EXPENSE_FIELDS.total, header: 'Расход итого', sheets: ['lineItems', 'deals'] },
+  { key: 'amountDeal', header: 'Сумма сделки', sheets: ['lineItems', 'deals'] },
 ];
+
+const COLUMN_BY_KEY = new Map(TWENTY_EXPORT_COLUMNS.map((col) => [col.key, col]));
+
+export function resolveExportColumns(requested) {
+  if (requested == null || (Array.isArray(requested) && requested.length === 0)) {
+    return TWENTY_EXPORT_COLUMNS;
+  }
+  if (!Array.isArray(requested)) {
+    throw new Error('columns должен быть массивом ключей');
+  }
+  const unknown = requested.filter((key) => !COLUMN_BY_KEY.has(key));
+  if (unknown.length) {
+    throw new Error(`Неизвестные колонки: ${unknown.join(', ')}`);
+  }
+  const selected = new Set(requested);
+  return TWENTY_EXPORT_COLUMNS.filter((col) => selected.has(col.key));
+}
+
+export function buildDealExportRows(rows) {
+  const seen = new Set();
+  const deals = [];
+  rows.forEach((row, index) => {
+    const key = row.opportunityId == null ? `__row_${index}` : row.opportunityId;
+    if (seen.has(key)) return;
+    seen.add(key);
+    deals.push(row);
+  });
+  return deals;
+}
 
 function cellLink(url) {
   if (!url) return '';
   return { text: url, hyperlink: url };
 }
 
-export async function buildTwentyExportWorkbook(rows) {
-  const wb = new ExcelJS.Workbook();
-  wb.creator = 'CRM Parser';
-  const sheet = wb.addWorksheet('Заказы');
-  sheet.addRow(HEADERS).font = { bold: true };
+function cellValue(row, column) {
+  const value = row[column.rowKey || column.key];
+  if (column.kind === 'link') return cellLink(value);
+  return value ?? null;
+}
 
+function addExportSheet(wb, name, rows, columns) {
+  const sheet = wb.addWorksheet(name);
+  sheet.addRow(columns.map((col) => col.header)).font = { bold: true };
   for (const row of rows) {
-    sheet.addRow([
-      row.dateDisplay,
-      row.opportunityName,
-      row.positionName,
-      cellLink(row.layoutUrl),
-      row.comment,
-      row.unitPrice,
-      row.lineSum,
-      row.quantity,
-      row.statusLabel,
-      cellLink(row.tonyUrl),
-      cellLink(row.bitrixUrl),
-      ...DEAL_EXPENSE_ROW_KEYS.map((key) => row[key]),
-    ]);
+    sheet.addRow(columns.map((col) => cellValue(row, col)));
   }
-
   sheet.columns.forEach((col) => {
     col.width = 18;
   });
+  return sheet;
+}
 
+export async function buildTwentyExportWorkbook(
+  rows,
+  { columns = TWENTY_EXPORT_COLUMNS, includeDealsSheet = false } = {}
+) {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'CRM Parser';
+  addExportSheet(wb, 'Заказы', rows, columns.filter((col) => col.sheets.includes('lineItems')));
+  if (includeDealsSheet) {
+    const dealColumns = columns.filter((col) => col.sheets.includes('deals'));
+    if (dealColumns.length) {
+      addExportSheet(wb, 'Сделки', buildDealExportRows(rows), dealColumns);
+    }
+  }
   return wb.xlsx.writeBuffer();
 }
 
@@ -218,6 +255,7 @@ const LINE_ITEM_EXPORT_FIELDS = `
     ${EXPENSE_FIELDS.fieldTeam} { amountMicros }
     ${EXPENSE_FIELDS.beznal} { amountMicros }
     ${EXPENSE_FIELDS.total} { amountMicros }
+    amount { amountMicros }
   }
 `;
 
@@ -295,7 +333,7 @@ export function buildRowsFromLineItems(lineItems, options) {
 
 export async function runTwentyExport(
   jobId,
-  { from, to, includeCancelled = false },
+  { from, to, includeCancelled = false, columns, includeDealsSheet = false },
   { gqlFn = gql, requireTwentyConfigFn = requireTwentyConfig } = {}
 ) {
   updateExportJob(jobId, { status: 'running' });
@@ -311,7 +349,11 @@ export async function runTwentyExport(
       },
     });
     const rows = buildRowsFromLineItems(lineItems, { from, to, includeCancelled });
-    const buffer = await buildTwentyExportWorkbook(rows);
+    const resolvedColumns = resolveExportColumns(columns);
+    const buffer = await buildTwentyExportWorkbook(rows, {
+      columns: resolvedColumns,
+      includeDealsSheet: Boolean(includeDealsSheet),
+    });
 
     setExportJobFile(jobId, buffer);
     const pagesFetched = getExportJob(jobId)?.progress?.pagesFetched ?? 0;
