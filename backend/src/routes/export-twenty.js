@@ -6,16 +6,43 @@ import {
   getExportJobFilePath,
   deleteExportJobFile,
 } from '../services/export-jobs.js';
-import { runTwentyExport } from '../services/twenty-export.js';
+import {
+  runTwentyExport,
+  resolveExportColumns,
+  TWENTY_EXPORT_COLUMNS,
+} from '../services/twenty-export.js';
 import { normalizeExportRange } from '../utils/crm-dates.js';
 import { getTwentyConfig } from '../services/twenty-config.js';
 
 const router = Router();
 
+router.get('/columns', (_req, res) => {
+  res.json({
+    columns: TWENTY_EXPORT_COLUMNS.map(({ key, header, sheets }) => ({
+      key,
+      header,
+      sheets,
+    })),
+  });
+});
+
 router.post('/', (req, res) => {
-  const { from, to, includeCancelled = false } = req.body ?? {};
+  const {
+    from,
+    to,
+    includeCancelled = false,
+    columns,
+    includeDealsSheet = false,
+  } = req.body ?? {};
   try {
     normalizeExportRange(from, to);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+
+  let resolvedColumns;
+  try {
+    resolvedColumns = resolveExportColumns(columns);
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
@@ -29,16 +56,21 @@ router.post('/', (req, res) => {
     return res.status(503).json({ error: 'Twenty CRM не настроен' });
   }
 
+  const columnKeys = resolvedColumns.map((col) => col.key);
   const job = createExportJob({
     from,
     to,
     includeCancelled: Boolean(includeCancelled),
+    includeDealsSheet: Boolean(includeDealsSheet),
+    columns: columnKeys,
     kind: 'twenty',
   });
   runTwentyExport(job.jobId, {
     from,
     to,
     includeCancelled: Boolean(includeCancelled),
+    includeDealsSheet: Boolean(includeDealsSheet),
+    columns: columnKeys,
   }).catch((err) => {
     console.error(`[export-twenty] job ${job.jobId} failed:`, err.message);
   });

@@ -22,6 +22,8 @@ export function createExportJob({
   company = null,
   includeCancelled = false,
   kind = 'calendar',
+  columns,
+  includeDealsSheet = false,
 }) {
   const jobId = crypto.randomUUID();
   const progress =
@@ -37,6 +39,8 @@ export function createExportJob({
     to,
     company,
     includeCancelled: kind === 'twenty' ? Boolean(includeCancelled) : undefined,
+    columns: kind === 'twenty' ? columns : undefined,
+    includeDealsSheet: kind === 'twenty' ? Boolean(includeDealsSheet) : undefined,
     progress,
     error: null,
     filePath: null,

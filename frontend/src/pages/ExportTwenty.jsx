@@ -1,27 +1,69 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   downloadTwentyExportFile,
   useActiveTwentyExportJob,
   useStartTwentyExport,
+  useTwentyExportColumns,
   useTwentyExportJob,
 } from '../api';
 import PageHeader from '../components/ui/PageHeader';
 
+const COLUMNS_STORAGE_KEY = 'export-twenty-columns';
+const DEALS_SHEET_STORAGE_KEY = 'export-twenty-include-deals-sheet';
+
 function isJobRunning(status) {
   return status === 'queued' || status === 'running';
+}
+
+function readStoredJson(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function mergeColumnSelection(catalogKeys, stored) {
+  if (!Array.isArray(stored)) return catalogKeys;
+  return catalogKeys.filter((key) => stored.includes(key));
 }
 
 export default function ExportTwenty() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [includeCancelled, setIncludeCancelled] = useState(false);
+  const [includeDealsSheet, setIncludeDealsSheet] = useState(() =>
+    Boolean(readStoredJson(DEALS_SHEET_STORAGE_KEY))
+  );
+  const [selectedColumns, setSelectedColumns] = useState([]);
+  const [columnsReady, setColumnsReady] = useState(false);
   const [jobId, setJobId] = useState('');
   const [startError, setStartError] = useState('');
   const [downloadError, setDownloadError] = useState('');
 
+  const { data: columnsPayload } = useTwentyExportColumns();
+  const catalog = columnsPayload?.columns ?? [];
+  const catalogKeys = useMemo(() => catalog.map((col) => col.key), [catalog]);
+
   const startExport = useStartTwentyExport();
   const { data: activeJob } = useActiveTwentyExportJob();
   const { data: job, error: jobError } = useTwentyExportJob(jobId, { enabled: !!jobId });
+
+  useEffect(() => {
+    if (!catalogKeys.length) return;
+    setSelectedColumns(mergeColumnSelection(catalogKeys, readStoredJson(COLUMNS_STORAGE_KEY)));
+    setColumnsReady(true);
+  }, [catalogKeys]);
+
+  useEffect(() => {
+    if (!columnsReady) return;
+    localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(selectedColumns));
+  }, [selectedColumns, columnsReady]);
+
+  useEffect(() => {
+    localStorage.setItem(DEALS_SHEET_STORAGE_KEY, JSON.stringify(includeDealsSheet));
+  }, [includeDealsSheet]);
 
   useEffect(() => {
     if (!activeJob?.jobId || jobId) return;
@@ -29,6 +71,12 @@ export default function ExportTwenty() {
     setFrom(activeJob.from || '');
     setTo(activeJob.to || '');
     setIncludeCancelled(Boolean(activeJob.includeCancelled));
+    if (Array.isArray(activeJob.columns) && activeJob.columns.length) {
+      setSelectedColumns(activeJob.columns);
+    }
+    if (activeJob.includeDealsSheet != null) {
+      setIncludeDealsSheet(Boolean(activeJob.includeDealsSheet));
+    }
   }, [activeJob, jobId]);
 
   const status = job?.status;
@@ -36,6 +84,13 @@ export default function ExportTwenty() {
   const pagesFetched = job?.progress?.pagesFetched ?? 0;
   const lineItemsFetched = job?.progress?.lineItemsFetched ?? 0;
   const rowsWritten = job?.progress?.rowsWritten ?? 0;
+  const allSelected = catalogKeys.length > 0 && selectedColumns.length === catalogKeys.length;
+
+  function toggleColumn(key) {
+    setSelectedColumns((current) =>
+      current.includes(key) ? current.filter((item) => item !== key) : [...current, key]
+    );
+  }
 
   function onSubmit(e) {
     e.preventDefault();
@@ -46,9 +101,13 @@ export default function ExportTwenty() {
       setStartError('Укажите диапазон дат');
       return;
     }
+    if (!selectedColumns.length) {
+      setStartError('Выберите хотя бы одну колонку');
+      return;
+    }
 
     startExport.mutate(
-      { from, to, includeCancelled },
+      { from, to, includeCancelled, includeDealsSheet, columns: selectedColumns },
       {
         onSuccess: (data) => setJobId(data.jobId),
         onError: (err) => {
@@ -89,41 +148,79 @@ export default function ExportTwenty() {
             Параметры выгрузки
           </h2>
           <p className="text-sm text-ink-muted mt-1 max-w-2xl">
-            Выберите диапазон дат и укажите, нужно ли включить отменённые заказы.
+            Выберите диапазон дат, колонки и укажите, нужно ли включить отменённые заказы.
           </p>
         </div>
 
-        <form onSubmit={onSubmit} className="flex flex-wrap items-end gap-4">
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className="text-ink-muted font-medium">С</span>
-            <input
-              type="date"
-              value={from}
-              required
-              onChange={(e) => setFrom(e.target.value)}
-              className="input-field w-auto min-w-[10rem]"
-            />
-          </label>
+        <form onSubmit={onSubmit} className="space-y-5">
+          <div className="flex flex-wrap items-end gap-4">
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="text-ink-muted font-medium">С</span>
+              <input
+                type="date"
+                value={from}
+                required
+                onChange={(e) => setFrom(e.target.value)}
+                className="input-field w-auto min-w-[10rem]"
+              />
+            </label>
 
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className="text-ink-muted font-medium">По</span>
-            <input
-              type="date"
-              value={to}
-              required
-              onChange={(e) => setTo(e.target.value)}
-              className="input-field w-auto min-w-[10rem]"
-            />
-          </label>
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="text-ink-muted font-medium">По</span>
+              <input
+                type="date"
+                value={to}
+                required
+                onChange={(e) => setTo(e.target.value)}
+                className="input-field w-auto min-w-[10rem]"
+              />
+            </label>
 
-          <label className="flex items-center gap-2 pb-2 text-sm text-ink-muted">
-            <input
-              type="checkbox"
-              checked={includeCancelled}
-              onChange={(e) => setIncludeCancelled(e.target.checked)}
-            />
-            включая отмены
-          </label>
+            <label className="flex items-center gap-2 pb-2 text-sm text-ink-muted">
+              <input
+                type="checkbox"
+                checked={includeCancelled}
+                onChange={(e) => setIncludeCancelled(e.target.checked)}
+              />
+              включая отмены
+            </label>
+
+            <label className="flex items-center gap-2 pb-2 text-sm text-ink-muted">
+              <input
+                type="checkbox"
+                checked={includeDealsSheet}
+                onChange={(e) => setIncludeDealsSheet(e.target.checked)}
+              />
+              лист «Сделки» без позиций
+            </label>
+          </div>
+
+          {catalog.length > 0 && (
+            <fieldset className="space-y-3">
+              <legend className="text-sm font-medium text-ink">Колонки</legend>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="btn-secondary text-sm py-1 px-2"
+                  onClick={() => setSelectedColumns(allSelected ? [] : catalogKeys)}
+                >
+                  {allSelected ? 'Снять все' : 'Выбрать все'}
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {catalog.map((col) => (
+                  <label key={col.key} className="flex items-center gap-2 text-sm text-ink">
+                    <input
+                      type="checkbox"
+                      checked={selectedColumns.includes(col.key)}
+                      onChange={() => toggleColumn(col.key)}
+                    />
+                    {col.header}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
 
           <button type="submit" disabled={running} className="btn-primary shrink-0">
             {running ? 'Выгрузка выполняется...' : 'Сформировать'}

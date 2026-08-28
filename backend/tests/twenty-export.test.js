@@ -14,6 +14,9 @@ import {
   buildRowsFromLineItems,
   runTwentyExport,
   attachDealExpensesOnce,
+  TWENTY_EXPORT_COLUMNS,
+  resolveExportColumns,
+  buildDealExportRows,
 } from '../src/services/twenty-export.js';
 import {
   createExportJob,
@@ -202,6 +205,29 @@ describe('mapLineItemToRow', () => {
     expect(row.rashodItogo).toBe(1);
     expect(row.rashodPechat).toBe(10);
   });
+
+  it('maps deal amount from opportunity amount micros', () => {
+    const row = mapLineItemToRow(
+      {
+        ...base,
+        opportunity: {
+          ...base.opportunity,
+          amount: { amountMicros: 250_000_000 },
+        },
+      },
+      { from: '2026-06-01', to: '2026-06-30', includeCancelled: false }
+    );
+    expect(row.amountDeal).toBe(250);
+  });
+
+  it('maps missing deal amount to null, not zero', () => {
+    const row = mapLineItemToRow(base, {
+      from: '2026-06-01',
+      to: '2026-06-30',
+      includeCancelled: false,
+    });
+    expect(row.amountDeal).toBeNull();
+  });
 });
 
 function expenseSlice(row) {
@@ -297,6 +323,15 @@ describe('attachDealExpensesOnce', () => {
     expect(rows[0].rashodItogo).toBe(1);
     expect(rows[1].rashodItogo).toBe(2);
   });
+
+  it('keeps amountDeal only on the first row of the same opportunityId', () => {
+    const rows = attachDealExpensesOnce([
+      { opportunityId: 'a', amountDeal: 250, ...EXPENSE_100 },
+      { opportunityId: 'a', amountDeal: 250, ...EXPENSE_100 },
+    ]);
+    expect(rows[0].amountDeal).toBe(250);
+    expect(rows[1].amountDeal).toBeNull();
+  });
 });
 
 describe('sortExportRows', () => {
@@ -331,6 +366,7 @@ describe('buildTwentyExportWorkbook', () => {
         rashodVyezdnayaKomanda: 30,
         rashodBeznal: 35,
         rashodItogo: 100,
+        amountDeal: 250,
       },
     ]);
     const wb = new ExcelJS.Workbook();
@@ -354,10 +390,11 @@ describe('buildTwentyExportWorkbook', () => {
       'Расход: выездная команда',
       'Расход: безнал',
       'Расход итого',
+      'Сумма сделки',
     ]);
     expect(sheet.getRow(2).getCell(1).value).toBe('04.06.2026');
-    expect([12, 13, 14, 15, 16, 17].map((col) => sheet.getRow(2).getCell(col).value)).toEqual([
-      10, 20, 5, 30, 35, 100,
+    expect([12, 13, 14, 15, 16, 17, 18].map((col) => sheet.getRow(2).getCell(col).value)).toEqual([
+      10, 20, 5, 30, 35, 100, 250,
     ]);
     expect(sheet.getRow(2).getCell(4).value).toEqual({
       text: 'https://disk.example/m',
@@ -380,13 +417,13 @@ describe('buildTwentyExportWorkbook', () => {
       bitrixUrl: '',
     };
     const buffer = await buildTwentyExportWorkbook([
-      { ...baseRow, ...EXPENSE_100 },
-      { ...baseRow, positionName: 'Стикер', ...EXPENSE_NULL },
+      { ...baseRow, ...EXPENSE_100, amountDeal: 250 },
+      { ...baseRow, positionName: 'Стикер', ...EXPENSE_NULL, amountDeal: null },
     ]);
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buffer);
     const sheet = wb.getWorksheet('Заказы');
-    for (let col = 12; col <= 17; col += 1) {
+    for (let col = 12; col <= 18; col += 1) {
       expect(sheet.getRow(3).getCell(col).value).not.toBe(0);
       expect(sheet.getRow(3).getCell(col).value == null).toBe(true);
     }
@@ -397,6 +434,69 @@ describe('buildTwentyExportWorkbook', () => {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buffer);
     expect(wb.getWorksheet('Заказы').rowCount).toBe(1);
+  });
+
+  it('writes only selected columns in catalog order', async () => {
+    const columns = resolveExportColumns(['amountDeal', 'opportunityName', 'date']);
+    const buffer = await buildTwentyExportWorkbook(
+      [
+        {
+          dateDisplay: '04.06.2026',
+          opportunityName: 'Заказ',
+          amountDeal: 250,
+        },
+      ],
+      { columns }
+    );
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer);
+    const sheet = wb.getWorksheet('Заказы');
+    expect(sheet.getRow(1).values.slice(1)).toEqual(['Дата', 'Название', 'Сумма сделки']);
+    expect(sheet.getRow(2).values.slice(1)).toEqual(['04.06.2026', 'Заказ', 250]);
+  });
+
+  it('adds a deals sheet with deal-level columns only', async () => {
+    const columns = resolveExportColumns([
+      'date',
+      'opportunityName',
+      'positionName',
+      'amountDeal',
+    ]);
+    const buffer = await buildTwentyExportWorkbook(
+      [
+        {
+          opportunityId: 'a',
+          dateDisplay: '04.06.2026',
+          opportunityName: 'Заказ',
+          positionName: 'Баннер',
+          amountDeal: 250,
+        },
+        {
+          opportunityId: 'a',
+          dateDisplay: '04.06.2026',
+          opportunityName: 'Заказ',
+          positionName: 'Стикер',
+          amountDeal: null,
+        },
+      ],
+      { columns, includeDealsSheet: true }
+    );
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer);
+    expect(wb.getWorksheet('Заказы').rowCount).toBe(3);
+    const deals = wb.getWorksheet('Сделки');
+    expect(deals.getRow(1).values.slice(1)).toEqual(['Дата', 'Название', 'Сумма сделки']);
+    expect(deals.rowCount).toBe(2);
+    expect(deals.getRow(2).values.slice(1)).toEqual(['04.06.2026', 'Заказ', 250]);
+  });
+
+  it('does not add a deals sheet unless requested', async () => {
+    const buffer = await buildTwentyExportWorkbook([
+      { dateDisplay: '04.06.2026', opportunityName: 'Заказ' },
+    ]);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer);
+    expect(wb.getWorksheet('Сделки')).toBeUndefined();
   });
 });
 
@@ -532,6 +632,7 @@ describe('fetchAllDealLineItems', () => {
     expect(query).toContain('rashodVyezdnayaKomanda');
     expect(query).toContain('rashodBeznal');
     expect(query).not.toContain('rashodSyncedAt');
+    expect(query).toMatch(/opportunity\s*\{[\s\S]*amount\s*\{\s*amountMicros/);
   });
 });
 
@@ -576,6 +677,7 @@ describe('buildRowsFromLineItems expenses', () => {
             closeDate: '2026-06-01',
             stage: 'NOVYY',
             rashodItogo: { amountMicros: 50_000_000 },
+            amount: { amountMicros: 12_000_000 },
           },
         },
         {
@@ -589,6 +691,7 @@ describe('buildRowsFromLineItems expenses', () => {
             closeDate: '2026-06-01',
             stage: 'NOVYY',
             rashodItogo: { amountMicros: 50_000_000 },
+            amount: { amountMicros: 12_000_000 },
           },
         },
       ],
@@ -597,6 +700,36 @@ describe('buildRowsFromLineItems expenses', () => {
     expect(rows.map((row) => row.positionName)).toEqual(['A', 'B']);
     expect(rows[0].rashodItogo).toBe(50);
     expect(rows[1].rashodItogo).toBeNull();
+    expect(rows[0].amountDeal).toBe(12);
+    expect(rows[1].amountDeal).toBeNull();
+  });
+});
+
+describe('resolveExportColumns', () => {
+  it('returns the full catalog when columns are omitted', () => {
+    expect(resolveExportColumns()).toEqual(TWENTY_EXPORT_COLUMNS);
+    expect(resolveExportColumns(null)).toEqual(TWENTY_EXPORT_COLUMNS);
+    expect(resolveExportColumns([])).toEqual(TWENTY_EXPORT_COLUMNS);
+  });
+
+  it('keeps catalog order and drops unknown keys', () => {
+    expect(() => resolveExportColumns(['amountDeal', 'nope'])).toThrow(
+      'Неизвестные колонки: nope'
+    );
+    const resolved = resolveExportColumns(['amountDeal', 'date']);
+    expect(resolved.map((c) => c.key)).toEqual(['date', 'amountDeal']);
+  });
+});
+
+describe('buildDealExportRows', () => {
+  it('keeps the first row of each opportunity', () => {
+    const rows = buildDealExportRows([
+      { opportunityId: 'a', opportunityName: 'A', amountDeal: 1 },
+      { opportunityId: 'a', opportunityName: 'A', amountDeal: null },
+      { opportunityId: 'b', opportunityName: 'B', amountDeal: 2 },
+    ]);
+    expect(rows.map((r) => r.opportunityId)).toEqual(['a', 'b']);
+    expect(rows.map((r) => r.amountDeal)).toEqual([1, 2]);
   });
 });
 
