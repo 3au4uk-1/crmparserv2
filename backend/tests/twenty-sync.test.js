@@ -21,6 +21,9 @@ vi.mock('../src/db/connection.js', () => {
           if (sql.includes("key = 'opportunity_stage'")) {
             return { value: 'NOVYY' };
           }
+          if (sql.includes("key = 'decor_keywords'")) {
+            return { value: JSON.stringify(['гирлянда']) };
+          }
           return null;
         },
         all(...params) {
@@ -363,6 +366,79 @@ describe('syncDealToTwenty', () => {
 
     expect(result).toEqual({ action: 'skipped', itemCount: 0 });
     expect(axiosPost).not.toHaveBeenCalled();
+  });
+
+  it('scoped productStreams update skips header UpdateOpportunity and preserves branding line items', async () => {
+    const dealId = dbMock.__seedDeal({
+      id: 13,
+      twenty_id: 'opp-scoped',
+      approval_status: 'synced',
+      title: 'Decor scoped deal',
+      start_date: '2026-06-10',
+      crm_event_id: 'e13',
+    });
+    dbMock.__seedItem({
+      deal_id: dealId,
+      name: 'Гирлянда',
+      price: 1500,
+      classification: 'unclassified',
+      sync_override: null,
+    });
+    dbMock.__seedItem({
+      deal_id: dealId,
+      name: 'Баннер',
+      price: 1000,
+      classification: 'keyword_match',
+      sync_override: null,
+    });
+
+    axiosPost
+      .mockResolvedValueOnce(gqlOk({
+        dealLineItems: {
+          edges: [
+            { node: { id: 'li-branding', name: 'Баннер', stage: 'NOVYY' } },
+            { node: { id: 'li-decor', name: 'Гирлянда', stage: 'NOVYY' } },
+          ],
+        },
+      }))
+      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-decor' } }))
+      .mockResolvedValueOnce(gqlOk({
+        dealLineItems: {
+          edges: [
+            { node: { id: 'li-branding', name: 'Баннер', stage: 'NOVYY', amount: { amountMicros: 1_000_000_000, currencyCode: 'RUB' } } },
+            { node: { id: 'li-decor', name: 'Гирлянда', stage: 'NOVYY', amount: { amountMicros: 1_500_000_000, currencyCode: 'RUB' } } },
+          ],
+        },
+      }))
+      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-scoped' } }));
+
+    const result = await syncDealToTwenty(dealId, {
+      productStreams: ['DECOR', 'MK'],
+      skipPrintSheetRefresh: true,
+    });
+
+    expect(result.action).toBe('updated');
+
+    const headerOppUpdates = axiosPost.mock.calls.filter(([_, body]) =>
+      body.query.includes('mutation UpdateOpportunity')
+      && body.variables?.input
+      && ('name' in body.variables.input || 'closeDate' in body.variables.input)
+    );
+    expect(headerOppUpdates).toHaveLength(0);
+
+    const amountOppUpdates = axiosPost.mock.calls.filter(([_, body]) =>
+      body.query.includes('mutation UpdateOpportunity')
+      && body.variables?.input
+      && Object.keys(body.variables.input).length === 1
+      && 'amount' in body.variables.input
+    );
+    expect(amountOppUpdates).toHaveLength(1);
+
+    const deleteCalls = axiosPost.mock.calls.filter(([_, body]) =>
+      body.query.includes('deleteDealLineItem')
+    );
+    expect(deleteCalls.every(([, body]) => body.variables.id !== 'li-branding')).toBe(true);
+    expect(deleteCalls).toHaveLength(0);
   });
 
   it('refreshes plenka for print-stage line items after sync', async () => {
