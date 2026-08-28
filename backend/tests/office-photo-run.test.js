@@ -212,6 +212,29 @@ describe('runOfficePhotoTasks', () => {
     expect(createTask).toHaveBeenCalledOnce();
   });
 
+  it('skips banner-staff titles on the line item or deal', async () => {
+    const result = await runOfficePhotoTasks({
+      gqlImpl: gqlEdges([
+        bannerItem({ name: 'Баннерщик' }),
+        bannerItem({
+          id: 'li-deal-staff',
+          name: 'Баннер 3x6',
+          opportunity: {
+            id: 'opp-staff',
+            name: 'Баннерщики',
+            stage: 'NOVYY',
+            loadDate: '2026-08-28T00:00:00.000Z',
+          },
+        }),
+      ]),
+      ...runDeps(),
+    });
+
+    expect(result.created).toBe(0);
+    expect(result.skipped).toBe(2);
+    expect(createTask).not.toHaveBeenCalled();
+  });
+
   it('continues after a per-item create failure', async () => {
     createTask
       .mockRejectedValueOnce(new Error('boom'))

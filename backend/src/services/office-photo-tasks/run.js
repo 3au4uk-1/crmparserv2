@@ -7,7 +7,7 @@ import {
   findTasksByKindAndLineItem as findTasksDefault,
   isOpenTask,
 } from '../twenty-tasks.js';
-import { needsOfficePhotoTask, shouldSkipCancelled } from './select.js';
+import { needsOfficePhotoTask, shouldSkipCancelled, isBannerStaffTitle } from './select.js';
 import { calendarYmd, shiftYmd } from './window.js';
 
 const PAGE_SIZE = 200;
@@ -121,7 +121,9 @@ export async function runOfficePhotoTasks({
         shouldSkipCancelled({
           opportunityStage: opportunity.stage,
           lineItemStage: item.stage,
-        })
+        }) ||
+        isBannerStaffTitle(item.name) ||
+        isBannerStaffTitle(opportunity.name)
       ) {
         result.skipped += 1;
         continue;

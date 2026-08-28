@@ -17,7 +17,6 @@ const TASK_TARGETS_BY_LINE_ITEM = `
       edges {
         node {
           id
-          dealLineItemId
           task { id status pipelineStage taskKind dueAt }
         }
       }
@@ -127,7 +126,7 @@ export async function findDealLineItemForOffice(id) {
 export async function findTasksByKindAndLineItem({ taskKind, lineItemId }) {
   const { apiUrl, apiToken } = requireTwentyConfig();
   const resp = await gql(apiUrl, apiToken, TASK_TARGETS_BY_LINE_ITEM, {
-    filter: { dealLineItemId: { eq: lineItemId } },
+    filter: { targetDealLineItemId: { eq: lineItemId } },
   });
   assertTwentyResponse(resp, 'findTasksByKindAndLineItem');
   const edges = resp.data?.data?.taskTargets?.edges ?? [];
@@ -171,7 +170,7 @@ export async function updateTask(id, input) {
 export async function createTaskTarget({ taskId, dealLineItemId }) {
   const { apiUrl, apiToken } = requireTwentyConfig();
   const resp = await gql(apiUrl, apiToken, CREATE_TASK_TARGET, {
-    data: { taskId, dealLineItemId },
+    data: { taskId, targetDealLineItemId: dealLineItemId },
   });
   assertTwentyResponse(resp, 'createTaskTarget');
   return resp.data?.data?.createTaskTarget;

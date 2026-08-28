@@ -75,7 +75,7 @@ describe('createTaskTarget', () => {
     expect(result).toEqual({ id: 'tt-1' });
     const [, , query, variables] = gqlMock.mock.calls[0];
     expect(query).toContain('mutation CreateTaskTarget');
-    expect(variables.data).toEqual({ taskId: 'task-1', dealLineItemId: 'li-9' });
+    expect(variables.data).toEqual({ taskId: 'task-1', targetDealLineItemId: 'li-9' });
   });
 });
 
@@ -142,7 +142,7 @@ describe('findTasksByKindAndLineItem', () => {
     const [, , query, variables] = gqlMock.mock.calls[0];
     expect(query).toContain('dueAt');
     expect(query).toContain('taskTargets');
-    expect(variables.filter).toEqual({ dealLineItemId: { eq: 'li-1' } });
+    expect(variables.filter).toEqual({ targetDealLineItemId: { eq: 'li-1' } });
   });
 });
 
@@ -160,7 +160,7 @@ describe('findOpenTasksByKindAndLineItem', () => {
     expect(found.map((t) => t.id)).toEqual(['t-open']);
     const [, , query, variables] = gqlMock.mock.calls[0];
     expect(query).toContain('taskTargets');
-    expect(variables.filter).toEqual({ dealLineItemId: { eq: 'li-1' } });
+    expect(variables.filter).toEqual({ targetDealLineItemId: { eq: 'li-1' } });
   });
 });
 
