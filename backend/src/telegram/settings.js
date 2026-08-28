@@ -120,6 +120,15 @@ export function getBannerPodryadHour(db) {
   return DEFAULT_BANNER_PODRYAD_HOUR;
 }
 
+export const OFFICE_PHOTO_TASK_CRON_KEY = 'office_photo_task_cron';
+export const DEFAULT_OFFICE_PHOTO_TASK_CRON = '0 7 * * *';
+
+export function getOfficePhotoTaskCron(db) {
+  const row = db.prepare(`SELECT value FROM settings WHERE key = ?`).get(OFFICE_PHOTO_TASK_CRON_KEY);
+  const value = (row?.value ?? '').trim();
+  return value || DEFAULT_OFFICE_PHOTO_TASK_CRON;
+}
+
 export function setBannerPodryadHour(db, hour) {
   const n = Number(hour);
   if (!Number.isInteger(n) || n < 0 || n > 23) {

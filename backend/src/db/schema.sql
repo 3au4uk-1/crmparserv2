@@ -265,6 +265,7 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('expense_sheet_milling', '1f
 INSERT OR IGNORE INTO settings (key, value) VALUES ('expense_sheet_logistics', '1MtGMGzsSS-0ci1HVwdjXcapQQrkaC6qOdI8MdH2mTFM');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('expense_sheet_beznal', '');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('expense_sync_schedule', '30 7 * * *');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('office_photo_task_cron', '0 7 * * *');
 
 INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_bot_token', '');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_chat_map', '{"okleyka.send":""}');

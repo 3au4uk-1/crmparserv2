@@ -28,6 +28,7 @@ import { appAuthMiddleware } from './middleware/app-auth.js';
 import { initScheduler } from './services/scheduler.js';
 import { initPrintSheetCron } from './services/print-sheet-cron.js';
 import { initExpenseSyncCron } from './services/expense-sync-cron.js';
+import { initOfficePhotoTaskCron } from './services/office-photo-tasks/cron.js';
 import { initDigestCron } from './telegram/digest/cron.js';
 import { initBannerPodryadCron } from './telegram/banner-podryad/cron.js';
 import { initTelegramPolling } from './telegram/polling.js';
@@ -113,6 +114,7 @@ async function start() {
   initTwentyEvents();
   initPrintSheetCron();
   initDigestCron();
+  initOfficePhotoTaskCron();
   initBannerPodryadCron();
   initExpenseSyncCron();
   initTelegramPolling();
