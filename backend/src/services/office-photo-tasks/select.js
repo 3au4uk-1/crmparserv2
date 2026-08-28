@@ -8,6 +8,18 @@ export function shouldSkipCancelled({ opportunityStage, lineItemStage }) {
   return opportunityStage === 'OTMENA' || lineItemStage === 'OTMENA';
 }
 
+function normalizeTitle(value) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replaceAll('ё', 'е');
+}
+
+/** Calendar slots named for banner crew, not physical banner/подряд units. */
+export function isBannerStaffTitle(name) {
+  return normalizeTitle(name).includes('баннерщик');
+}
+
 export function needsOfficePhotoTask({
   tip,
   loadDateYmd,

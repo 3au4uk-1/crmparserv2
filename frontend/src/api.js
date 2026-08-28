@@ -736,6 +736,14 @@ export function useStartTwentyExport() {
   });
 }
 
+export function useTwentyExportColumns() {
+  return useQuery({
+    queryKey: ['export-twenty-columns'],
+    queryFn: () => api.get('/export/twenty/columns').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 export function useTwentyExportJob(jobId, { enabled = true } = {}) {
   return useQuery({
     queryKey: ['export-twenty-job', jobId],
