@@ -851,6 +851,47 @@ export function useBulkResyncJob(jobId, { enabled = true } = {}) {
   });
 }
 
+function isDecorMkScanJobRunning(status) {
+  return status === 'queued' || status === 'running';
+}
+
+export function fetchDecorMkScanPreview({ from, to }) {
+  return api.get('/deals/decor-mk-scan/preview', { params: { from, to } }).then((r) => r.data);
+}
+
+export function useStartDecorMkScan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ from, to }) => api.post('/deals/decor-mk-scan', { from, to }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['decor-mk-scan-active-job'] });
+    },
+  });
+}
+
+export function useActiveDecorMkScanJob() {
+  return useQuery({
+    queryKey: ['decor-mk-scan-active-job'],
+    queryFn: () => api.get('/deals/decor-mk-scan/jobs/active').then((r) => r.data),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return isDecorMkScanJobRunning(status) ? 2000 : false;
+    },
+  });
+}
+
+export function useDecorMkScanJob(jobId, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: ['decor-mk-scan-job', jobId],
+    queryFn: () => api.get(`/deals/decor-mk-scan/jobs/${jobId}`).then((r) => r.data),
+    enabled: enabled && !!jobId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return isDecorMkScanJobRunning(status) ? 2000 : false;
+    },
+  });
+}
+
 function isRestoreMissingTwentyJobRunning(status) {
   return status === 'queued' || status === 'running';
 }
