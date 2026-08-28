@@ -198,4 +198,26 @@ describe('computeLineItemDiff', () => {
     expect(diff.toUpdate).toEqual([{ twentyId: 'li-only', item: eligible[0] }]);
     expect(diff.toCreate).toEqual([eligible[1]]);
   });
+
+  it('preserves unclaimed existing items when scoped is true', () => {
+    const existing = [
+      { id: 'li-brand', name: 'Баннер', stage: 'NOVYY' },
+      { id: 'li-decor', name: 'Гирлянда', stage: 'NOVYY' },
+    ];
+    const eligible = [{ id: 20, name: 'Гирлянда', price: 50, productStream: 'DECOR' }];
+
+    const unscoped = computeLineItemDiff(existing, eligible, { ignoreStageProtection: true });
+    expect(unscoped.toDelete).toEqual(['li-brand']);
+
+    const scoped = computeLineItemDiff(existing, eligible, {
+      ignoreStageProtection: true,
+      scoped: true,
+    });
+    expect(scoped.toDelete).toEqual([]);
+    expect(scoped.toUpdate).toEqual([{ twentyId: 'li-decor', item: eligible[0] }]);
+    expect(scoped.toCreate).toEqual([]);
+    expect(scoped.preserved).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'li-brand', name: 'Баннер' })]),
+    );
+  });
 });

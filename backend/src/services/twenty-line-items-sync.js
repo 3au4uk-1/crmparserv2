@@ -37,7 +37,7 @@ function getManualParserTwentyIds(db) {
 export function computeLineItemDiff(
   existingLineItems,
   eligibleItems,
-  { ignoreStageProtection = false, manualParserTwentyIds = new Set() } = {},
+  { ignoreStageProtection = false, manualParserTwentyIds = new Set(), scoped = false } = {},
 ) {
   const isProtected = (stage) => !ignoreStageProtection && isProtectedLineItemStage(stage);
   const manualItems = eligibleItems.filter(isManualTwentyItem);
@@ -116,6 +116,10 @@ export function computeLineItemDiff(
       continue;
     }
     if (isUnsyncedManualTwenty(li, manualParserTwentyIds)) continue;
+    if (scoped) {
+      preserved.push({ id: li.id, name: li.name, stage: li.stage });
+      continue;
+    }
     toDelete.push(li.id);
   }
 
@@ -244,6 +248,7 @@ export async function syncLineItemsDiff({
   neNasheDecorMkList = [],
   tipRules = [],
   ignoreStageProtection = false,
+  scoped = false,
 }) {
   const { toUpdate, toCreate, toDelete, preserved } = computeLineItemDiff(
     existingLineItems,
@@ -251,6 +256,7 @@ export async function syncLineItemsDiff({
     {
       ignoreStageProtection,
       manualParserTwentyIds: getManualParserTwentyIds(db),
+      scoped,
     },
   );
 
