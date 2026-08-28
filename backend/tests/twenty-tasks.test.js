@@ -12,6 +12,7 @@ vi.mock('../src/services/twenty-config.js', () => ({
 import {
   findDealLineItemForOffice,
   findOpenTasksByKindAndLineItem,
+  findTasksByKindAndLineItem,
   createTask,
   updateTask,
   createTaskTarget,
@@ -78,36 +79,78 @@ describe('createTaskTarget', () => {
   });
 });
 
+const TASK_TARGET_EDGES = {
+  taskTargets: {
+    edges: [
+      {
+        node: {
+          id: 'tt-open',
+          task: {
+            id: 't-open',
+            status: 'TODO',
+            pipelineStage: 'NEW',
+            taskKind: 'OFFICE_PHOTO',
+            dueAt: '2026-08-28T00:00:00+03:00',
+          },
+        },
+      },
+      {
+        node: {
+          id: 'tt-done',
+          task: {
+            id: 't-done',
+            status: 'DONE',
+            pipelineStage: 'DONE',
+            taskKind: 'OFFICE_PHOTO',
+            dueAt: '2026-08-27T00:00:00+03:00',
+          },
+        },
+      },
+      {
+        node: {
+          id: 'tt-wrap',
+          task: {
+            id: 't-wrap',
+            status: 'TODO',
+            pipelineStage: 'NEW',
+            taskKind: 'WRAP_OKLEYKA',
+            dueAt: '2026-08-28T00:00:00+03:00',
+          },
+        },
+      },
+    ],
+  },
+};
+
+describe('findTasksByKindAndLineItem', () => {
+  beforeEach(() => gqlMock.mockReset());
+
+  it('keeps matching taskKind including DONE and dueAt', async () => {
+    gqlMock.mockResolvedValue(gqlOk(TASK_TARGET_EDGES));
+
+    const found = await findTasksByKindAndLineItem({
+      taskKind: 'OFFICE_PHOTO',
+      lineItemId: 'li-1',
+    });
+
+    expect(found.map((t) => t.id)).toEqual(['t-open', 't-done']);
+    expect(found[1]).toMatchObject({
+      id: 't-done',
+      status: 'DONE',
+      dueAt: '2026-08-27T00:00:00+03:00',
+    });
+    const [, , query, variables] = gqlMock.mock.calls[0];
+    expect(query).toContain('dueAt');
+    expect(query).toContain('taskTargets');
+    expect(variables.filter).toEqual({ dealLineItemId: { eq: 'li-1' } });
+  });
+});
+
 describe('findOpenTasksByKindAndLineItem', () => {
   beforeEach(() => gqlMock.mockReset());
 
   it('keeps matching open taskKind and drops DONE or other kinds', async () => {
-    gqlMock.mockResolvedValue(
-      gqlOk({
-        taskTargets: {
-          edges: [
-            {
-              node: {
-                id: 'tt-open',
-                task: { id: 't-open', status: 'TODO', pipelineStage: 'NEW', taskKind: 'OFFICE_PHOTO' },
-              },
-            },
-            {
-              node: {
-                id: 'tt-done',
-                task: { id: 't-done', status: 'DONE', pipelineStage: 'NEW', taskKind: 'OFFICE_PHOTO' },
-              },
-            },
-            {
-              node: {
-                id: 'tt-wrap',
-                task: { id: 't-wrap', status: 'TODO', pipelineStage: 'NEW', taskKind: 'WRAP_OKLEYKA' },
-              },
-            },
-          ],
-        },
-      }),
-    );
+    gqlMock.mockResolvedValue(gqlOk(TASK_TARGET_EDGES));
 
     const found = await findOpenTasksByKindAndLineItem({
       taskKind: 'OFFICE_PHOTO',

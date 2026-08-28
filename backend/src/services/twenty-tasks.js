@@ -18,7 +18,7 @@ const TASK_TARGETS_BY_LINE_ITEM = `
         node {
           id
           dealLineItemId
-          task { id status pipelineStage taskKind }
+          task { id status pipelineStage taskKind dueAt }
         }
       }
     }
@@ -124,22 +124,26 @@ export async function findDealLineItemForOffice(id) {
   return resp.data?.data?.dealLineItem ?? null;
 }
 
-export async function findOpenTasksByKindAndLineItem({ taskKind, lineItemId }) {
+export async function findTasksByKindAndLineItem({ taskKind, lineItemId }) {
   const { apiUrl, apiToken } = requireTwentyConfig();
   const resp = await gql(apiUrl, apiToken, TASK_TARGETS_BY_LINE_ITEM, {
     filter: { dealLineItemId: { eq: lineItemId } },
   });
-  assertTwentyResponse(resp, 'findOpenTasksByKindAndLineItem');
+  assertTwentyResponse(resp, 'findTasksByKindAndLineItem');
   const edges = resp.data?.data?.taskTargets?.edges ?? [];
   const tasks = [];
   for (const edge of edges) {
     const task = edge?.node?.task;
     if (!task?.id) continue;
     if (task.taskKind !== taskKind) continue;
-    if (!isOpenTask(task.status, task.pipelineStage)) continue;
     tasks.push(task);
   }
   return tasks;
+}
+
+export async function findOpenTasksByKindAndLineItem({ taskKind, lineItemId }) {
+  const tasks = await findTasksByKindAndLineItem({ taskKind, lineItemId });
+  return tasks.filter((task) => isOpenTask(task.status, task.pipelineStage));
 }
 
 export async function createTask(input) {

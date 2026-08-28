@@ -1,10 +1,11 @@
 import { gql } from '../twenty-gql.js';
 import { requireTwentyConfig } from '../twenty-config.js';
-import { formatCrmDateTime, toInputDate } from '../../utils/crm-dates.js';
+import { crmDayStartIso, toInputDate } from '../../utils/crm-dates.js';
 import {
   createTask as createTaskDefault,
   createTaskTarget as createTaskTargetDefault,
-  findOpenTasksByKindAndLineItem as findOpenDefault,
+  findTasksByKindAndLineItem as findTasksDefault,
+  isOpenTask,
 } from '../twenty-tasks.js';
 import { needsOfficePhotoTask, shouldSkipCancelled } from './select.js';
 import { calendarYmd, shiftYmd } from './window.js';
@@ -36,8 +37,15 @@ export function officePhotoBody({ opportunityName, loadDateYmd, tip }) {
 }
 
 function dayStartIso(ymd) {
-  const [year, month, day] = ymd.split('-').map(Number);
-  return formatCrmDateTime(new Date(year, month - 1, day, 0, 0, 0));
+  return crmDayStartIso(ymd);
+}
+
+function shouldSkipExistingOfficePhoto(tasks, loadDateYmd) {
+  for (const task of tasks) {
+    if (isOpenTask(task.status, task.pipelineStage)) return true;
+    if (loadDateYmd && toInputDate(task.dueAt) === loadDateYmd) return true;
+  }
+  return false;
 }
 
 function officePhotoFilter(now) {
@@ -97,7 +105,7 @@ async function fetchLineItems(gqlImpl, filter) {
 export async function runOfficePhotoTasks({
   now = new Date(),
   gqlImpl = defaultGqlImpl,
-  findOpenTasksByKindAndLineItem = findOpenDefault,
+  findTasksByKindAndLineItem = findTasksDefault,
   createTask = createTaskDefault,
   createTaskTarget = createTaskTargetDefault,
 } = {}) {
@@ -120,7 +128,7 @@ export async function runOfficePhotoTasks({
       }
 
       const loadDateYmd = toInputDate(opportunity.loadDate);
-      const openTasks = await findOpenTasksByKindAndLineItem({
+      const existingTasks = await findTasksByKindAndLineItem({
         taskKind: 'OFFICE_PHOTO',
         lineItemId: item.id,
       });
@@ -130,7 +138,7 @@ export async function runOfficePhotoTasks({
           loadDateYmd,
           tomorrowYmd,
           todayYmd,
-          hasOpenTask: openTasks.length > 0,
+          hasOpenTask: shouldSkipExistingOfficePhoto(existingTasks, loadDateYmd),
         })
       ) {
         result.skipped += 1;
@@ -147,7 +155,15 @@ export async function runOfficePhotoTasks({
           tip: item.tip,
         }),
       });
-      await createTaskTarget({ taskId: task.id, dealLineItemId: item.id });
+      try {
+        await createTaskTarget({ taskId: task.id, dealLineItemId: item.id });
+      } catch (err) {
+        console.error(
+          `[office-photo] createTaskTarget failed after createTask ${task.id} for item ${item.id}:`,
+          err.message,
+        );
+        throw err;
+      }
       result.created += 1;
     } catch (err) {
       console.error(`[office-photo] item ${item?.id} failed:`, err.message);

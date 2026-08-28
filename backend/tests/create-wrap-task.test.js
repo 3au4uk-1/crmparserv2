@@ -19,7 +19,7 @@ describe('createWrapOkleykaTask', () => {
     findDealLineItemForOffice = vi.fn().mockResolvedValue({
       id: 'li-1',
       name: 'Позиция',
-      opportunity: { id: 'opp-1', name: 'Сделка' },
+      opportunity: { id: 'opp-1', name: 'Сделка', loadDate: '2026-08-28T00:00:00.000Z' },
     });
     findOpenTasksByKindAndLineItem = vi.fn().mockResolvedValue([]);
     createTask = vi.fn().mockResolvedValue({ id: 'task-new' });
@@ -58,6 +58,7 @@ describe('createWrapOkleykaTask', () => {
     expect(createTask).toHaveBeenCalledWith({
       title: 'Оклейка: Позиция',
       taskKind: 'WRAP_OKLEYKA',
+      dueAt: '2026-08-28T00:00:00+03:00',
       body: 'Заказ: t',
     });
     expect(createTask.mock.calls[0][0]).not.toHaveProperty('assigneeId');
@@ -119,5 +120,20 @@ describe('createWrapOkleykaTask', () => {
       url: 'https://cdn.example.com/b.jpg',
     });
     expect(result).toEqual({ id: 'task-open' });
+  });
+
+  it('omits dueAt when opportunity has no loadDate', async () => {
+    findDealLineItemForOffice.mockResolvedValue({
+      id: 'li-1',
+      name: 'Позиция',
+      opportunity: { id: 'opp-1', name: 'Сделка' },
+    });
+
+    await createWrapOkleykaTask(
+      { lineItemId: 'li-1', text: 'Заказ: t', fileUrls: [], force: false },
+      deps(),
+    );
+
+    expect(createTask.mock.calls[0][0]).not.toHaveProperty('dueAt');
   });
 });

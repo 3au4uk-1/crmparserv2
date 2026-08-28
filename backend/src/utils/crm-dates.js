@@ -6,6 +6,11 @@ export function crmOffsetSuffix() {
   return '+00:00';
 }
 
+/** Start of a calendar day in CRM offset, independent of the server local TZ. */
+export function crmDayStartIso(ymd) {
+  return `${ymd}T00:00:00${crmOffsetSuffix()}`;
+}
+
 /** Format dates the same way FullCalendar sends them (moment.format() → ISO8601 with offset). */
 export function formatCrmDateTime(date) {
   const d = new Date(date);

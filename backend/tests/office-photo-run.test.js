@@ -6,12 +6,18 @@ vi.mock('../src/services/twenty-config.js', () => ({
 }));
 vi.mock('../src/services/twenty-tasks.js', () => ({
   findOpenTasksByKindAndLineItem: vi.fn(),
+  findTasksByKindAndLineItem: vi.fn(),
   createTask: vi.fn(),
   createTaskTarget: vi.fn(),
+  isOpenTask: (status, pipelineStage) => status !== 'DONE' && pipelineStage !== 'DONE',
 }));
 
-import { formatCrmDateTime } from '../src/utils/crm-dates.js';
+import { crmOffsetSuffix } from '../src/utils/crm-dates.js';
 import { runOfficePhotoTasks } from '../src/services/office-photo-tasks/run.js';
+
+function crmDayStart(ymd) {
+  return `${ymd}T00:00:00${crmOffsetSuffix()}`;
+}
 
 const NOW = new Date('2026-08-27T12:00:00+03:00');
 
@@ -60,24 +66,31 @@ function podryadItem() {
 }
 
 describe('runOfficePhotoTasks', () => {
-  let findOpen;
+  let findTasks;
   let createTask;
   let createTaskTarget;
 
   beforeEach(() => {
-    findOpen = vi.fn().mockResolvedValue([]);
+    findTasks = vi.fn().mockResolvedValue([]);
     createTask = vi.fn().mockResolvedValue({ id: 'task-1' });
     createTaskTarget = vi.fn().mockResolvedValue({ id: 'tt-1' });
   });
 
+  function runDeps(overrides = {}) {
+    return {
+      now: NOW,
+      findTasksByKindAndLineItem: findTasks,
+      createTask,
+      createTaskTarget,
+      ...overrides,
+    };
+  }
+
   it('queries BANNERA/PODRYAD line items in today–tomorrow loadDate window', async () => {
     const gqlImpl = vi.fn().mockImplementation(gqlEdges([]));
     await runOfficePhotoTasks({
-      now: NOW,
       gqlImpl,
-      findOpenTasksByKindAndLineItem: findOpen,
-      createTask,
-      createTaskTarget,
+      ...runDeps(),
     });
 
     expect(gqlImpl).toHaveBeenCalled();
@@ -90,25 +103,22 @@ describe('runOfficePhotoTasks', () => {
     ]);
     const loadFilter = variables.filter.and[1].opportunity.and;
     expect(loadFilter).toEqual([
-      { loadDate: { gte: formatCrmDateTime(new Date(2026, 7, 27, 0, 0, 0)) } },
-      { loadDate: { lt: formatCrmDateTime(new Date(2026, 7, 29, 0, 0, 0)) } },
+      { loadDate: { gte: crmDayStart('2026-08-27') } },
+      { loadDate: { lt: crmDayStart('2026-08-29') } },
     ]);
   });
 
   it('creates OFFICE_PHOTO task and target for tomorrow BANNERA', async () => {
     const result = await runOfficePhotoTasks({
-      now: NOW,
       gqlImpl: gqlEdges([bannerItem()]),
-      findOpenTasksByKindAndLineItem: findOpen,
-      createTask,
-      createTaskTarget,
+      ...runDeps(),
     });
 
     expect(result).toMatchObject({ created: 1, skipped: 0 });
     expect(createTask).toHaveBeenCalledWith({
       title: 'Сфотографировать баннер: Позиция',
       taskKind: 'OFFICE_PHOTO',
-      dueAt: formatCrmDateTime(new Date(2026, 7, 28, 0, 0, 0)),
+      dueAt: crmDayStart('2026-08-28'),
       body: 'Свадьба Ивановых\n2026-08-28\nПриложите фото баннера',
     });
     expect(createTask.mock.calls[0][0]).not.toHaveProperty('assigneeId');
@@ -120,11 +130,8 @@ describe('runOfficePhotoTasks', () => {
 
   it('creates catch-up PODRYAD task for today loadDate', async () => {
     await runOfficePhotoTasks({
-      now: NOW,
       gqlImpl: gqlEdges([podryadItem()]),
-      findOpenTasksByKindAndLineItem: findOpen,
-      createTask,
-      createTaskTarget,
+      ...runDeps(),
     });
 
     expect(createTask).toHaveBeenCalledWith(
@@ -146,11 +153,8 @@ describe('runOfficePhotoTasks', () => {
       },
     });
     const result = await runOfficePhotoTasks({
-      now: NOW,
       gqlImpl: gqlEdges([item]),
-      findOpenTasksByKindAndLineItem: findOpen,
-      createTask,
-      createTaskTarget,
+      ...runDeps(),
     });
 
     expect(result.skipped).toBe(1);
@@ -158,21 +162,54 @@ describe('runOfficePhotoTasks', () => {
   });
 
   it('skips when an open OFFICE_PHOTO task already exists', async () => {
-    findOpen.mockResolvedValue([{ id: 'existing' }]);
+    findTasks.mockResolvedValue([{ id: 'existing', status: 'TODO', pipelineStage: 'NEW' }]);
     const result = await runOfficePhotoTasks({
-      now: NOW,
       gqlImpl: gqlEdges([bannerItem()]),
-      findOpenTasksByKindAndLineItem: findOpen,
-      createTask,
-      createTaskTarget,
+      ...runDeps(),
     });
 
-    expect(findOpen).toHaveBeenCalledWith({
+    expect(findTasks).toHaveBeenCalledWith({
       taskKind: 'OFFICE_PHOTO',
       lineItemId: 'li-banner',
     });
     expect(result.skipped).toBe(1);
     expect(createTask).not.toHaveBeenCalled();
+  });
+
+  it('skips when a DONE OFFICE_PHOTO has dueAt on the same loadDate day', async () => {
+    findTasks.mockResolvedValue([
+      {
+        id: 'done-same-day',
+        status: 'DONE',
+        pipelineStage: 'DONE',
+        dueAt: crmDayStart('2026-08-28'),
+      },
+    ]);
+    const result = await runOfficePhotoTasks({
+      gqlImpl: gqlEdges([bannerItem()]),
+      ...runDeps(),
+    });
+
+    expect(result.skipped).toBe(1);
+    expect(createTask).not.toHaveBeenCalled();
+  });
+
+  it('creates when previous OFFICE_PHOTO is DONE on a different dueAt day', async () => {
+    findTasks.mockResolvedValue([
+      {
+        id: 'done-other-day',
+        status: 'DONE',
+        pipelineStage: 'DONE',
+        dueAt: crmDayStart('2026-08-20'),
+      },
+    ]);
+    const result = await runOfficePhotoTasks({
+      gqlImpl: gqlEdges([bannerItem()]),
+      ...runDeps(),
+    });
+
+    expect(result.created).toBe(1);
+    expect(createTask).toHaveBeenCalledOnce();
   });
 
   it('continues after a per-item create failure', async () => {
@@ -181,11 +218,8 @@ describe('runOfficePhotoTasks', () => {
       .mockResolvedValueOnce({ id: 'task-2' });
 
     const result = await runOfficePhotoTasks({
-      now: NOW,
       gqlImpl: gqlEdges([bannerItem(), { ...podryadItem() }]),
-      findOpenTasksByKindAndLineItem: findOpen,
-      createTask,
-      createTaskTarget,
+      ...runDeps(),
     });
 
     expect(result.created).toBe(1);

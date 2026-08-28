@@ -6,6 +6,7 @@ import {
   findOpenTasksByKindAndLineItem as findOpenDefault,
   updateTask as updateTaskDefault,
 } from '../services/twenty-tasks.js';
+import { crmDayStartIso, toInputDate } from '../utils/crm-dates.js';
 
 export function wrapTaskTitle(name) {
   return `Оклейка: ${name}`;
@@ -54,10 +55,12 @@ export async function createWrapOkleykaTask(input, deps = {}) {
     return { id: existing.id };
   }
 
+  const loadDateYmd = toInputDate(item.opportunity?.loadDate);
   const task = await createTask({
     title: wrapTaskTitle(item.name),
     taskKind: 'WRAP_OKLEYKA',
     body: text,
+    ...(loadDateYmd ? { dueAt: crmDayStartIso(loadDateYmd) } : {}),
   });
   await createTaskTarget({ taskId: task.id, dealLineItemId: lineItemId });
   await attachAll(attachFileFromUrl, task.id, fileUrls);
