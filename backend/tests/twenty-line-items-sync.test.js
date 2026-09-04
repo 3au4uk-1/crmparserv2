@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   computeLineItemDiff,
   isProtectedLineItemStage,
+  listLineItemsForOpportunity,
   updateDealLineItemProductStreams,
 } from '../src/services/twenty-line-items-sync.js';
 import { assertHttpSuccess, assertGqlSuccess } from '../src/services/twenty-gql.js';
@@ -199,6 +200,62 @@ describe('computeLineItemDiff', () => {
     const diff = computeLineItemDiff(existing, eligible);
     expect(diff.toUpdate).toEqual([{ twentyId: 'li-only', item: eligible[0] }]);
     expect(diff.toCreate).toEqual([eligible[1]]);
+  });
+});
+
+describe('listLineItemsForOpportunity', () => {
+  it('throws on GraphQL errors when asserts are provided', async () => {
+    const gql = vi.fn().mockResolvedValue({
+      status: 200,
+      data: { errors: [{ message: 'Unknown field "dealLineItems"' }] },
+    });
+
+    await expect(
+      listLineItemsForOpportunity(
+        gql,
+        'https://twenty.test/graphql',
+        'token',
+        'opp-1',
+        assertHttpSuccess,
+        assertGqlSuccess,
+      ),
+    ).rejects.toThrow('Unknown field "dealLineItems"');
+  });
+
+  it('throws on HTTP errors when asserts are provided', async () => {
+    const gql = vi.fn().mockResolvedValue({
+      status: 500,
+      data: {},
+    });
+
+    await expect(
+      listLineItemsForOpportunity(
+        gql,
+        'https://twenty.test/graphql',
+        'token',
+        'opp-1',
+        assertHttpSuccess,
+        assertGqlSuccess,
+      ),
+    ).rejects.toThrow('Twenty API error: HTTP 500');
+  });
+
+  it('returns empty array for a successful empty opportunity', async () => {
+    const gql = vi.fn().mockResolvedValue({
+      status: 200,
+      data: { data: { dealLineItems: { edges: [] } } },
+    });
+
+    const result = await listLineItemsForOpportunity(
+      gql,
+      'https://twenty.test/graphql',
+      'token',
+      'opp-1',
+      assertHttpSuccess,
+      assertGqlSuccess,
+    );
+
+    expect(result).toEqual([]);
   });
 });
 

@@ -225,6 +225,8 @@ export async function executeProductStreamBackfillJob(jobId) {
           twenty.apiUrl,
           twenty.apiToken,
           deal.twenty_id,
+          assertHttpSuccess,
+          assertGqlSuccess,
         );
 
         const { toUpdate } = planProductStreamBackfill({

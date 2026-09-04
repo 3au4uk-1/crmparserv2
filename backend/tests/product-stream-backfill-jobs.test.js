@@ -235,6 +235,14 @@ describe('product-stream-backfill-jobs', () => {
 
     expect(requireTwentyConfigMock).toHaveBeenCalledTimes(1);
     expect(listLineItemsForOpportunityMock).toHaveBeenCalledTimes(2);
+    expect(listLineItemsForOpportunityMock).toHaveBeenCalledWith(
+      expect.any(Function),
+      'https://twenty.test/graphql',
+      'token',
+      'opp-1',
+      expect.any(Function),
+      expect.any(Function),
+    );
     expect(updateDealLineItemProductStreamsMock).toHaveBeenCalledTimes(1);
     expect(updateDealLineItemProductStreamsMock).toHaveBeenCalledWith(
       expect.any(Function),
