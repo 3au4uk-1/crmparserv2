@@ -77,3 +77,22 @@ cd backend && npx vitest run tests/twenty-line-items-sync.test.js
    Start at  14:20:43
    Duration  415ms (transform 97ms, setup 0ms, import 235ms, tests 9ms, environment 0ms)
 ```
+
+## Review fix: listLineItemsForOpportunity must not swallow HTTP/GQL errors in backfill
+
+Backfill now passes `assertHttpSuccess` / `assertGqlSuccess` into `listLineItemsForOpportunity` (same pattern as `listLineItemsForRepair`). Failed list throws into the per-deal catch instead of looking like an empty opportunity.
+
+### Tests
+
+```
+cd backend && npx vitest run tests/product-stream-backfill-jobs.test.js tests/twenty-line-items-sync.test.js
+```
+
+```
+ RUN  v4.1.8 C:/Users/Василий/Documents/projects/crmparserv2/backend
+
+ Test Files  2 passed (2)
+      Tests  29 passed (29)
+   Start at  14:32:28
+   Duration  3.30s (transform 481ms, setup 0ms, import 3.38s, tests 177ms, environment 0ms)
+```

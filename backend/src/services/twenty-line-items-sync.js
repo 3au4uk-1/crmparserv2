@@ -126,7 +126,14 @@ export function computeLineItemDiff(
   return { toUpdate, toCreate, toDelete, preserved };
 }
 
-export async function listLineItemsForOpportunity(gql, apiUrl, apiToken, oppId) {
+export async function listLineItemsForOpportunity(
+  gql,
+  apiUrl,
+  apiToken,
+  oppId,
+  assertHttpSuccess,
+  assertGqlSuccess,
+) {
   const resp = await gql(
     apiUrl,
     apiToken,
@@ -137,6 +144,10 @@ export async function listLineItemsForOpportunity(gql, apiUrl, apiToken, oppId) 
     }`,
     { oppId }
   );
+  if (assertHttpSuccess) assertHttpSuccess(resp, apiUrl);
+  if (assertGqlSuccess) {
+    assertGqlSuccess(resp, 'Failed to list line items for opportunity in Twenty');
+  }
   return resp.data?.data?.dealLineItems?.edges?.map((e) => e.node) || [];
 }
 
