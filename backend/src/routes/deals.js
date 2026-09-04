@@ -26,6 +26,13 @@ import {
   getRestoreMissingTwentyJob,
 } from '../services/restore-missing-twenty-jobs.js';
 import {
+  countProductStreamBackfillDeals,
+  createProductStreamBackfillJob,
+  executeProductStreamBackfillJob,
+  getActiveProductStreamBackfillJob,
+  getProductStreamBackfillJob,
+} from '../services/product-stream-backfill-jobs.js';
+import {
   countPaymentSyncTargets,
   runPaymentSync,
 } from '../services/payment-sync.js';
@@ -150,6 +157,9 @@ router.post('/bulk-resync', (req, res) => {
   if (getActiveRestoreMissingTwentyJob()) {
     return res.status(409).json({ error: 'Восстановление отсутствующих сделок уже выполняется' });
   }
+  if (getActiveProductStreamBackfillJob()) {
+    return res.status(409).json({ error: 'Обновление потоков продуктов уже выполняется' });
+  }
 
   const requestedTrigger = req.body?.trigger;
   const trigger =
@@ -175,6 +185,45 @@ router.get('/bulk-resync/jobs/:id', (req, res) => {
   res.json(job);
 });
 
+router.get('/product-stream-backfill/preview', (req, res) => {
+  res.json({ count: countProductStreamBackfillDeals() });
+});
+
+router.post('/product-stream-backfill', (req, res) => {
+  if (getActiveProductStreamBackfillJob()) {
+    return res.status(409).json({ error: 'Обновление потоков продуктов уже выполняется' });
+  }
+  if (getActiveBulkResyncJob()) {
+    return res.status(409).json({ error: 'Массовая пересинхронизация уже выполняется' });
+  }
+  if (getActiveRestoreMissingTwentyJob()) {
+    return res.status(409).json({ error: 'Восстановление отсутствующих сделок уже выполняется' });
+  }
+
+  const requestedTrigger = req.body?.trigger;
+  const trigger =
+    typeof requestedTrigger === 'string' && requestedTrigger.trim()
+      ? requestedTrigger.trim()
+      : 'manual';
+
+  const job = createProductStreamBackfillJob({ trigger });
+  executeProductStreamBackfillJob(job.jobId).catch((err) => {
+    console.error(`[product-stream-backfill] job ${job.jobId} failed:`, err.message);
+  });
+
+  res.status(201).json({ jobId: job.jobId });
+});
+
+router.get('/product-stream-backfill/jobs/active', (req, res) => {
+  res.json(getActiveProductStreamBackfillJob() ?? null);
+});
+
+router.get('/product-stream-backfill/jobs/:id', (req, res) => {
+  const job = getProductStreamBackfillJob(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Задача не найдена' });
+  res.json(job);
+});
+
 router.get('/restore-missing-twenty/preview', (req, res) => {
   res.json({ count: countSyncedDealsForRestore() });
 });
@@ -185,6 +234,9 @@ router.post('/restore-missing-twenty', (req, res) => {
   }
   if (getActiveBulkResyncJob()) {
     return res.status(409).json({ error: 'Массовая пересинхронизация уже выполняется' });
+  }
+  if (getActiveProductStreamBackfillJob()) {
+    return res.status(409).json({ error: 'Обновление потоков продуктов уже выполняется' });
   }
 
   const requestedTrigger = req.body?.trigger;

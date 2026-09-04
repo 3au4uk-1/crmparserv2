@@ -136,6 +136,18 @@ export async function listLineItemsForOpportunity(gql, apiUrl, apiToken, oppId) 
   return resp.data?.data?.dealLineItems?.edges?.map((e) => e.node) || [];
 }
 
+export async function updateDealLineItemProductStreams(gql, apiUrl, apiToken, lineItemId, productStreams) {
+  const resp = await gql(
+    apiUrl,
+    apiToken,
+    `mutation UpdateDealLineItem($id: ID!, $input: DealLineItemUpdateInput!) {
+      updateDealLineItem(id: $id, data: $input) { id }
+    }`,
+    { id: lineItemId, input: { productStream: productStreams } },
+  );
+  return resp.data?.data?.updateDealLineItem ?? null;
+}
+
 export async function listLineItemsForRepair(
   gql,
   apiUrl,
