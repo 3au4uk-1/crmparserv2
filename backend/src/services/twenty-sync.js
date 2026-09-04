@@ -468,7 +468,7 @@ export function buildSyncPreview(dealId) {
         id: item.id,
         name: item.name,
         reason: getItemEligibleReason(item, streamContext),
-        productStream: item.productStream || null,
+        productStreams: item.productStreams,
         twentyLineAmount: computeLineItemTotal(item, deal, restorationList, neNasheLists),
         restorationMatch: isRestorationItem(item.name, restorationList),
         neNasheBrandingMatch: isNeNasheBrandingItem(item.name, neNasheBrandingList),
