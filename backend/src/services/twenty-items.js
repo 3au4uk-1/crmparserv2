@@ -56,10 +56,9 @@ function normalizeStreamContext(context) {
   return context || buildProductStreamContext();
 }
 
-export function resolveItemProductStream(item, context) {
+export function resolveItemProductStreams(item, context) {
   const ctx = normalizeStreamContext(context);
-
-  const stream = classifyProductStream({
+  const streams = classifyProductStream({
     name: item.name,
     brandingKeywords: ctx.brandingKeywords,
     decorKeywords: ctx.decorKeywords,
@@ -68,32 +67,29 @@ export function resolveItemProductStream(item, context) {
     decorBlacklist: ctx.decorBlacklist,
     mkBlacklist: ctx.mkBlacklist,
   });
-
-  if (stream) return stream;
-
+  if (streams.length > 0) return streams;
   if (
     AUTO_ELIGIBLE.has(item.classification)
     && !isBlacklisted(item.name, ctx.brandingBlacklist)
   ) {
-    return 'BRANDING';
+    return ['BRANDING'];
   }
-
-  return null;
+  if (item.sync_override === 'include') return ['BRANDING'];
+  return [];
 }
 
 export function isItemEligibleForTwenty(item, context = []) {
-  if (item.sync_override === 'include') return true;
   if (item.sync_override === 'exclude') return false;
-  return resolveItemProductStream(item, context) !== null;
+  if (item.sync_override === 'include') return true;
+  return resolveItemProductStreams(item, context).length > 0;
 }
 
 export function getItemEligibleReason(item, context = []) {
   if (!isItemEligibleForTwenty(item, context)) return null;
   if (item.sync_override === 'include') return 'manual_include';
-
-  const stream = resolveItemProductStream(item, context);
-  if (stream === 'DECOR') return 'decor_keyword';
-  if (stream === 'MK') return 'mk_keyword';
+  const streams = resolveItemProductStreams(item, context);
+  if (streams.includes('MK')) return 'mk_keyword';
+  if (streams.includes('DECOR')) return 'decor_keyword';
   if (item.classification === 'keyword_match') return 'keyword_match';
   if (item.classification === 'llm_confirmed') return 'llm_confirmed';
   return 'auto';
@@ -104,14 +100,12 @@ export function getItemsForTwenty(items, context = []) {
 
   return items
     .filter((item) => isItemEligibleForTwenty(item, ctx))
-    .map((item) => {
-      const productStream = resolveItemProductStream(item, ctx)
-        || (item.sync_override === 'include' ? 'BRANDING' : null);
-      return productStream ? { ...item, productStream } : item;
-    })
-    .filter((item) => item.productStream);
+    .map((item) => ({
+      ...item,
+      productStreams: resolveItemProductStreams(item, ctx),
+    }))
+    .filter((item) => item.productStreams.length > 0);
 }
-
 export function enrichDealItems(
   items,
   context = [],
@@ -133,15 +127,14 @@ export function enrichDealItems(
     const neNasheBrandingHit = findNeNasheBrandingMatch(item.name, neNasheBrandingList);
     const neNasheDecorMkHit = findNeNasheDecorMkMatch(item.name, neNasheDecorMkList);
     const tipHit = findTipRuleMatch(item.name, tipRules);
-    const productStream = resolveItemProductStream(item, ctx)
-      || (item.sync_override === 'include' ? 'BRANDING' : null);
+    const productStreams = resolveItemProductStreams(item, ctx);
 
     return {
       ...item,
       blacklisted: Boolean(blacklistHit),
       decorBlacklisted: Boolean(decorBlacklistHit),
       mkBlacklisted: Boolean(mkBlacklistHit),
-      productStream,
+      productStreams,
       blacklistMatch: blacklistHit
         ? { id: blacklistHit.id, pattern: blacklistHit.pattern, matchType: blacklistHit.matchType }
         : null,

@@ -5,7 +5,7 @@ import {
   getItemEligibleReason,
   enrichDealItems,
   buildProductStreamContext,
-  resolveItemProductStream,
+  resolveItemProductStreams,
 } from '../src/services/twenty-items.js';
 
 const blacklist = [
@@ -229,13 +229,13 @@ describe('product stream eligibility', () => {
   it('includes decor keyword match even when unclassified', () => {
     const item = { name: 'Оформление шары', classification: 'unclassified', sync_override: null };
     expect(isItemEligibleForTwenty(item, streamContext)).toBe(true);
-    expect(resolveItemProductStream(item, streamContext)).toBe('DECOR');
+    expect(resolveItemProductStreams(item, streamContext)).toEqual(['DECOR']);
     expect(getItemEligibleReason(item, streamContext)).toBe('decor_keyword');
   });
 
   it('includes mk keyword match with mk reason', () => {
     const item = { name: 'МК лепка', classification: 'unclassified', sync_override: null };
-    expect(resolveItemProductStream(item, streamContext)).toBe('MK');
+    expect(resolveItemProductStreams(item, streamContext)).toEqual(['MK']);
     expect(getItemEligibleReason(item, streamContext)).toBe('mk_keyword');
   });
 
@@ -251,7 +251,22 @@ describe('product stream eligibility', () => {
     ];
     const eligible = getItemsForTwenty(items, streamContext);
     expect(eligible).toHaveLength(1);
-    expect(eligible[0].productStream).toBe('DECOR');
+    expect(eligible[0].productStreams).toEqual(['DECOR']);
+  });
+
+  it('keeps branding and decor together on one item', () => {
+    const ctx = buildProductStreamContext({
+      brandingKeywords: ['оклейка'],
+      decorKeywords: ['стойка'],
+      mkKeywords: [],
+    });
+    const item = {
+      name: 'Стойка барная Laconismo - внешняя оклейка корупса',
+      classification: 'unclassified',
+      sync_override: null,
+    };
+    expect(resolveItemProductStreams(item, ctx)).toEqual(['DECOR', 'BRANDING']);
+    expect(isItemEligibleForTwenty(item, ctx)).toBe(true);
   });
 
   it('enrichDealItems adds decorBlacklisted and mkBlacklisted flags', () => {
@@ -269,13 +284,13 @@ describe('product stream eligibility', () => {
   it('preserves branding keyword_match eligibility via legacy fallback', () => {
     const item = { name: 'Баннер 3x6', classification: 'keyword_match', sync_override: null };
     expect(isItemEligibleForTwenty(item, streamContext)).toBe(true);
-    expect(resolveItemProductStream(item, streamContext)).toBe('BRANDING');
+    expect(resolveItemProductStreams(item, streamContext)).toEqual(['BRANDING']);
   });
 
   it('preserves llm_confirmed eligibility as BRANDING when no stream keyword matches', () => {
     const item = { name: 'Custom branding item', classification: 'llm_confirmed', sync_override: null };
     expect(isItemEligibleForTwenty(item, streamContext)).toBe(true);
-    expect(resolveItemProductStream(item, streamContext)).toBe('BRANDING');
+    expect(resolveItemProductStreams(item, streamContext)).toEqual(['BRANDING']);
     expect(getItemEligibleReason(item, streamContext)).toBe('llm_confirmed');
   });
 });
