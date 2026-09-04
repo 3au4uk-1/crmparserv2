@@ -1,6 +1,7 @@
 import { computeLineItemTotal, parseQuantityNum, DEFAULT_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
 import { findTipRuleMatch } from './tip-rules.js';
 import { resolveTipDetail } from './tip-taxonomy.js';
+import { sortProductStreams, coerceProductStreams } from './product-stream.js';
 
 export function buildWarehouseItemCreateInput(name, position = 'first') {
   return { name, position };
@@ -39,6 +40,13 @@ function buildLineItemFields(item, options = {}) {
   if (tipRule) {
     fields.tip = tipRule.tip;
     fields.tipDetail = resolveTipDetail(tipRule);
+  }
+
+  const productStreams = sortProductStreams(
+    item.productStreams ?? coerceProductStreams(item.productStream),
+  );
+  if (productStreams.length > 0) {
+    fields.productStream = productStreams;
   }
 
   return fields;

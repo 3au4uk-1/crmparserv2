@@ -41,6 +41,25 @@ describe('twenty-line-item', () => {
     const input = buildLineItemUpdateInput({ name: 'Наклейка', price: 1000, quantity: '1' });
     expect(input).not.toHaveProperty('stage');
   });
+
+  it('writes productStream as a set', () => {
+    const input = buildLineItemCreateInput(
+      {
+        name: 'Стойка барная - оклейка',
+        price: 1000,
+        quantity: '1',
+        productStreams: ['BRANDING', 'DECOR'],
+      },
+      'wh-001',
+      'opp-456',
+    );
+    expect(input.productStream).toEqual(['DECOR', 'BRANDING']);
+  });
+
+  it('omits productStream when the set is empty', () => {
+    const input = buildLineItemUpdateInput({ name: 'X', price: 1, quantity: '1', productStreams: [] });
+    expect(input).not.toHaveProperty('productStream');
+  });
 });
 
 describe('Tony line items', () => {
