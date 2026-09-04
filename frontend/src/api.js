@@ -900,6 +900,47 @@ export function useDecorMkScanJob(jobId, { enabled = true } = {}) {
   });
 }
 
+function isProductStreamBackfillJobRunning(status) {
+  return status === 'queued' || status === 'running';
+}
+
+export function fetchProductStreamBackfillPreview() {
+  return api.get('/deals/product-stream-backfill/preview').then((r) => r.data);
+}
+
+export function useStartProductStreamBackfill() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post('/deals/product-stream-backfill').then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['product-stream-backfill-active-job'] });
+    },
+  });
+}
+
+export function useActiveProductStreamBackfillJob() {
+  return useQuery({
+    queryKey: ['product-stream-backfill-active-job'],
+    queryFn: () => api.get('/deals/product-stream-backfill/jobs/active').then((r) => r.data),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return isProductStreamBackfillJobRunning(status) ? 2000 : false;
+    },
+  });
+}
+
+export function useProductStreamBackfillJob(jobId, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: ['product-stream-backfill-job', jobId],
+    queryFn: () => api.get(`/deals/product-stream-backfill/jobs/${jobId}`).then((r) => r.data),
+    enabled: enabled && !!jobId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return isProductStreamBackfillJobRunning(status) ? 2000 : false;
+    },
+  });
+}
+
 function isRestoreMissingTwentyJobRunning(status) {
   return status === 'queued' || status === 'running';
 }

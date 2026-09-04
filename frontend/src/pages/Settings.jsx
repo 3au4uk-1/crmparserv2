@@ -41,6 +41,10 @@ import {
   useActiveDecorMkScanJob,
   useDecorMkScanJob,
   fetchDecorMkScanPreview,
+  useStartProductStreamBackfill,
+  useActiveProductStreamBackfillJob,
+  useProductStreamBackfillJob,
+  fetchProductStreamBackfillPreview,
   useStartRestoreMissingTwenty,
   useActiveRestoreMissingTwentyJob,
   useRestoreMissingTwentyJob,
@@ -200,6 +204,107 @@ function BulkResyncPanel() {
       </p>
       <button type="button" onClick={onStartBulkResync} disabled={running} className="btn-secondary">
         {running ? 'Пересинхронизация выполняется…' : 'Применить фильтры ко всем синхронизированным сделкам'}
+      </button>
+
+      {(jobId || activeJob?.jobId) && (
+        <div className="mt-4 space-y-1 text-sm text-ink-muted">
+          <p>
+            Статус: <span className="font-medium text-ink">{status || 'unknown'}</span>
+          </p>
+          <p>
+            Прогресс:{' '}
+            <span className="font-medium tabular-nums text-ink">
+              {details.dealsDone ?? 0} / {details.dealsTotal ?? 0}
+            </span>
+          </p>
+          <p>
+            Обновлено: <span className="font-medium tabular-nums text-ink">{details.dealsUpdated ?? 0}</span>
+            {' · '}
+            Ошибок: <span className="font-medium tabular-nums text-ink">{details.dealsFailed ?? 0}</span>
+          </p>
+          {Array.isArray(details.errors) && details.errors.length > 0 && (
+            <ul className="mt-2 text-xs text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md space-y-1">
+              {details.errors.map((entry) => (
+                <li key={`${entry.dealId}-${entry.error}`}>
+                  Сделка #{entry.dealId}: {entry.error}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {startError && (
+        <p className="mt-3 text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md">{startError}</p>
+      )}
+      {jobError && (
+        <p className="mt-3 text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md">
+          {jobError.response?.data?.error || jobError.message || 'Не удалось получить статус задачи'}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ProductStreamBackfillPanel() {
+  const [jobId, setJobId] = useState('');
+  const [startError, setStartError] = useState('');
+
+  const startBackfill = useStartProductStreamBackfill();
+  const { data: activeJob } = useActiveProductStreamBackfillJob();
+  const { data: job, error: jobError } = useProductStreamBackfillJob(jobId, { enabled: !!jobId });
+
+  useEffect(() => {
+    if (!activeJob?.jobId || jobId) return;
+    setJobId(activeJob.jobId);
+  }, [activeJob, jobId]);
+
+  const status = job?.status || activeJob?.status;
+  const running = startBackfill.isPending || isBulkResyncRunning(status);
+  const details = job || activeJob || {};
+
+  async function onStartBackfill() {
+    setStartError('');
+    try {
+      const preview = await fetchProductStreamBackfillPreview();
+      const count = preview?.count ?? 0;
+      if (count === 0) {
+        setStartError('Нет синхронизированных сделок для обновления потоков');
+        return;
+      }
+      const confirmed = window.confirm(
+        `${count} сделок с Twenty. Набор потоков будет перезаписан по текущим ключевым словам. Позиции не удаляются. Продолжить?`,
+      );
+      if (!confirmed) return;
+
+      startBackfill.mutate(undefined, {
+        onSuccess: (data) => {
+          if (data?.jobId) setJobId(String(data.jobId));
+        },
+        onError: (err) => {
+          if (err.response?.status === 409) {
+            setStartError('Обновление потоков или другая тяжёлая синхронизация Twenty уже выполняется');
+            return;
+          }
+          setStartError(
+            err.response?.data?.error || err.message || 'Не удалось запустить обновление потоков',
+          );
+        },
+      });
+    } catch (err) {
+      setStartError(err.response?.data?.error || err.message || 'Не удалось получить количество сделок');
+    }
+  }
+
+  return (
+    <div className="mt-6 pt-6 border-t border-border">
+      <h4 className="text-sm font-semibold text-ink mb-1">Вернуть потоки на доски</h4>
+      <p className="text-xs text-ink-muted mb-3 max-w-xl leading-relaxed">
+        Пересчитает брендинг, декор и МК у позиций, уже лежащих в Twenty. Пересечения снова видны на обеих досках.
+        Позиции не удаляются.
+      </p>
+      <button type="button" onClick={onStartBackfill} disabled={running} className="btn-secondary">
+        {running ? 'Обновление потоков выполняется…' : 'Вернуть потоки на все синхронизированные сделки'}
       </button>
 
       {(jobId || activeJob?.jobId) && (
@@ -1491,6 +1596,7 @@ export default function Settings() {
                 </p>
               </div>
               <BulkResyncPanel />
+              <ProductStreamBackfillPanel />
               <DecorMkScanPanel />
               <RestoreMissingTwentyPanel />
             </div>
