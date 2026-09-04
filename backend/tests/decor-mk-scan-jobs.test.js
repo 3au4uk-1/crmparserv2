@@ -233,6 +233,13 @@ describe('decor-mk-scan-jobs', () => {
     expect(listDecorMkScanDealIds('2026-08-01', '2026-08-31')).toEqual([1]);
   });
 
+  it('includes deal whose item is both DECOR and BRANDING', () => {
+    insertDeal({ id: 1, load_date: '2026-08-15' });
+    insertItem({ deal_id: 1, name: 'Гирлянда баннер' });
+
+    expect(listDecorMkScanDealIds('2026-08-01', '2026-08-31')).toEqual([1]);
+  });
+
   it('does not select a deal when the matching decor item is sync_override exclude', () => {
     insertDeal({ id: 1, load_date: '2026-08-15' });
     insertItem({ deal_id: 1, name: 'Гирлянда', sync_override: 'exclude' });

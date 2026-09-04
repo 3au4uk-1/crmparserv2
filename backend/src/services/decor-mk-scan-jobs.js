@@ -1,5 +1,5 @@
 import { getDb } from '../db/connection.js';
-import { loadProductStreamContext, resolveItemProductStream } from './twenty-items.js';
+import { loadProductStreamContext, resolveItemProductStreams } from './twenty-items.js';
 import { syncDealToTwenty } from './twenty-sync.js';
 
 const ACTIVE_STATUSES = new Set(['queued', 'running']);
@@ -109,8 +109,8 @@ export function listDecorMkScanDealIds(from, to) {
       .all(deal.id);
     const hasMatch = items.some((item) => {
       if (item.sync_override === 'exclude') return false;
-      const stream = resolveItemProductStream(item, ctx);
-      return stream === 'DECOR' || stream === 'MK';
+      const streams = resolveItemProductStreams(item, ctx);
+      return streams.includes('DECOR') || streams.includes('MK');
     });
     if (hasMatch) ids.push(deal.id);
   }
