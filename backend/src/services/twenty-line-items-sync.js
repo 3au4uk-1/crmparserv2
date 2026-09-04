@@ -136,7 +136,15 @@ export async function listLineItemsForOpportunity(gql, apiUrl, apiToken, oppId) 
   return resp.data?.data?.dealLineItems?.edges?.map((e) => e.node) || [];
 }
 
-export async function updateDealLineItemProductStreams(gql, apiUrl, apiToken, lineItemId, productStreams) {
+export async function updateDealLineItemProductStreams(
+  gql,
+  apiUrl,
+  apiToken,
+  lineItemId,
+  productStreams,
+  assertHttpSuccess,
+  assertGqlSuccess,
+) {
   const resp = await gql(
     apiUrl,
     apiToken,
@@ -145,6 +153,8 @@ export async function updateDealLineItemProductStreams(gql, apiUrl, apiToken, li
     }`,
     { id: lineItemId, input: { productStream: productStreams } },
   );
+  assertHttpSuccess(resp, apiUrl);
+  assertGqlSuccess(resp, `Failed to update productStream for line item "${lineItemId}" in Twenty`);
   return resp.data?.data?.updateDealLineItem ?? null;
 }
 

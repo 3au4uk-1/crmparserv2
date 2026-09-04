@@ -1,6 +1,6 @@
 import { getDb } from '../db/connection.js';
 import { requireTwentyConfig } from './twenty-config.js';
-import { gql } from './twenty-gql.js';
+import { gql, assertHttpSuccess, assertGqlSuccess } from './twenty-gql.js';
 import {
   listLineItemsForOpportunity,
   updateDealLineItemProductStreams,
@@ -240,6 +240,8 @@ export async function executeProductStreamBackfillJob(jobId) {
             twenty.apiToken,
             update.twentyId,
             update.productStreams,
+            assertHttpSuccess,
+            assertGqlSuccess,
           );
         }
 

@@ -1,8 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   computeLineItemDiff,
   isProtectedLineItemStage,
+  updateDealLineItemProductStreams,
 } from '../src/services/twenty-line-items-sync.js';
+import { assertHttpSuccess, assertGqlSuccess } from '../src/services/twenty-gql.js';
 
 describe('isProtectedLineItemStage', () => {
   it('treats null and NOVYY as deletable', () => {
@@ -197,5 +199,51 @@ describe('computeLineItemDiff', () => {
     const diff = computeLineItemDiff(existing, eligible);
     expect(diff.toUpdate).toEqual([{ twentyId: 'li-only', item: eligible[0] }]);
     expect(diff.toCreate).toEqual([eligible[1]]);
+  });
+});
+
+describe('updateDealLineItemProductStreams', () => {
+  it('throws on GraphQL errors via assertGqlSuccess', async () => {
+    const gql = vi.fn().mockResolvedValue({
+      status: 200,
+      data: { errors: [{ message: 'Field productStream is invalid' }] },
+    });
+
+    await expect(
+      updateDealLineItemProductStreams(
+        gql,
+        'https://twenty.test/graphql',
+        'token',
+        'li-1',
+        ['BRANDING'],
+        assertHttpSuccess,
+        assertGqlSuccess,
+      ),
+    ).rejects.toThrow('Field productStream is invalid');
+  });
+
+  it('returns updated line item on success', async () => {
+    const gql = vi.fn().mockResolvedValue({
+      status: 200,
+      data: { data: { updateDealLineItem: { id: 'li-1' } } },
+    });
+
+    const result = await updateDealLineItemProductStreams(
+      gql,
+      'https://twenty.test/graphql',
+      'token',
+      'li-1',
+      ['BRANDING', 'DECOR'],
+      assertHttpSuccess,
+      assertGqlSuccess,
+    );
+
+    expect(result).toEqual({ id: 'li-1' });
+    expect(gql).toHaveBeenCalledWith(
+      'https://twenty.test/graphql',
+      'token',
+      expect.stringContaining('updateDealLineItem'),
+      { id: 'li-1', input: { productStream: ['BRANDING', 'DECOR'] } },
+    );
   });
 });
