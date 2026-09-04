@@ -17,9 +17,13 @@ vi.mock('../src/services/twenty-config.js', () => ({
   requireTwentyConfig: (...args) => requireTwentyConfigMock(...args),
 }));
 
-vi.mock('../src/services/twenty-gql.js', () => ({
-  gql: (...args) => gqlMock(...args),
-}));
+vi.mock('../src/services/twenty-gql.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    gql: (...args) => gqlMock(...args),
+  };
+});
 
 vi.mock('../src/services/twenty-line-items-sync.js', () => ({
   listLineItemsForOpportunity: (...args) => listLineItemsForOpportunityMock(...args),
@@ -238,6 +242,8 @@ describe('product-stream-backfill-jobs', () => {
       'token',
       'li-1',
       ['BRANDING'],
+      expect.any(Function),
+      expect.any(Function),
     );
     expect(finished.dealsTotal).toBe(2);
     expect(finished.dealsDone).toBe(2);

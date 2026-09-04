@@ -45,3 +45,35 @@ cd backend && npx vitest run tests/product-stream-backfill-jobs.test.js tests/bu
 
 - Related job test DBs needed `product_stream_backfill_runs` so `getActiveProductStreamBackfillJob()` does not explode on POST.
 - `gql` identity in assertions is the module export wrapper, not the `vi.fn` spy itself.
+
+## Review fix: assert after productStream GraphQL writes
+
+`updateDealLineItemProductStreams` now calls `assertHttpSuccess` / `assertGqlSuccess` after `gql`, matching `syncLineItemsDiff` line-item updates. `executeProductStreamBackfillJob` imports and passes those helpers from `twenty-gql.js`.
+
+### Tests
+
+```
+cd backend && npx vitest run tests/product-stream-backfill-jobs.test.js
+```
+
+```
+ RUN  v4.1.8 C:/Users/Василий/Documents/projects/crmparserv2/backend
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  14:20:40
+   Duration  1.96s (transform 319ms, setup 0ms, import 1.71s, tests 60ms, environment 0ms)
+```
+
+```
+cd backend && npx vitest run tests/twenty-line-items-sync.test.js
+```
+
+```
+ RUN  v4.1.8 C:/Users/Василий/Documents/projects/crmparserv2/backend
+
+ Test Files  1 passed (1)
+      Tests  19 passed (19)
+   Start at  14:20:43
+   Duration  415ms (transform 97ms, setup 0ms, import 235ms, tests 9ms, environment 0ms)
+```
