@@ -21,7 +21,7 @@ describe('classifyProductStream', () => {
         decorBlacklist,
         mkBlacklist,
       })
-    ).toBe('MK');
+    ).toEqual(['MK']);
   });
 
   it('returns DECOR when decor keywords match and not decor-blacklisted', () => {
@@ -35,7 +35,7 @@ describe('classifyProductStream', () => {
         decorBlacklist,
         mkBlacklist,
       })
-    ).toBe('DECOR');
+    ).toEqual(['DECOR']);
   });
 
   it('returns BRANDING when branding keywords match and not branding-blacklisted', () => {
@@ -49,10 +49,10 @@ describe('classifyProductStream', () => {
         decorBlacklist,
         mkBlacklist,
       })
-    ).toBe('BRANDING');
+    ).toEqual(['BRANDING']);
   });
 
-  it('prioritizes MK over DECOR and branding when multiple keyword sets match', () => {
+  it('returns MK, DECOR, and BRANDING when all match', () => {
     expect(
       classifyProductStream({
         name: 'МК и баннер с декором',
@@ -63,10 +63,24 @@ describe('classifyProductStream', () => {
         decorBlacklist,
         mkBlacklist,
       })
-    ).toBe('MK');
+    ).toEqual(['MK', 'DECOR', 'BRANDING']);
   });
 
-  it('prioritizes DECOR over branding when both match and MK does not', () => {
+  it('returns both DECOR and BRANDING when both keyword sets match', () => {
+    expect(
+      classifyProductStream({
+        name: 'Стойка барная Laconismo - внешняя оклейка корупса',
+        brandingKeywords: ['оклейка', 'брендинг'],
+        decorKeywords: ['стойка'],
+        mkKeywords: ['мк'],
+        brandingBlacklist: [],
+        decorBlacklist: [],
+        mkBlacklist: [],
+      }),
+    ).toEqual(['DECOR', 'BRANDING']);
+  });
+
+  it('returns DECOR and BRANDING when both match and MK does not', () => {
     expect(
       classifyProductStream({
         name: 'Баннер с декором',
@@ -77,10 +91,10 @@ describe('classifyProductStream', () => {
         decorBlacklist,
         mkBlacklist,
       })
-    ).toBe('DECOR');
+    ).toEqual(['DECOR', 'BRANDING']);
   });
 
-  it('returns null when no keyword sets match', () => {
+  it('returns empty array when no keyword sets match', () => {
     expect(
       classifyProductStream({
         name: 'Шатер Кайт 4х4',
@@ -91,10 +105,10 @@ describe('classifyProductStream', () => {
         decorBlacklist,
         mkBlacklist,
       })
-    ).toBeNull();
+    ).toEqual([]);
   });
 
-  it('returns null when mk matches but is mk-blacklisted and no lower-priority stream matches', () => {
+  it('returns empty array when mk matches but is mk-blacklisted and no other stream matches', () => {
     expect(
       classifyProductStream({
         name: 'Тест МК по рисованию',
@@ -105,7 +119,21 @@ describe('classifyProductStream', () => {
         decorBlacklist,
         mkBlacklist,
       })
-    ).toBeNull();
+    ).toEqual([]);
+  });
+
+  it('keeps BRANDING when MK is blacklisted but branding keywords match', () => {
+    expect(
+      classifyProductStream({
+        name: 'Тест МК и баннер',
+        brandingKeywords,
+        decorKeywords,
+        mkKeywords,
+        brandingBlacklist,
+        decorBlacklist,
+        mkBlacklist,
+      }),
+    ).toEqual(['BRANDING']);
   });
 
   it('falls through to DECOR when mk matches but is mk-blacklisted', () => {
@@ -119,7 +147,7 @@ describe('classifyProductStream', () => {
         decorBlacklist,
         mkBlacklist,
       })
-    ).toBe('DECOR');
+    ).toEqual(['DECOR']);
   });
 
   it('falls through to BRANDING when mk and decor match but are blacklisted', () => {
@@ -133,10 +161,10 @@ describe('classifyProductStream', () => {
         decorBlacklist,
         mkBlacklist,
       })
-    ).toBe('BRANDING');
+    ).toEqual(['BRANDING']);
   });
 
-  it('returns null when branding matches but is branding-blacklisted', () => {
+  it('returns empty array when branding matches but is branding-blacklisted', () => {
     expect(
       classifyProductStream({
         name: 'Тест баннер для выставки',
@@ -147,10 +175,10 @@ describe('classifyProductStream', () => {
         decorBlacklist,
         mkBlacklist,
       })
-    ).toBeNull();
+    ).toEqual([]);
   });
 
-  it('returns null when decor matches but is decor-blacklisted and no other stream matches', () => {
+  it('returns empty array when decor matches but is decor-blacklisted and no other stream matches', () => {
     expect(
       classifyProductStream({
         name: 'Тест декор стола',
@@ -161,7 +189,7 @@ describe('classifyProductStream', () => {
         decorBlacklist,
         mkBlacklist,
       })
-    ).toBeNull();
+    ).toEqual([]);
   });
 
   it('uses word-boundary keyword matching from classifier', () => {
@@ -175,7 +203,7 @@ describe('classifyProductStream', () => {
         decorBlacklist: [],
         mkBlacklist: [],
       })
-    ).toBeNull();
+    ).toEqual([]);
 
     expect(
       classifyProductStream({
@@ -187,7 +215,7 @@ describe('classifyProductStream', () => {
         decorBlacklist: [],
         mkBlacklist: [],
       })
-    ).toBe('BRANDING');
+    ).toEqual(['BRANDING']);
   });
 
   it('handles empty keyword lists', () => {
@@ -201,6 +229,6 @@ describe('classifyProductStream', () => {
         decorBlacklist: [],
         mkBlacklist: [],
       })
-    ).toBeNull();
+    ).toEqual([]);
   });
 });
