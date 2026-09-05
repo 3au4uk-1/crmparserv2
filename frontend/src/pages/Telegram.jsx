@@ -15,6 +15,8 @@ import {
   useTeardownTelegramWebhook,
   useTelegramMentionForward,
   useSaveTelegramMentionForward,
+  useTelegramWorkRequestSlots,
+  useSaveTelegramWorkRequestSlots,
   useTelegramAutoInviteStatus,
   useTelegramAutoInviteMembers,
   useAddTelegramAutoInviteMember,
@@ -74,6 +76,102 @@ function formatUserbotUserLabel(user) {
   if (user.firstName) return user.firstName;
   if (user.id) return `id ${user.id}`;
   return null;
+}
+
+function emptyWorkRequestSlot() {
+  return { chatId: '', threadId: '1', companyLabel: '', topicRole: 'QUOTE' };
+}
+
+function WorkRequestSlotRow({ index, slot, chats, onChange }) {
+  const selectedChat = chats.find((chat) => chat.chatId === slot.chatId);
+  const isForum = Boolean(selectedChat?.isForum);
+  const { data: topicsData } = useTelegramTopics(isForum ? slot.chatId : '');
+  const topics = topicsData?.topics ?? [];
+  const topicOptions = useMemo(() => {
+    const options = [{ threadId: '1', name: 'General (thread 1)' }];
+    for (const topic of topics) {
+      const threadId = String(topic.threadId);
+      if (!options.some((option) => option.threadId === threadId)) {
+        options.push({ threadId, name: formatTopicLabel(topic) });
+      }
+    }
+    if (
+      slot.threadId &&
+      !options.some((option) => option.threadId === String(slot.threadId))
+    ) {
+      options.push({ threadId: String(slot.threadId), name: `#${slot.threadId}` });
+    }
+    return options;
+  }, [topics, slot.threadId]);
+
+  return (
+    <div className="grid gap-3 md:grid-cols-[2fr_1.5fr_1.5fr_1fr] items-end">
+      <div>
+        <FieldLabel>Чат {index + 1}</FieldLabel>
+        <select
+          value={slot.chatId}
+          onChange={(e) => {
+            const chatId = e.target.value;
+            onChange({ ...slot, chatId, threadId: chatId ? '1' : '' });
+          }}
+          className="select-field w-full"
+        >
+          <option value="">— не используется —</option>
+          {slot.chatId && !chats.some((chat) => chat.chatId === slot.chatId) && (
+            <option value={slot.chatId}>{slot.chatId} · неактивен</option>
+          )}
+          {chats.map((chat) => (
+            <option key={chat.chatId} value={chat.chatId}>
+              {formatChatLabel(chat)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {isForum ? (
+        <div>
+          <FieldLabel>Топик</FieldLabel>
+          <select
+            value={slot.threadId}
+            onChange={(e) => onChange({ ...slot, threadId: e.target.value })}
+            className="select-field w-full"
+          >
+            {topicOptions.map((topic) => (
+              <option key={topic.threadId} value={topic.threadId}>
+                {topic.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : (
+        <div />
+      )}
+
+      <div>
+        <FieldLabel>Компания</FieldLabel>
+        <input
+          type="text"
+          value={slot.companyLabel}
+          onChange={(e) => onChange({ ...slot, companyLabel: e.target.value })}
+          className="input-field w-full"
+          placeholder="Название"
+        />
+      </div>
+
+      <div>
+        <FieldLabel>Роль</FieldLabel>
+        <select
+          value={slot.topicRole}
+          onChange={(e) => onChange({ ...slot, topicRole: e.target.value })}
+          className="select-field w-full"
+        >
+          <option value="QUOTE">Просчёт</option>
+          <option value="DESIGN">Разработка</option>
+          <option value="REVIEW">Проверка</option>
+        </select>
+      </div>
+    </div>
+  );
 }
 
 export default function Telegram() {
@@ -145,6 +243,11 @@ export default function Telegram() {
   const saveMentionForward = useSaveTelegramMentionForward();
   const [mentionChatId, setMentionChatId] = useState('');
   const [mentionTopicId, setMentionTopicId] = useState('');
+  const { data: workRequestSlotsData } = useTelegramWorkRequestSlots();
+  const saveWorkRequestSlots = useSaveTelegramWorkRequestSlots();
+  const [workRequestSlots, setWorkRequestSlots] = useState(() =>
+    Array.from({ length: 9 }, emptyWorkRequestSlot),
+  );
 
   const autoInviteConfigured = Boolean(autoInviteStatus?.configured);
   const autoInviteMembers = autoInviteMembersData?.members ?? [];
@@ -331,6 +434,18 @@ export default function Telegram() {
     setMentionChatId(s.chatId || '');
     setMentionTopicId(s.topicId != null ? String(s.topicId) : '');
   }, [mentionForwardData?.settings]);
+
+  useEffect(() => {
+    if (!workRequestSlotsData?.slots) return;
+    const savedSlots = workRequestSlotsData.slots.slice(0, 9).map((slot) => ({
+      ...slot,
+      threadId: String(slot.threadId),
+    }));
+    setWorkRequestSlots([
+      ...savedSlots,
+      ...Array.from({ length: 9 - savedSlots.length }, emptyWorkRequestSlot),
+    ]);
+  }, [workRequestSlotsData?.slots]);
 
   const mentionForumChats = useMemo(
     () => chats.filter((c) => c.isForum && c.active),
@@ -682,6 +797,28 @@ export default function Telegram() {
     } catch (err) {
       setSaveError(
         err.response?.data?.error || err.message || 'Не удалось сохранить настройки',
+      );
+    }
+  }
+
+  async function onSaveWorkRequestSlots() {
+    setSaveError('');
+    setActionError('');
+    setActionSuccess('');
+    const slots = workRequestSlots
+      .filter((slot) => slot.chatId)
+      .map((slot) => ({
+        chatId: slot.chatId,
+        threadId: Number(slot.threadId || '1'),
+        companyLabel: slot.companyLabel.trim(),
+        topicRole: slot.topicRole,
+      }));
+    try {
+      await saveWorkRequestSlots.mutateAsync(slots);
+      setActionSuccess('Слоты рабочих запросов сохранены');
+    } catch (err) {
+      setSaveError(
+        err.response?.data?.error || err.message || 'Не удалось сохранить слоты',
       );
     }
   }
@@ -1691,6 +1828,37 @@ export default function Telegram() {
             className="btn-primary btn-sm"
           >
             {saveMentionForward.isPending ? 'Сохранение…' : 'Сохранить'}
+          </button>
+        </div>
+      </Section>
+
+      <Section
+        title="Рабочие запросы"
+        description="До девяти топиков для просчёта, разработки и проверки. Пустые строки не сохраняются."
+      >
+        <div className="space-y-4">
+          {workRequestSlots.map((slot, index) => (
+            <WorkRequestSlotRow
+              key={index}
+              index={index}
+              slot={slot}
+              chats={chats}
+              onChange={(nextSlot) =>
+                setWorkRequestSlots((current) =>
+                  current.map((item, itemIndex) =>
+                    itemIndex === index ? nextSlot : item,
+                  ),
+                )
+              }
+            />
+          ))}
+          <button
+            type="button"
+            onClick={onSaveWorkRequestSlots}
+            disabled={saveWorkRequestSlots.isPending}
+            className="btn-primary btn-sm"
+          >
+            {saveWorkRequestSlots.isPending ? 'Сохранение…' : 'Сохранить'}
           </button>
         </div>
       </Section>

@@ -1111,6 +1111,22 @@ export function useSaveTelegramMentionForward() {
   });
 }
 
+export function useTelegramWorkRequestSlots() {
+  return useQuery({
+    queryKey: ['telegram-work-request-slots'],
+    queryFn: () => api.get('/telegram/work-request-slots').then((r) => r.data),
+  });
+}
+
+export function useSaveTelegramWorkRequestSlots() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (slots) =>
+      api.put('/telegram/work-request-slots', { slots }).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-work-request-slots'] }),
+  });
+}
+
 export function useTelegramWebhookStatus() {
   return useQuery({
     queryKey: ['telegram-webhook-status'],

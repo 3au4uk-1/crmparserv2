@@ -43,6 +43,10 @@ import {
   getTeamAppMirrorSettings,
   setTeamAppMirrorSettings,
 } from '../telegram/team-app-mirror-settings.js';
+import {
+  getWorkRequestSlots,
+  setWorkRequestSlots,
+} from '../telegram/work-requests/slots.js';
 
 const router = Router();
 
@@ -256,6 +260,22 @@ router.put('/mention-forward', (req, res, next) => {
   try {
     const settings = setMentionForwardSettings(getDb(), req.body ?? {});
     res.json({ settings });
+  } catch (err) {
+    if (err?.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    next(err);
+  }
+});
+
+router.get('/work-request-slots', (req, res) => {
+  res.json({ slots: getWorkRequestSlots(getDb()) });
+});
+
+router.put('/work-request-slots', (req, res, next) => {
+  try {
+    const slots = setWorkRequestSlots(getDb(), req.body?.slots);
+    res.json({ slots });
   } catch (err) {
     if (err?.status) {
       return res.status(err.status).json({ error: err.message });
