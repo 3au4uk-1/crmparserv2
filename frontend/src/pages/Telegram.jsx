@@ -82,11 +82,22 @@ function emptyWorkRequestSlot() {
   return { chatId: '', threadId: '1', companyLabel: '', topicRole: 'QUOTE' };
 }
 
-function WorkRequestSlotRow({ index, slot, chats, onChange }) {
-  const selectedChat = chats.find((chat) => chat.chatId === slot.chatId);
+function WorkRequestSlotRow({ index, slot, chats, allKnownChats, onChange }) {
+  const selectedChat = allKnownChats.find((chat) => chat.chatId === slot.chatId);
   const isForum = Boolean(selectedChat?.isForum);
   const { data: topicsData } = useTelegramTopics(isForum ? slot.chatId : '');
   const topics = topicsData?.topics ?? [];
+  const chatOptions = useMemo(() => {
+    const activeChats = chats.filter((chat) => chat.active);
+    const options = activeChats.map((chat) => ({ chat, showInactive: false }));
+    if (slot.chatId && !activeChats.some((chat) => chat.chatId === slot.chatId)) {
+      const savedChat = allKnownChats.find((chat) => chat.chatId === slot.chatId);
+      if (savedChat) {
+        options.push({ chat: savedChat, showInactive: true });
+      }
+    }
+    return options;
+  }, [chats, allKnownChats, slot.chatId]);
   const topicOptions = useMemo(() => {
     const options = [{ threadId: '1', name: 'General (thread 1)' }];
     for (const topic of topics) {
@@ -117,12 +128,12 @@ function WorkRequestSlotRow({ index, slot, chats, onChange }) {
           className="select-field w-full"
         >
           <option value="">— не используется —</option>
-          {slot.chatId && !chats.some((chat) => chat.chatId === slot.chatId) && (
+          {slot.chatId && !allKnownChats.some((chat) => chat.chatId === slot.chatId) && (
             <option value={slot.chatId}>{slot.chatId} · неактивен</option>
           )}
-          {chats.map((chat) => (
+          {chatOptions.map(({ chat, showInactive }) => (
             <option key={chat.chatId} value={chat.chatId}>
-              {formatChatLabel(chat)}
+              {formatChatLabel(chat, { showInactive })}
             </option>
           ))}
         </select>
@@ -266,11 +277,15 @@ export default function Telegram() {
   const savedBannerChatInActiveList = Boolean(
     bannerChatId && chats.some((c) => c.chatId === bannerChatId),
   );
+  const savedWorkRequestChatMissingActiveList = workRequestSlots.some(
+    (slot) => slot.chatId && !chats.some((chat) => chat.chatId === slot.chatId),
+  );
   const needsInactiveLookup = Boolean(
     !chatsLoading &&
       ((okleykaChatId && !savedChatInActiveList) ||
         (digestChatId && !savedDigestChatInActiveList) ||
-        (bannerChatId && !savedBannerChatInActiveList)),
+        (bannerChatId && !savedBannerChatInActiveList) ||
+        savedWorkRequestChatMissingActiveList),
   );
   const { data: inactiveChatsData, isLoading: inactiveChatsLoading } = useTelegramChats(
     false,
@@ -1843,6 +1858,7 @@ export default function Telegram() {
               index={index}
               slot={slot}
               chats={chats}
+              allKnownChats={allKnownChats}
               onChange={(nextSlot) =>
                 setWorkRequestSlots((current) =>
                   current.map((item, itemIndex) =>

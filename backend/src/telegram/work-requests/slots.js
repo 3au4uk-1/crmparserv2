@@ -77,7 +77,9 @@ export function getWorkRequestSlots(db) {
 }
 
 export function setWorkRequestSlots(db, slots) {
-  const validated = (slots ?? []).map(validateSlot);
+  const validated = (slots ?? [])
+    .filter((raw) => String(raw?.chatId ?? '').trim())
+    .map(validateSlot);
   const unique = dedupeSlots(validated);
 
   db.prepare(
