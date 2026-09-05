@@ -1,4 +1,11 @@
-import { assertGqlSuccess } from '../../services/twenty-gql.js';
+import { assertGqlSuccess, assertHttpSuccess } from '../../services/twenty-gql.js';
+
+const DEFAULT_API_URL = 'Twenty GraphQL';
+
+function assertTwentyResponse(resp, context, apiUrl = DEFAULT_API_URL) {
+  assertHttpSuccess(resp, apiUrl);
+  assertGqlSuccess(resp, context);
+}
 
 const SEARCH_OPPORTUNITIES_QUERY = `query SearchOpportunities($q: String!) {
   opportunities(filter: { name: { ilike: $q } }, first: 30) {
@@ -13,7 +20,7 @@ const SEARCH_OPPORTUNITIES_BY_NAME_QUERY = `query SearchOpportunitiesByName($q: 
 }`;
 
 export function bookingInName(name, booking) {
-  if (!name || !booking) return false;
+  if (!name || !booking || !/^\d{6}$/.test(String(booking))) return false;
   const pattern = new RegExp(`(^|\\D)${booking}(\\D|$)`);
   return pattern.test(String(name));
 }
@@ -44,7 +51,7 @@ function extractNodes(resp) {
 
 export async function searchOpportunitiesByBooking(gql, booking) {
   const resp = await gql(SEARCH_OPPORTUNITIES_QUERY, { q: `%${booking}%` });
-  assertGqlSuccess(resp, 'SearchOpportunities failed');
+  assertTwentyResponse(resp, 'SearchOpportunities failed');
   return extractNodes(resp);
 }
 
@@ -58,7 +65,7 @@ export async function matchOpportunity({ gql, booking, dealName }) {
 
   if (dealName) {
     const resp = await gql(SEARCH_OPPORTUNITIES_BY_NAME_QUERY, { q: dealName });
-    assertGqlSuccess(resp, 'SearchOpportunitiesByName failed');
+    assertTwentyResponse(resp, 'SearchOpportunitiesByName failed');
     return pickMatchedOpportunity(extractNodes(resp), { dealName });
   }
 
