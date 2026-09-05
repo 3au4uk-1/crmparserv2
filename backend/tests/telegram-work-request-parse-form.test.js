@@ -126,4 +126,203 @@ describe('parseWorkRequestForm', () => {
     });
     expect(r.ok).toBe(false);
   });
+
+  it('accepts review запускаем + file as LAUNCH', () => {
+    const r = parseWorkRequestForm({
+      text: [
+        '@бот',
+        'Бронь: 111222',
+        'Комментарий: запускаем',
+        'Ссылка на макеты:',
+        'Название позиции под брендинг: куб',
+      ].join('\n'),
+      topicRole: 'REVIEW',
+      attachments: [{ type: 'document' }],
+    });
+    expect(r.ok).toBe(true);
+    expect(r.data.reviewAction).toBe('LAUNCH');
+    expect(r.data.kind).toBe('REVIEW');
+  });
+
+  describe('DESIGN mandatory field omissions', () => {
+    const baseLayout = [
+      '@бот',
+      'Тип: макет',
+      'Бронь: 123456',
+      'ТЗ: лого на стойку',
+      'Название позиции под брендинг: стойка',
+      'Ссылка на логотип / шрифт / брендбук:',
+    ].join('\n');
+    const attachments = [{ type: 'document' }];
+
+    it('rejects missing Тип', () => {
+      const text = baseLayout.replace('Тип: макет\n', '');
+      const r = parseWorkRequestForm({ text, topicRole: 'DESIGN', attachments });
+      expect(r.ok).toBe(false);
+      expect(r.missing).toContain('Тип');
+    });
+
+    it('rejects missing ТЗ', () => {
+      const text = baseLayout.replace('ТЗ: лого на стойку\n', '');
+      const r = parseWorkRequestForm({ text, topicRole: 'DESIGN', attachments });
+      expect(r.ok).toBe(false);
+      expect(r.missing).toContain('ТЗ');
+    });
+
+    it('rejects missing Название позиции', () => {
+      const text = baseLayout.replace('Название позиции под брендинг: стойка\n', '');
+      const r = parseWorkRequestForm({ text, topicRole: 'DESIGN', attachments });
+      expect(r.ok).toBe(false);
+      expect(r.missing).toContain('Название позиции под брендинг');
+    });
+
+    it('rejects missing Бронь', () => {
+      const text = baseLayout.replace('Бронь: 123456\n', '');
+      const r = parseWorkRequestForm({ text, topicRole: 'DESIGN', attachments });
+      expect(r.ok).toBe(false);
+      expect(r.missing.some((m) => /бронь/i.test(m))).toBe(true);
+    });
+  });
+
+  describe('REVIEW mandatory field omissions', () => {
+    const baseReview = [
+      '@бот',
+      'Бронь: 111222',
+      'Комментарий: проверить',
+      'Ссылка на макеты:',
+      'Название позиции под брендинг: куб',
+    ].join('\n');
+    const attachments = [{ type: 'photo' }];
+
+    it('rejects missing Бронь', () => {
+      const text = baseReview.replace('Бронь: 111222\n', '');
+      const r = parseWorkRequestForm({ text, topicRole: 'REVIEW', attachments });
+      expect(r.ok).toBe(false);
+      expect(r.missing.some((m) => /бронь/i.test(m))).toBe(true);
+    });
+
+    it('rejects missing Комментарий', () => {
+      const text = baseReview.replace('Комментарий: проверить\n', '');
+      const r = parseWorkRequestForm({ text, topicRole: 'REVIEW', attachments });
+      expect(r.ok).toBe(false);
+      expect(r.missing).toContain('Комментарий');
+    });
+
+    it('rejects missing Название позиции', () => {
+      const text = baseReview.replace(
+        'Название позиции под брендинг: куб',
+        'Название позиции под брендинг:',
+      );
+      const r = parseWorkRequestForm({ text, topicRole: 'REVIEW', attachments });
+      expect(r.ok).toBe(false);
+      expect(r.missing).toContain('Название позиции под брендинг');
+    });
+  });
+
+  describe('booking boundaries', () => {
+    const designBase = (booking) =>
+      [
+        '@бот',
+        'Тип: макет',
+        `Бронь: ${booking}`,
+        'ТЗ: x',
+        'Название позиции под брендинг: y',
+      ].join('\n');
+    const attachments = [{ type: 'document' }];
+
+    it('rejects 5-digit booking', () => {
+      const r = parseWorkRequestForm({
+        text: designBase('12345'),
+        topicRole: 'DESIGN',
+        attachments,
+      });
+      expect(r.ok).toBe(false);
+      expect(r.missing.some((m) => /бронь/i.test(m))).toBe(true);
+    });
+
+    it('rejects prefixed booking text', () => {
+      const r = parseWorkRequestForm({
+        text: designBase('бронь 123456'),
+        topicRole: 'DESIGN',
+        attachments,
+      });
+      expect(r.ok).toBe(false);
+      expect(r.missing.some((m) => /бронь/i.test(m))).toBe(true);
+    });
+
+    it('rejects 7-digit booking', () => {
+      const r = parseWorkRequestForm({
+        text: designBase('1234567'),
+        topicRole: 'DESIGN',
+        attachments,
+      });
+      expect(r.ok).toBe(false);
+      expect(r.missing.some((m) => /бронь/i.test(m))).toBe(true);
+    });
+  });
+
+  describe('carrier requirements', () => {
+    it('accepts visual with file and blank layouts url', () => {
+      const r = parseWorkRequestForm({
+        text: [
+          '@бот',
+          'Тип: визуализация',
+          'Бронь: 654321',
+          'ТЗ: визуал',
+          'Название позиции под брендинг: бар',
+          'Ссылка на макеты:',
+        ].join('\n'),
+        topicRole: 'DESIGN',
+        attachments: [{ type: 'photo' }],
+      });
+      expect(r.ok).toBe(true);
+      expect(r.data.kind).toBe('VISUAL');
+      expect(r.data.layoutsUrl).toBeNull();
+      expect(r.data.hasCarrier).toBe(true);
+    });
+
+    it('rejects review without url and without file', () => {
+      const r = parseWorkRequestForm({
+        text: [
+          '@бот',
+          'Бронь: 111222',
+          'Комментарий: проверить',
+          'Ссылка на макеты:',
+          'Название позиции под брендинг: куб',
+        ].join('\n'),
+        topicRole: 'REVIEW',
+        attachments: [],
+      });
+      expect(r.ok).toBe(false);
+      expect(r.missing.some((m) => /ссылка или файл/i.test(m))).toBe(true);
+    });
+  });
+
+  describe('blank synonyms as brief fields', () => {
+    it.each(['-', 'нет', 'файл'])('rejects QUOTE when Что посчитать is %j', (value) => {
+      const r = parseWorkRequestForm({
+        text: `@бот\nЧто посчитать: ${value}`,
+        topicRole: 'QUOTE',
+        attachments: [],
+      });
+      expect(r.ok).toBe(false);
+      expect(r.missing).toContain('Что посчитать');
+    });
+
+    it.each(['-', 'нет', 'файл'])('rejects DESIGN when ТЗ is %j', (value) => {
+      const r = parseWorkRequestForm({
+        text: [
+          '@бот',
+          'Тип: макет',
+          'Бронь: 123456',
+          `ТЗ: ${value}`,
+          'Название позиции под брендинг: стойка',
+        ].join('\n'),
+        topicRole: 'DESIGN',
+        attachments: [{ type: 'document' }],
+      });
+      expect(r.ok).toBe(false);
+      expect(r.missing).toContain('ТЗ');
+    });
+  });
 });
