@@ -14,14 +14,15 @@ describe('messageMentionsBot', () => {
     expect(messageMentionsBot(message, 'other_bot')).toBe(false);
   });
 
-  it('uses caption entities and ignores plain text without a mention entity', () => {
+  it('uses caption entities and also accepts a plain @username without entities', () => {
     const captioned = {
       caption: 'Файл для @intake_bot',
       caption_entities: [{ type: 'mention', offset: 10, length: 11 }],
     };
 
     expect(messageMentionsBot(captioned, 'intake_bot')).toBe(true);
-    expect(messageMentionsBot({ text: '@intake_bot' }, 'intake_bot')).toBe(false);
+    expect(messageMentionsBot({ text: '@intake_bot' }, 'intake_bot')).toBe(true);
+    expect(messageMentionsBot({ text: '@intake_bot_extra' }, 'intake_bot')).toBe(false);
   });
 });
 

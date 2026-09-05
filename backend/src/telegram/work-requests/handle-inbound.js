@@ -135,7 +135,13 @@ export async function handleWorkRequestInbound({ db, update, deps = {} }) {
   const chatId = String(message.chat.id);
   const threadId = message.message_thread_id;
   const slot = findSlot(db, chatId, threadId);
-  if (!slot) return { handled: false };
+  if (!slot) {
+    const preview = String(message.text || message.caption || '');
+    if (preview.includes('@')) {
+      console.log('[work-request] skip: no slot', { chatId, threadId });
+    }
+    return { handled: false };
+  }
 
   const token = deps.token || getTelegramBotToken(db);
   const callTelegram = deps.callTelegram ?? defaultCallTelegram;
@@ -147,6 +153,7 @@ export async function handleWorkRequestInbound({ db, update, deps = {} }) {
     now: deps.clock ?? (() => Date.now()),
   });
   if (!messages.some((item) => messageMentionsBot(item, botUsername))) {
+    console.log('[work-request] skip: no mention', { chatId, threadId, botUsername });
     return { handled: false };
   }
   const orderedMessages = [...messages].sort(

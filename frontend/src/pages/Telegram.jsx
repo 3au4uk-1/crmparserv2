@@ -87,9 +87,7 @@ function emptyWorkRequestSlot() {
 }
 
 function WorkRequestSlotRow({ index, slot, chats, allKnownChats, onChange }) {
-  const selectedChat = allKnownChats.find((chat) => chat.chatId === slot.chatId);
-  const isForum = Boolean(selectedChat?.isForum);
-  const { data: topicsData } = useTelegramBotTopics(isForum ? slot.chatId : '');
+  const { data: topicsData } = useTelegramBotTopics(slot.chatId || '');
   const addTopic = useAddTelegramBotTopic();
   const [manualThreadId, setManualThreadId] = useState('');
   const [manualTopicName, setManualTopicName] = useState('');
@@ -146,7 +144,7 @@ function WorkRequestSlotRow({ index, slot, chats, allKnownChats, onChange }) {
         </select>
       </div>
 
-      {isForum ? (
+      {slot.chatId ? (
         <div>
           <FieldLabel>Топик</FieldLabel>
           <select
@@ -871,7 +869,7 @@ export default function Telegram() {
       .filter((slot) => slot.chatId)
       .map((slot) => ({
         chatId: slot.chatId,
-        threadId: Number(slot.threadId || '1'),
+        threadId: Number(slot.threadId),
         companyLabel: slot.companyLabel.trim(),
         topicRole: slot.topicRole,
       }));
@@ -1896,7 +1894,7 @@ export default function Telegram() {
 
       <Section
         title="Рабочие запросы"
-        description="Отдельный список чатов обычного бота, не userbot. Чаты появляются после сообщения боту или добавления по chat id."
+        description="Обычный бот (@brandingxbot), не userbot. Тег без формы — отказ с списком полей. Просчёт: «Что посчитать: …». Чат id: -100… или ссылка t.me/c/…"
       >
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2 items-end">

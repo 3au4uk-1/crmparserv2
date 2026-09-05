@@ -47,6 +47,7 @@ import {
   getTeamAppMirrorSettings,
   setTeamAppMirrorSettings,
 } from '../telegram/team-app-mirror-settings.js';
+import { chatIdCandidates } from '../telegram/chat-id.js';
 import {
   getWorkRequestSlots,
   setWorkRequestSlots,
@@ -286,11 +287,24 @@ router.post('/bot-chats', async (req, res, next) => {
     if (!token) {
       return res.status(400).json({ error: 'Telegram bot token is not set' });
     }
-    const chatId = String(req.body?.chatId ?? '').trim();
-    if (!chatId) {
+    const candidates = chatIdCandidates(req.body?.chatId);
+    if (candidates.length === 0) {
       return res.status(400).json({ error: 'chatId required' });
     }
-    const chat = await callTelegram(token, 'getChat', { chat_id: chatId });
+    let chat;
+    let lastError;
+    for (const chatId of candidates) {
+      try {
+        chat = await callTelegram(token, 'getChat', { chat_id: chatId });
+        break;
+      } catch (err) {
+        lastError = err;
+        console.warn('[telegram] getChat failed', { chatId, error: err.message });
+      }
+    }
+    if (!chat) {
+      throw lastError || Object.assign(new Error('chat not found'), { status: 400 });
+    }
     upsertBotChat(db, {
       chatId: String(chat.id),
       title: chat.title || chat.username || '',
@@ -444,6 +458,7 @@ router.get('/webhook/status', async (req, res, next) => {
       deprecated: true,
       note: 'Webhook discovery is deprecated; use user-bot reconcile (/chats/refresh).',
       publicBaseUrlConfigured: Boolean(config.publicBaseUrl),
+      pollingEnabled: Boolean(config.telegramPolling),
       webhookUrl,
       secretSet,
     };

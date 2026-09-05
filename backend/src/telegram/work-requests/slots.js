@@ -1,3 +1,4 @@
+import { chatIdsMatch, normalizeTelegramChatId } from '../chat-id.js';
 import { TOPIC_ROLES } from './parse-form.js';
 
 export const WORK_REQUEST_SLOTS_KEY = 'telegram_work_request_slots';
@@ -12,7 +13,7 @@ function slotKey({ chatId, threadId }) {
 export function normalizeSlot(raw) {
   if (!raw || typeof raw !== 'object') return null;
 
-  const chatId = String(raw.chatId ?? '').trim();
+  const chatId = normalizeTelegramChatId(raw.chatId);
   if (!chatId) return null;
 
   const threadId = Number(raw.threadId);
@@ -37,7 +38,7 @@ function validateSlot(raw) {
     throw Object.assign(new Error('threadId must be a positive integer'), { status: 400 });
   }
 
-  const chatId = String(raw?.chatId ?? '').trim();
+  const chatId = normalizeTelegramChatId(raw?.chatId);
   const companyLabel = String(raw?.companyLabel ?? '').trim();
 
   return { chatId, threadId, companyLabel, topicRole };
@@ -91,9 +92,8 @@ export function setWorkRequestSlots(db, slots) {
 }
 
 export function findSlot(db, chatId, threadId) {
-  const normalizedChatId = String(chatId ?? '').trim();
   const normalizedThreadId = Number(threadId);
   return getWorkRequestSlots(db).find(
-    (slot) => slot.chatId === normalizedChatId && slot.threadId === normalizedThreadId,
+    (slot) => chatIdsMatch(slot.chatId, chatId) && slot.threadId === normalizedThreadId,
   ) ?? null;
 }

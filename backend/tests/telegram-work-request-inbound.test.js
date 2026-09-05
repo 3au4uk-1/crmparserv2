@@ -418,6 +418,27 @@ describe('handleWorkRequestInbound', () => {
     expect(testDeps.callTelegram).toHaveBeenCalledTimes(1);
   });
 
+  it('refuses a quote when the bot is tagged as plain text without mention entities', async () => {
+    const testDeps = deps();
+    const result = await handleWorkRequestInbound({
+      db: seedQuoteSlot(openMigrated()),
+      update: {
+        message: message('@intake_bot\n\nСчитаем баннер', { entities: undefined }),
+      },
+      deps: testDeps,
+    });
+
+    expect(result).toEqual({ handled: true, action: 'refused' });
+    expect(testDeps.createTelegramRequest).not.toHaveBeenCalled();
+    expect(testDeps.callTelegram).toHaveBeenCalledWith(
+      'bot-token',
+      'sendMessage',
+      expect.objectContaining({
+        text: expect.stringContaining('Что посчитать'),
+      }),
+    );
+  });
+
   it('ignores bot messages, unconfigured topics, and mentions of another bot', async () => {
     const db = seedQuoteSlot(openMigrated());
     const testDeps = deps();

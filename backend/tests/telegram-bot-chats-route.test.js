@@ -95,6 +95,35 @@ describe('telegram bot chat routes', () => {
     ]);
   });
 
+  it('POST /bot-chats retries getChat with a -100 prefix for a t.me/c id', async () => {
+    getDb()
+      .prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('telegram_bot_token', ?)`)
+      .run('123:token');
+    callTelegram
+      .mockRejectedValueOnce(Object.assign(new Error('Bad Request: chat not found'), { status: 400 }))
+      .mockResolvedValueOnce({
+        id: -100555000555,
+        title: 'Маяк заявки',
+        type: 'supergroup',
+        is_forum: true,
+      });
+
+    const post = await authorized(
+      request(createApp()).post('/api/telegram/bot-chats').send({
+        chatId: 'https://t.me/c/555000555/4',
+      }),
+    );
+
+    expect(post.status).toBe(200);
+    expect(callTelegram).toHaveBeenNthCalledWith(1, '123:token', 'getChat', {
+      chat_id: 'https://t.me/c/555000555/4',
+    });
+    expect(callTelegram).toHaveBeenNthCalledWith(2, '123:token', 'getChat', {
+      chat_id: '-100555000555',
+    });
+    expect(post.body.chat.chatId).toBe('-100555000555');
+  });
+
   it('POST /bot-chats/:chatId/topics stores a manual topic', async () => {
     getDb()
       .prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('telegram_bot_token', ?)`)
