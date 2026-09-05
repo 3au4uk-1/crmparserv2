@@ -18,7 +18,10 @@ export function normalizeTelegramChatId(raw) {
 export function chatIdCandidates(raw) {
   const value = String(raw ?? '').trim();
   if (!value) return [];
-  return [...new Set([value, normalizeTelegramChatId(value)].filter(Boolean))];
+  const normalized = normalizeTelegramChatId(value);
+  const looksLikeUrl = /^https?:\/\//i.test(value) || /t\.me\//i.test(value);
+  const candidates = looksLikeUrl ? [normalized] : [value, normalized];
+  return [...new Set(candidates.filter(Boolean))];
 }
 
 export function chatIdsMatch(left, right) {

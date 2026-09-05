@@ -23,4 +23,8 @@ describe('chatIdCandidates', () => {
   it('tries the typed value and the normalized Bot API id', () => {
     expect(chatIdCandidates('555000555')).toEqual(['555000555', '-100555000555']);
   });
+
+  it('skips a t.me URL and only tries the Bot API id', () => {
+    expect(chatIdCandidates('https://t.me/c/555000555/4')).toEqual(['-100555000555']);
+  });
 });

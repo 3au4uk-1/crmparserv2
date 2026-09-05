@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { isTelegramPollingEnabled } from './telegram/polling-flag.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -74,9 +75,7 @@ export const config = {
   /** HTTP proxy for Bot API (api.telegram.org) fetch, e.g. http://xray:1081 (empty = direct). */
   telegramHttpProxyUrl: process.env.TELEGRAM_HTTP_PROXY_URL || '',
   /** Use getUpdates long polling instead of webhook (when inbound from Telegram is blocked). */
-  telegramPolling: ['1', 'true', 'yes'].includes(
-    String(process.env.TELEGRAM_POLLING || '').trim().toLowerCase()
-  ),
+  telegramPolling: isTelegramPollingEnabled(process.env.TELEGRAM_POLLING),
   /** User-bot dialog reconcile interval (ms). Discovery + auto-invite trigger. */
   telegramReconcileIntervalMs: parseInt(process.env.TELEGRAM_RECONCILE_INTERVAL_MS || '30000', 10),
   teamAppBaseUrl: process.env.TEAM_APP_BASE_URL || '',
