@@ -141,8 +141,13 @@ export async function handleWorkRequestInbound({ db, update, deps = {} }) {
   const messages = await collectAlbumMessage(albums, message, {
     now: deps.clock ?? (() => Date.now()),
   });
-  const source = messages.find((item) => messageMentionsBot(item, botUsername));
-  if (!source) return { handled: false };
+  if (!messages.some((item) => messageMentionsBot(item, botUsername))) {
+    return { handled: false };
+  }
+  const orderedMessages = [...messages].sort(
+    (left, right) => Number(left.message_id) - Number(right.message_id),
+  );
+  const source = orderedMessages[0];
   if (
     source.media_group_id
     && getWorkRequestLinkByAlbum(db, chatId, source.media_group_id)
@@ -150,7 +155,7 @@ export async function handleWorkRequestInbound({ db, update, deps = {} }) {
     return { handled: true, action: 'duplicate' };
   }
 
-  const attachments = collectAttachments(messages);
+  const attachments = collectAttachments(orderedMessages);
   const parsed = parseWorkRequestForm({
     text: source.text || source.caption || '',
     topicRole: slot.topicRole,
@@ -174,7 +179,7 @@ export async function handleWorkRequestInbound({ db, update, deps = {} }) {
     requesterUsername: source.from?.username ?? null,
     requesterName: fullName(source.from),
   });
-  if (link.twentyId) return { handled: true, action: 'duplicate' };
+  if (!link.created) return { handled: true, action: 'duplicate' };
 
   const sourceUrl = telegramMessageUrl(chatId, source.message_id);
   const fileData = await prepareFiles(attachments, sourceUrl, {

@@ -69,8 +69,10 @@ describe('work request store', () => {
       requesterUserId: '5',
     });
     expect(first.requestNumber).toBe(1);
+    expect(first.created).toBe(true);
     expect(again.id).toBe(first.id);
     expect(again.requestNumber).toBe(1);
+    expect(again.created).toBe(false);
     const second = insertWorkRequestLink(db, {
       chatId: '-1001',
       threadId: 12,

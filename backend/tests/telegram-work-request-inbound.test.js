@@ -188,6 +188,59 @@ describe('handleWorkRequestInbound', () => {
     }
   });
 
+  it('parses the lowest message id in an album instead of the mention-bearing item', async () => {
+    vi.useFakeTimers();
+    try {
+      const db = seedQuoteSlot(openMigrated());
+      const testDeps = deps();
+      const mentioned = message(undefined, {
+        message_id: 12,
+        media_group_id: 'album-form-order',
+        text: undefined,
+        caption: '@intake_bot',
+        caption_entities: [{ type: 'mention', offset: 0, length: 11 }],
+      });
+      const form = message(undefined, {
+        message_id: 11,
+        media_group_id: 'album-form-order',
+        text: undefined,
+        entities: undefined,
+        caption: 'Что посчитать: форма из первого сообщения',
+        caption_entities: undefined,
+      });
+
+      const results = [
+        handleWorkRequestInbound({ db, update: { message: mentioned }, deps: testDeps }),
+        handleWorkRequestInbound({ db, update: { message: form }, deps: testDeps }),
+      ];
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect((await Promise.all(results)).map((result) => result.action).sort())
+        .toEqual(['accepted', 'duplicate']);
+      expect(testDeps.createTelegramRequest).toHaveBeenCalledWith(
+        testDeps.gql,
+        expect.objectContaining({ brief: 'форма из первого сообщения' }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lets only the newly inserted handler create Twenty for overlapping delivery', async () => {
+    const db = seedQuoteSlot(openMigrated());
+    const testDeps = deps();
+    const update = { message: message('@intake_bot\nЧто посчитать: один запрос') };
+
+    const results = await Promise.all([
+      handleWorkRequestInbound({ db, update, deps: testDeps }),
+      handleWorkRequestInbound({ db, update, deps: testDeps }),
+    ]);
+
+    expect(results.map((result) => result.action).sort()).toEqual(['accepted', 'duplicate']);
+    expect(testDeps.createTelegramRequest).toHaveBeenCalledTimes(1);
+    expect(testDeps.callTelegram).toHaveBeenCalledTimes(1);
+  });
+
   it('ignores bot messages, unconfigured topics, and mentions of another bot', async () => {
     const db = seedQuoteSlot(openMigrated());
     const testDeps = deps();

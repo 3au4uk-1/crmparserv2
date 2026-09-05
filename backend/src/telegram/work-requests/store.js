@@ -29,36 +29,60 @@ export function insertWorkRequestLink(db, row) {
   const chatId = String(row.chatId ?? '').trim();
   const sourceMessageId = Number(row.sourceMessageId);
 
-  const existing = db
-    .prepare(
-      `SELECT * FROM telegram_work_requests
-       WHERE chat_id = ? AND source_message_id = ?`,
-    )
-    .get(chatId, sourceMessageId);
-  if (existing) return mapRow(existing);
+  const findExisting = () => {
+    const byMessage = db
+      .prepare(
+        `SELECT * FROM telegram_work_requests
+         WHERE chat_id = ? AND source_message_id = ?`,
+      )
+      .get(chatId, sourceMessageId);
+    if (byMessage) return byMessage;
+    const mediaGroupId = String(row.mediaGroupId ?? '').trim();
+    if (!mediaGroupId) return null;
+    return db
+      .prepare(
+        `SELECT * FROM telegram_work_requests
+         WHERE chat_id = ? AND media_group_id = ?`,
+      )
+      .get(chatId, mediaGroupId);
+  };
+
+  const existing = findExisting();
+  if (existing) return { ...mapRow(existing), created: false };
 
   const requestNumber = allocateRequestNumber(db);
-  const info = db
-    .prepare(
-      `INSERT INTO telegram_work_requests
-        (request_number, chat_id, thread_id, source_message_id,
-         media_group_id, requester_user_id, requester_username, requester_name)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      requestNumber,
-      chatId,
-      Number(row.threadId),
-      sourceMessageId,
-      row.mediaGroupId ?? null,
-      row.requesterUserId ?? null,
-      row.requesterUsername ?? null,
-      row.requesterName ?? null,
-    );
+  let info;
+  try {
+    info = db
+      .prepare(
+        `INSERT INTO telegram_work_requests
+          (request_number, chat_id, thread_id, source_message_id,
+           media_group_id, requester_user_id, requester_username, requester_name)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        requestNumber,
+        chatId,
+        Number(row.threadId),
+        sourceMessageId,
+        row.mediaGroupId ?? null,
+        row.requesterUserId ?? null,
+        row.requesterUsername ?? null,
+        row.requesterName ?? null,
+      );
+  } catch (error) {
+    if (!String(error?.code ?? '').startsWith('SQLITE_CONSTRAINT')) throw error;
+    const conflicted = findExisting();
+    if (!conflicted) throw error;
+    return { ...mapRow(conflicted), created: false };
+  }
 
-  return mapRow(
-    db.prepare(`SELECT * FROM telegram_work_requests WHERE id = ?`).get(info.lastInsertRowid),
-  );
+  return {
+    ...mapRow(
+      db.prepare(`SELECT * FROM telegram_work_requests WHERE id = ?`).get(info.lastInsertRowid),
+    ),
+    created: true,
+  };
 }
 
 export function deleteWorkRequestLink(db, id) {

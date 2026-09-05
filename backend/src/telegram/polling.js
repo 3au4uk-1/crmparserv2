@@ -42,14 +42,16 @@ export async function pollOnce(db, state, deps = {}) {
     allowed_updates: ALLOWED_UPDATES,
   });
 
-  for (const update of updates) {
-    state.offset = update.update_id + 1;
-    try {
-      await process(db, update);
-    } catch (err) {
-      console.error('[telegram] polling update error:', err.message);
-    }
-  }
+  await Promise.all(
+    updates.map(async (update) => {
+      state.offset = Math.max(state.offset, update.update_id + 1);
+      try {
+        await process(db, update);
+      } catch (err) {
+        console.error('[telegram] polling update error:', err.message);
+      }
+    }),
+  );
   return { idle: false };
 }
 
