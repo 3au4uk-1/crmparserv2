@@ -252,6 +252,25 @@ describe('handleTelegramRequestRecordEvent', () => {
     expect(updateTelegramRequest).not.toHaveBeenCalled();
   });
 
+    it('does not rewrite no_link error when a later field changes', async () => {
+    const db = dbWithLink();
+    db.prepare('DELETE FROM telegram_work_requests').run();
+    const publish = vi.fn();
+    const updateTelegramRequest = vi.fn();
+    const result = await handleTelegramRequestRecordEvent({
+      db,
+      payload: donePayload(
+        { publishError: 'нет связки с чатом', republishRequested: false },
+        ['positionName'],
+      ),
+      deps: { publishWorkRequestReply: publish, updateTelegramRequest },
+    });
+
+    expect(result.action).toBe('ignore');
+    expect(publish).not.toHaveBeenCalled();
+    expect(updateTelegramRequest).not.toHaveBeenCalled();
+  });
+
   it('ignores an empty updatedFields echo after writing a missing-link error', async () => {
     const db = dbWithLink();
     db.prepare('DELETE FROM telegram_work_requests').run();

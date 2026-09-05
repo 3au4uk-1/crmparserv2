@@ -48,6 +48,9 @@ export async function handleTelegramRequestRecordEvent({ db, payload, deps = {} 
   const updateTelegramRequest = makeUpdater(deps);
   const link = getWorkRequestLinkByTwentyId(db, after.id);
   if (!link) {
+    if (after.publishError === 'нет связки с чатом' && !after.republishRequested) {
+      return { action: 'ignore' };
+    }
     if (updateTelegramRequest) {
       await updateTelegramRequest(after.id, { publishError: 'нет связки с чатом' });
     }
