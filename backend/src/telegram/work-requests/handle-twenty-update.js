@@ -29,9 +29,18 @@ export async function handleTelegramRequestRecordEvent({ db, payload, deps = {} 
   const updatedFields = Array.isArray(payload?.updatedFields) ? payload.updatedFields : [];
   const selfWriteFields = new Set(['publishError', 'republishRequested', 'updatedAt']);
   if (
-    updatedFields.length > 0
-    && updatedFields.every((field) => selfWriteFields.has(field))
-    && !after.republishRequested
+    !after.republishRequested
+    && (
+      (
+        updatedFields.length > 0
+        && updatedFields.every((field) => selfWriteFields.has(field))
+      )
+      || (
+        updatedFields.length === 0
+        && typeof after.publishError === 'string'
+        && after.publishError.length > 0
+      )
+    )
   ) {
     return { action: 'ignore' };
   }

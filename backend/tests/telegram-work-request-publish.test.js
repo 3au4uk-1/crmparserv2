@@ -221,6 +221,56 @@ describe('handleTelegramRequestRecordEvent', () => {
     expect(updateTelegramRequest).toHaveBeenCalledWith('tw-1', { publishError: '' });
   });
 
+  it('publishes a never-published DONE card when updatedFields is empty', async () => {
+    const publish = vi.fn().mockResolvedValue({});
+    const updateTelegramRequest = vi.fn();
+    const result = await handleTelegramRequestRecordEvent({
+      db: dbWithLink(),
+      payload: donePayload({ publishError: '', republishRequested: false }, []),
+      deps: { publishWorkRequestReply: publish, updateTelegramRequest },
+    });
+
+    expect(result.action).toBe('published');
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({ mention: true }));
+    expect(updateTelegramRequest).not.toHaveBeenCalled();
+  });
+
+  it('ignores an empty updatedFields echo after a failed publish', async () => {
+    const publish = vi.fn();
+    const updateTelegramRequest = vi.fn();
+    const result = await handleTelegramRequestRecordEvent({
+      db: dbWithLink(),
+      payload: donePayload(
+        { publishError: 'Telegram 400', republishRequested: false },
+        [],
+      ),
+      deps: { publishWorkRequestReply: publish, updateTelegramRequest },
+    });
+
+    expect(result.action).toBe('ignore');
+    expect(publish).not.toHaveBeenCalled();
+    expect(updateTelegramRequest).not.toHaveBeenCalled();
+  });
+
+  it('ignores an empty updatedFields echo after writing a missing-link error', async () => {
+    const db = dbWithLink();
+    db.prepare('DELETE FROM telegram_work_requests').run();
+    const publish = vi.fn();
+    const updateTelegramRequest = vi.fn();
+    const result = await handleTelegramRequestRecordEvent({
+      db,
+      payload: donePayload(
+        { publishError: 'нет связки с чатом', republishRequested: false },
+        [],
+      ),
+      deps: { publishWorkRequestReply: publish, updateTelegramRequest },
+    });
+
+    expect(result.action).toBe('ignore');
+    expect(publish).not.toHaveBeenCalled();
+    expect(updateTelegramRequest).not.toHaveBeenCalled();
+  });
+
   it('does not publish identical DONE text again', async () => {
     const publish = vi.fn();
     const result = await handleTelegramRequestRecordEvent({
