@@ -62,4 +62,4 @@ Test Files  2 passed (2)
 
 Command: `cd backend && npm test -- tests/telegram-work-request-twenty.test.js tests/telegram-work-request-files.test.js`
 
-**Commit:** _(filled after commit)_
+**Commit:** `077394e` — fix: reject Twenty create/update responses missing record id
