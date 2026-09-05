@@ -49,13 +49,12 @@ function dbWithLink({ lastPublishedText = null } = {}) {
   return db;
 }
 
-function donePayload(after, before = { stage: 'IN_PROGRESS' }) {
-  const record = { id: 'tw-1', stage: 'DONE', replyText: 'Готово', ...after };
+function donePayload(after = {}, updatedFields = ['stage'], eventName = 'telegramRequest.updated') {
   return {
-    eventName: 'telegramRequest.updated',
+    eventName,
     objectMetadata: { nameSingular: 'telegramRequest' },
-    record,
-    properties: { before, after: record },
+    record: { id: 'tw-1', stage: 'DONE', replyText: 'Готово', ...after },
+    updatedFields,
   };
 }
 
@@ -103,6 +102,34 @@ describe('publishWorkRequestReply', () => {
     });
     expect(getWorkRequestLinkByTwentyId(db, 'tw-1').lastPublishedText).toBe('Готово');
   });
+
+  it('sends a new reply and stores its id when the accepted message is missing', async () => {
+    const db = dbWithLink();
+    const link = getWorkRequestLinkByTwentyId(db, 'tw-1');
+    updateWorkRequestLink(db, link.id, { botMessageId: null });
+    const callTelegram = vi.fn().mockResolvedValue({ message_id: 123 });
+
+    await publishWorkRequestReply({
+      db,
+      token: 'token',
+      link: getWorkRequestLinkByTwentyId(db, 'tw-1'),
+      replyText: 'Готово',
+      mention: false,
+      callTelegram,
+    });
+
+    expect(callTelegram).toHaveBeenCalledWith('token', 'sendMessage', {
+      chat_id: '-1001',
+      message_thread_id: 12,
+      reply_to_message_id: 11,
+      text: 'Готово',
+      parse_mode: 'HTML',
+    });
+    expect(getWorkRequestLinkByTwentyId(db, 'tw-1')).toEqual(expect.objectContaining({
+      botMessageId: 123,
+      lastPublishedText: 'Готово',
+    }));
+  });
 });
 
 describe('handleTelegramRequestRecordEvent', () => {
@@ -145,17 +172,32 @@ describe('handleTelegramRequestRecordEvent', () => {
     expect(publish).not.toHaveBeenCalled();
   });
 
-  it('reverts DONE without replyText', async () => {
+  it('reverts an unpublished DONE card without replyText to NEW', async () => {
     const updateTelegramRequest = vi.fn();
     const publish = vi.fn();
     const result = await handleTelegramRequestRecordEvent({
       db: dbWithLink(),
-      payload: donePayload({ replyText: '' }),
+      payload: donePayload({ replyText: '' }, ['stage']),
       deps: { updateTelegramRequest, publishWorkRequestReply: publish },
     });
 
     expect(result.action).toBe('reverted');
     expect(publish).not.toHaveBeenCalled();
+    expect(updateTelegramRequest).toHaveBeenCalledWith('tw-1', {
+      stage: 'NEW',
+      publishError: 'Сначала заполни «Ответ в чат»',
+    });
+  });
+
+  it('reverts a previously published DONE card without replyText to IN_PROGRESS', async () => {
+    const updateTelegramRequest = vi.fn();
+    const result = await handleTelegramRequestRecordEvent({
+      db: dbWithLink({ lastPublishedText: 'Старый ответ' }),
+      payload: donePayload({ replyText: '' }, ['replyText']),
+      deps: { updateTelegramRequest, publishWorkRequestReply: vi.fn() },
+    });
+
+    expect(result.action).toBe('reverted');
     expect(updateTelegramRequest).toHaveBeenCalledWith('tw-1', {
       stage: 'IN_PROGRESS',
       publishError: 'Сначала заполни «Ответ в чат»',
@@ -164,10 +206,11 @@ describe('handleTelegramRequestRecordEvent', () => {
 
   it('publishes and mentions on the first transition to DONE', async () => {
     const publish = vi.fn().mockResolvedValue({});
+    const updateTelegramRequest = vi.fn();
     const result = await handleTelegramRequestRecordEvent({
       db: dbWithLink(),
-      payload: donePayload(),
-      deps: { publishWorkRequestReply: publish, updateTelegramRequest: vi.fn() },
+      payload: donePayload({ publishError: 'Старая ошибка' }, ['stage']),
+      deps: { publishWorkRequestReply: publish, updateTelegramRequest },
     });
 
     expect(result.action).toBe('published');
@@ -175,16 +218,14 @@ describe('handleTelegramRequestRecordEvent', () => {
       replyText: 'Готово',
       mention: true,
     }));
+    expect(updateTelegramRequest).toHaveBeenCalledWith('tw-1', { publishError: '' });
   });
 
   it('does not publish identical DONE text again', async () => {
     const publish = vi.fn();
     const result = await handleTelegramRequestRecordEvent({
       db: dbWithLink({ lastPublishedText: 'Готово' }),
-      payload: donePayload(
-        { republishRequested: false },
-        { stage: 'DONE', replyText: 'Готово' },
-      ),
+      payload: donePayload({ republishRequested: false }, ['positionName']),
       deps: { publishWorkRequestReply: publish, updateTelegramRequest: vi.fn() },
     });
 
@@ -199,7 +240,7 @@ describe('handleTelegramRequestRecordEvent', () => {
       db: dbWithLink({ lastPublishedText: 'Старый ответ' }),
       payload: donePayload(
         { republishRequested: true, notifyOnRepublish: false },
-        { stage: 'DONE', replyText: 'Старый ответ' },
+        ['republishRequested'],
       ),
       deps: { publishWorkRequestReply: publish, updateTelegramRequest },
     });
@@ -210,6 +251,51 @@ describe('handleTelegramRequestRecordEvent', () => {
       republishRequested: false,
       publishError: '',
     });
+  });
+
+  it('ignores the webhook caused by clearing republish fields', async () => {
+    const publish = vi.fn();
+    const updateTelegramRequest = vi.fn();
+    const result = await handleTelegramRequestRecordEvent({
+      db: dbWithLink({ lastPublishedText: 'Готово' }),
+      payload: donePayload(
+        { republishRequested: false, publishError: '' },
+        ['republishRequested', 'publishError'],
+      ),
+      deps: { publishWorkRequestReply: publish, updateTelegramRequest },
+    });
+
+    expect(result.action).toBe('ignore');
+    expect(publish).not.toHaveBeenCalled();
+    expect(updateTelegramRequest).not.toHaveBeenCalled();
+  });
+
+  it('ignores a publishError-only update on a DONE card', async () => {
+    const publish = vi.fn();
+    const updateTelegramRequest = vi.fn();
+    const result = await handleTelegramRequestRecordEvent({
+      db: dbWithLink(),
+      payload: donePayload({ publishError: 'Telegram unavailable' }, ['publishError']),
+      deps: { publishWorkRequestReply: publish, updateTelegramRequest },
+    });
+
+    expect(result.action).toBe('ignore');
+    expect(publish).not.toHaveBeenCalled();
+    expect(updateTelegramRequest).not.toHaveBeenCalled();
+  });
+
+  it('ignores deleted events even when the record is DONE', async () => {
+    const publish = vi.fn();
+    const updateTelegramRequest = vi.fn();
+    const result = await handleTelegramRequestRecordEvent({
+      db: dbWithLink(),
+      payload: donePayload({}, [], 'telegramRequest.deleted'),
+      deps: { publishWorkRequestReply: publish, updateTelegramRequest },
+    });
+
+    expect(result.action).toBe('ignore');
+    expect(publish).not.toHaveBeenCalled();
+    expect(updateTelegramRequest).not.toHaveBeenCalled();
   });
 
   it('ignores non-DONE stages without touching Telegram', async () => {

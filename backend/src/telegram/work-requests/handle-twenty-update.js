@@ -19,9 +19,22 @@ function makeUpdater(deps) {
 
 export async function handleTelegramRequestRecordEvent({ db, payload, deps = {} }) {
   const after = payload?.record || payload?.properties?.after;
-  const before = payload?.properties?.before;
+  const eventSuffix = payload?.eventName?.split('.').at(-1);
+  if (eventSuffix && !['created', 'updated'].includes(eventSuffix)) {
+    return { action: 'ignore' };
+  }
   if (!after?.id) return { action: 'ignore' };
   if (after.stage !== 'DONE') return { action: 'ignore' };
+
+  const updatedFields = Array.isArray(payload?.updatedFields) ? payload.updatedFields : [];
+  const selfWriteFields = new Set(['publishError', 'republishRequested', 'updatedAt']);
+  if (
+    updatedFields.length > 0
+    && updatedFields.every((field) => selfWriteFields.has(field))
+    && !after.republishRequested
+  ) {
+    return { action: 'ignore' };
+  }
 
   const updateTelegramRequest = makeUpdater(deps);
   const link = getWorkRequestLinkByTwentyId(db, after.id);
@@ -36,23 +49,18 @@ export async function handleTelegramRequestRecordEvent({ db, payload, deps = {} 
   if (!replyText.trim()) {
     if (updateTelegramRequest) {
       await updateTelegramRequest(after.id, {
-        stage: before?.stage || 'IN_PROGRESS',
+        stage: link.lastPublishedText ? 'IN_PROGRESS' : 'NEW',
         publishError: 'Сначала заполни «Ответ в чат»',
       });
     }
     return { action: 'reverted' };
   }
 
-  const firstDoneTransition = before?.stage !== 'DONE';
-  if (
-    !firstDoneTransition
-    && replyText === link.lastPublishedText
-    && !after.republishRequested
-  ) {
+  if (replyText === link.lastPublishedText && !after.republishRequested) {
     return { action: 'noop' };
   }
 
-  const mention = firstDoneTransition
+  const mention = !link.lastPublishedText
     ? true
     : Boolean(after.republishRequested && after.notifyOnRepublish);
   const publish = deps.publishWorkRequestReply ?? defaultPublish;
@@ -80,6 +88,8 @@ export async function handleTelegramRequestRecordEvent({ db, payload, deps = {} 
       republishRequested: false,
       publishError: '',
     });
+  } else if (!link.lastPublishedText && after.publishError && updateTelegramRequest) {
+    await updateTelegramRequest(after.id, { publishError: '' });
   }
   return { action: 'published' };
 }

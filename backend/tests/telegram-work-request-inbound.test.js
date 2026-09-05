@@ -113,6 +113,32 @@ describe('handleWorkRequestInbound', () => {
       .toEqual({ twenty_id: 'tw-1', bot_message_id: 99 });
   });
 
+  it('keeps the linked Twenty request when the accepted reply fails', async () => {
+    const db = seedQuoteSlot(openMigrated());
+    const error = new Error('Telegram unavailable');
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const testDeps = deps({
+      callTelegram: vi.fn().mockRejectedValue(error),
+    });
+    try {
+      const result = await handleWorkRequestInbound({
+        db,
+        update: { message: message('@intake_bot\nЧто посчитать: брендинг 1') },
+        deps: testDeps,
+      });
+
+      expect(result).toEqual({ handled: true, action: 'accepted' });
+      expect(db.prepare('SELECT twenty_id, bot_message_id FROM telegram_work_requests').get())
+        .toEqual({ twenty_id: 'tw-1', bot_message_id: null });
+      expect(consoleError).toHaveBeenCalledWith(
+        'Failed to send Telegram work request accepted message',
+        error,
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it('removes the unfinished link and replies when Twenty creation fails', async () => {
     const db = seedQuoteSlot(openMigrated());
     const testDeps = deps({

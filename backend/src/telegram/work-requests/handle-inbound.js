@@ -237,11 +237,16 @@ export async function handleWorkRequestInbound({ db, update, deps = {} }) {
   }
 
   updateWorkRequestLink(db, link.id, { twentyId });
-  const sent = await callTelegram(
-    token,
-    'sendMessage',
-    reply(chatId, threadId, source.message_id, buildAcceptedText(link.requestNumber)),
-  );
-  updateWorkRequestLink(db, link.id, { botMessageId: sent?.message_id ?? null });
+  try {
+    const sent = await callTelegram(
+      token,
+      'sendMessage',
+      reply(chatId, threadId, source.message_id, buildAcceptedText(link.requestNumber)),
+    );
+    updateWorkRequestLink(db, link.id, { botMessageId: sent?.message_id ?? null });
+  } catch (error) {
+    console.error('Failed to send Telegram work request accepted message', error);
+    updateWorkRequestLink(db, link.id, { botMessageId: null });
+  }
   return { handled: true, action: 'accepted' };
 }

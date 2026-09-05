@@ -48,12 +48,27 @@ export async function publishWorkRequestReply({
     requesterName: link.requesterName,
     mention,
   });
-  await callTelegram(token, 'editMessageText', {
-    chat_id: link.chatId,
-    message_id: link.botMessageId,
-    text,
-    parse_mode: 'HTML',
+  let botMessageId = link.botMessageId;
+  if (botMessageId) {
+    await callTelegram(token, 'editMessageText', {
+      chat_id: link.chatId,
+      message_id: botMessageId,
+      text,
+      parse_mode: 'HTML',
+    });
+  } else {
+    const sent = await callTelegram(token, 'sendMessage', {
+      chat_id: link.chatId,
+      message_thread_id: link.threadId,
+      reply_to_message_id: link.sourceMessageId,
+      text,
+      parse_mode: 'HTML',
+    });
+    botMessageId = sent?.message_id ?? null;
+  }
+  updateWorkRequestLink(db, link.id, {
+    botMessageId,
+    lastPublishedText: replyText,
   });
-  updateWorkRequestLink(db, link.id, { lastPublishedText: replyText });
   return { ok: true };
 }
