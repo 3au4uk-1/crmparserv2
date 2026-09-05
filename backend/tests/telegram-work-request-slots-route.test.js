@@ -93,6 +93,28 @@ describe('telegram work-request slot routes', () => {
     expect(get.body).toEqual({ slots: [validSlot] });
   });
 
+  it('drops rows with an empty threadId before validation', async () => {
+    const validSlot = {
+      chatId: '-1002',
+      threadId: 5,
+      companyLabel: 'Спектр',
+      topicRole: 'DESIGN',
+    };
+    const put = await authorized(
+      request(createApp())
+        .put('/api/telegram/work-request-slots')
+        .send({
+          slots: [
+            { chatId: '-1009', threadId: '', companyLabel: 'Черновик', topicRole: 'QUOTE' },
+            validSlot,
+          ],
+        }),
+    );
+
+    expect(put.status).toBe(200);
+    expect(put.body).toEqual({ slots: [validSlot] });
+  });
+
   it('rejects an invalid topicRole', async () => {
     const res = await authorized(
       request(createApp())

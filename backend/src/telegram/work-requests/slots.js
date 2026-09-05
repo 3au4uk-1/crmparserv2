@@ -79,6 +79,7 @@ export function getWorkRequestSlots(db) {
 export function setWorkRequestSlots(db, slots) {
   const validated = (slots ?? [])
     .filter((raw) => String(raw?.chatId ?? '').trim())
+    .filter((raw) => Number.isInteger(Number(raw?.threadId)) && Number(raw.threadId) > 0)
     .map(validateSlot);
   const unique = dedupeSlots(validated);
 

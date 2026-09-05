@@ -1111,6 +1111,47 @@ export function useSaveTelegramMentionForward() {
   });
 }
 
+export function useTelegramBotChats(activeOnly = true, queryOptions = {}) {
+  return useQuery({
+    queryKey: ['telegram-bot-chats', activeOnly],
+    queryFn: () =>
+      api
+        .get('/telegram/bot-chats', { params: { active: activeOnly ? '1' : '0' } })
+        .then((r) => r.data),
+    ...queryOptions,
+  });
+}
+
+export function useTelegramBotTopics(chatId) {
+  return useQuery({
+    queryKey: ['telegram-bot-topics', chatId],
+    queryFn: () =>
+      api.get(`/telegram/bot-chats/${encodeURIComponent(chatId)}/topics`).then((r) => r.data),
+    enabled: Boolean(chatId),
+  });
+}
+
+export function useAddTelegramBotChat() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => api.post('/telegram/bot-chats', body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-bot-chats'] }),
+  });
+}
+
+export function useAddTelegramBotTopic() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ chatId, threadId, name }) =>
+      api
+        .post(`/telegram/bot-chats/${encodeURIComponent(chatId)}/topics`, { threadId, name })
+        .then((r) => r.data),
+    onSuccess: (_data, { chatId }) => {
+      qc.invalidateQueries({ queryKey: ['telegram-bot-topics', chatId] });
+    },
+  });
+}
+
 export function useTelegramWorkRequestSlots() {
   return useQuery({
     queryKey: ['telegram-work-request-slots'],

@@ -481,6 +481,27 @@ export function migrate() {
       ON telegram_work_requests(chat_id, media_group_id)
       WHERE media_group_id IS NOT NULL AND media_group_id != '';
   `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS telegram_bot_chats (
+      chat_id TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      type TEXT NOT NULL DEFAULT '',
+      is_forum INTEGER NOT NULL DEFAULT 0,
+      username TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      source TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS telegram_bot_topics (
+      chat_id TEXT NOT NULL,
+      thread_id INTEGER NOT NULL,
+      name TEXT,
+      source TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (chat_id, thread_id)
+    );
+  `);
+
   db.prepare(
     "INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_work_request_slots', '[]')",
   ).run();

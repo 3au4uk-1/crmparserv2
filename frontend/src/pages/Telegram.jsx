@@ -17,6 +17,10 @@ import {
   useSaveTelegramMentionForward,
   useTelegramWorkRequestSlots,
   useSaveTelegramWorkRequestSlots,
+  useTelegramBotChats,
+  useTelegramBotTopics,
+  useAddTelegramBotChat,
+  useAddTelegramBotTopic,
   useTelegramAutoInviteStatus,
   useTelegramAutoInviteMembers,
   useAddTelegramAutoInviteMember,
@@ -79,13 +83,16 @@ function formatUserbotUserLabel(user) {
 }
 
 function emptyWorkRequestSlot() {
-  return { chatId: '', threadId: '1', companyLabel: '', topicRole: 'QUOTE' };
+  return { chatId: '', threadId: '', companyLabel: '', topicRole: 'QUOTE' };
 }
 
 function WorkRequestSlotRow({ index, slot, chats, allKnownChats, onChange }) {
   const selectedChat = allKnownChats.find((chat) => chat.chatId === slot.chatId);
   const isForum = Boolean(selectedChat?.isForum);
-  const { data: topicsData } = useTelegramTopics(isForum ? slot.chatId : '');
+  const { data: topicsData } = useTelegramBotTopics(isForum ? slot.chatId : '');
+  const addTopic = useAddTelegramBotTopic();
+  const [manualThreadId, setManualThreadId] = useState('');
+  const [manualTopicName, setManualTopicName] = useState('');
   const topics = topicsData?.topics ?? [];
   const chatOptions = useMemo(() => {
     const activeChats = chats.filter((chat) => chat.active);
@@ -99,7 +106,7 @@ function WorkRequestSlotRow({ index, slot, chats, allKnownChats, onChange }) {
     return options;
   }, [chats, allKnownChats, slot.chatId]);
   const topicOptions = useMemo(() => {
-    const options = [{ threadId: '1', name: 'General (thread 1)' }];
+    const options = [];
     for (const topic of topics) {
       const threadId = String(topic.threadId);
       if (!options.some((option) => option.threadId === threadId)) {
@@ -123,7 +130,7 @@ function WorkRequestSlotRow({ index, slot, chats, allKnownChats, onChange }) {
           value={slot.chatId}
           onChange={(e) => {
             const chatId = e.target.value;
-            onChange({ ...slot, chatId, threadId: chatId ? '1' : '' });
+            onChange({ ...slot, chatId, threadId: '' });
           }}
           className="select-field w-full"
         >
@@ -147,12 +154,48 @@ function WorkRequestSlotRow({ index, slot, chats, allKnownChats, onChange }) {
             onChange={(e) => onChange({ ...slot, threadId: e.target.value })}
             className="select-field w-full"
           >
+            <option value="">— выберите топик —</option>
             {topicOptions.map((topic) => (
               <option key={topic.threadId} value={topic.threadId}>
                 {topic.name}
               </option>
             ))}
           </select>
+          <div className="mt-2 flex gap-2">
+            <input
+              type="text"
+              value={manualThreadId}
+              onChange={(e) => setManualThreadId(e.target.value)}
+              className="input-field w-24"
+              placeholder="ID"
+            />
+            <input
+              type="text"
+              value={manualTopicName}
+              onChange={(e) => setManualTopicName(e.target.value)}
+              className="input-field flex-1"
+              placeholder="Имя топика"
+            />
+            <button
+              type="button"
+              className="btn-secondary btn-sm"
+              disabled={!slot.chatId || addTopic.isPending}
+              onClick={async () => {
+                const threadId = Number(manualThreadId);
+                if (!Number.isInteger(threadId) || threadId <= 0) return;
+                await addTopic.mutateAsync({
+                  chatId: slot.chatId,
+                  threadId,
+                  name: manualTopicName.trim(),
+                });
+                onChange({ ...slot, threadId: String(threadId) });
+                setManualThreadId('');
+                setManualTopicName('');
+              }}
+            >
+              +
+            </button>
+          </div>
         </div>
       ) : (
         <div />
@@ -259,6 +302,14 @@ export default function Telegram() {
   const [workRequestSlots, setWorkRequestSlots] = useState(() =>
     Array.from({ length: 9 }, emptyWorkRequestSlot),
   );
+  const {
+    data: botChatsData,
+    isLoading: botChatsLoading,
+    refetch: refetchBotChats,
+  } = useTelegramBotChats(true);
+  const addBotChat = useAddTelegramBotChat();
+  const [botChatIdInput, setBotChatIdInput] = useState('');
+  const botChats = botChatsData?.chats ?? [];
 
   const autoInviteConfigured = Boolean(autoInviteStatus?.configured);
   const autoInviteMembers = autoInviteMembersData?.members ?? [];
@@ -277,15 +328,11 @@ export default function Telegram() {
   const savedBannerChatInActiveList = Boolean(
     bannerChatId && chats.some((c) => c.chatId === bannerChatId),
   );
-  const savedWorkRequestChatMissingActiveList = workRequestSlots.some(
-    (slot) => slot.chatId && !chats.some((chat) => chat.chatId === slot.chatId),
-  );
   const needsInactiveLookup = Boolean(
     !chatsLoading &&
       ((okleykaChatId && !savedChatInActiveList) ||
         (digestChatId && !savedDigestChatInActiveList) ||
-        (bannerChatId && !savedBannerChatInActiveList) ||
-        savedWorkRequestChatMissingActiveList),
+        (bannerChatId && !savedBannerChatInActiveList)),
   );
   const { data: inactiveChatsData, isLoading: inactiveChatsLoading } = useTelegramChats(
     false,
@@ -1849,16 +1896,58 @@ export default function Telegram() {
 
       <Section
         title="Рабочие запросы"
-        description="До девяти топиков для просчёта, разработки и проверки. Пустые строки не сохраняются."
+        description="Отдельный список чатов обычного бота, не userbot. Чаты появляются после сообщения боту или добавления по chat id."
       >
         <div className="space-y-4">
+          <div className="flex flex-wrap gap-2 items-end">
+            <div className="min-w-[16rem] flex-1">
+              <FieldLabel>Добавить чат бота</FieldLabel>
+              <input
+                type="text"
+                value={botChatIdInput}
+                onChange={(e) => setBotChatIdInput(e.target.value)}
+                className="input-field w-full"
+                placeholder="-100…"
+              />
+            </div>
+            <button
+              type="button"
+              className="btn-secondary btn-sm"
+              disabled={addBotChat.isPending || !botChatIdInput.trim()}
+              onClick={async () => {
+                setActionError('');
+                try {
+                  await addBotChat.mutateAsync({ chatId: botChatIdInput.trim() });
+                  setBotChatIdInput('');
+                  setActionSuccess('Чат обычного бота добавлен');
+                } catch (err) {
+                  setActionError(err.response?.data?.error || err.message || 'Не удалось добавить чат бота');
+                }
+              }}
+            >
+              {addBotChat.isPending ? 'Добавление…' : 'Добавить'}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary btn-sm"
+              disabled={botChatsLoading}
+              onClick={() => refetchBotChats()}
+            >
+              Обновить список
+            </button>
+          </div>
+          {botChats.length === 0 && (
+            <p className="text-xs text-ink-faint leading-relaxed">
+              Пока нет чатов обычного бота. Добавьте бота в форум и вставьте chat id, либо напишите в топик с тегом бота.
+            </p>
+          )}
           {workRequestSlots.map((slot, index) => (
             <WorkRequestSlotRow
               key={index}
               index={index}
               slot={slot}
-              chats={chats}
-              allKnownChats={allKnownChats}
+              chats={botChats}
+              allKnownChats={botChats}
               onChange={(nextSlot) =>
                 setWorkRequestSlots((current) =>
                   current.map((item, itemIndex) =>
