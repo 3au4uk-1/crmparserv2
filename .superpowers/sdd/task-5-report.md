@@ -1,83 +1,65 @@
-# Task 5 Report: Repair job runner + startup wire
+# Task 5 Report: Twenty create/update client and file helpers
 
-**Date:** 2026-08-04  
-**Branch:** `staging`  
-**Commit:** `294be88` — Run one-shot free-entry duplicate repair after parser startup.
+**Date:** 2026-09-05  
+**Branch:** `feat/telegram-bot-work-requests`  
+**Commit:** `3af3d5e` — feat: create telegramRequest records and classify oversized files
 
 ## Status: DONE
 
 ## Summary
 
-Added `runFreeEntryDuplicateRepairIfNeeded` async runner with settings flag machine (`running`/`done`/`failed`, 6h stale `running` retry), per-deal repair orchestration (Twenty rename/disambiguate, local `twenty_id` untangle, opportunity amount update), `listLineItemsForRepair` GraphQL helper, and background `setImmediate` kick in `index.js` after listen.
+Parser-side Twenty GraphQL helpers and Telegram file pipeline for work requests:
 
-## Files Changed
-
-| File | Change |
-|------|--------|
-| `backend/src/services/free-entry-duplicate-repair.js` | Flag machine + `repairOneDeal` + `runFreeEntryDuplicateRepairIfNeeded` |
-| `backend/src/services/twenty-line-items-sync.js` | `listLineItemsForRepair` (kommentariy, createdAt, amount) |
-| `backend/src/index.js` | Background repair kick after `app.listen` |
-| `backend/tests/free-entry-duplicate-repair.test.js` | 4 flag-machine tests + existing 11 planner tests |
+- `twenty.js`: `telegramMessageUrl`, `createTelegramRequest` (returns id string), `updateTelegramRequest` using `assertHttpSuccess` + `assertGqlSuccess`.
+- `files.js`: `MAX_FILE_BYTES` (20 MiB), `classifyTelegramFile`, `downloadTelegramFile` (getFile → bot file URL), `uploadRequestFile` wrapper, and `uploadFilesFieldFileForWorkRequest` with multipart upload logic copied from `twenty-tasks.js` (not importing non-exported binding).
 
 ## TDD Evidence
 
-### RED — flag-machine tests before runner (Step 1)
-
-Added 4 tests for `runFreeEntryDuplicateRepairIfNeeded`; runner not yet exported → import/symbol failures expected before implementation.
-
-### GREEN — Step 4
-
-```bash
-cd backend && npm test -- tests/free-entry-duplicate-repair.test.js tests/tony-mapping.test.js tests/deal-items-update.test.js tests/twenty-line-items-sync.test.js
-```
+### RED
 
 ```
- Test Files  4 passed (4)
-      Tests  51 passed (51)
-   Duration  541ms
+Error: Cannot find module '../src/telegram/work-requests/twenty.js'
+Error: Cannot find module '../src/telegram/work-requests/files.js'
+ Test Files  2 failed (2)
 ```
 
-Flag-machine cases covered:
-- skips when `free_entry_duplicate_repair_v1 = done`
-- sets `failed` (not `done`) on hard Twenty auth error
-- sets `done` after full pass with soft per-deal errors logged
-- retries when `running` + `started_at` older than 6 hours
-
-## Commit
+### GREEN
 
 ```
-Run one-shot free-entry duplicate repair after parser startup.
+Test Files  2 passed (2)
+     Tests  7 passed (7)
 ```
+
+Command: `cd backend && npm test -- tests/telegram-work-request-twenty.test.js tests/telegram-work-request-files.test.js`
+
+## Files Created
+
+| File | Purpose |
+|------|---------|
+| `backend/src/telegram/work-requests/twenty.js` | GQL create/update + t.me URL builder |
+| `backend/src/telegram/work-requests/files.js` | Size classify, Telegram download, Twenty upload |
+| `backend/tests/telegram-work-request-twenty.test.js` | 3 tests: URL, create, update |
+| `backend/tests/telegram-work-request-files.test.js` | 4 tests: MAX, classify, download, upload wrapper |
 
 ## Concerns
 
-1. **`createdAt` on Twenty line items** — repair query requests `createdAt`; if workspace schema differs, list call may hard-fail until field name is confirmed.
-2. **Concurrent startup** — two processes could both see non-`done` flag; `running` guard reduces but does not fully eliminate double-run on simultaneous boots.
-3. **Soft failures silent to operators** — per-deal errors only hit console unless log aggregation is wired.
+- `createTelegramRequest` / `updateTelegramRequest` mutations not live until BrandingTwentyView Task 4 is applied; tests mock `gql`.
+- `uploadFilesFieldFileForWorkRequest` duplicates multipart logic from `twenty-tasks.js`; consider exporting shared helper later to avoid drift.
+- `classifyTelegramFile` ignores `mime` today; only size threshold is specified.
 
----
+## Review Fix (2026-09-05)
 
-## Task 5 Review Fixes (2026-08-04)
+**Issue:** `createTelegramRequest` / `updateTelegramRequest` could return `undefined` when GraphQL had no errors but omitted `id`.
 
-### Critical: listLineItemsForRepair assert guards
+**Fix:** Added `assertRecordId` — throws `Error: <context>: Twenty response missing record id` after `assertGqlSuccess`. Two new unit tests mock successful responses without `id` and expect rejection.
 
-`listLineItemsForRepair` now calls `assertHttpSuccess` + `assertGqlSuccess` (passed from `repairOneDeal`) before parsing edges. HTTP 401/5xx and GraphQL errors throw instead of silently returning `[]`.
-
-### Important: isHardTwentyError coverage
-
-Expanded regex to match assert throw patterns: HTTP 404/5xx, `ECONNABORTED`, and `Failed to … in Twenty` fallback messages.
-
-### Tests added
-
-- `running` + `started_at` 1h ago → skip, gql not called
-- gql resolves `{ status: 401, data: {} }` on list → `status: failed`, flag `failed`
-- flag `failed` → retry succeeds → `done`
-
-```bash
-cd backend && npm test -- tests/free-entry-duplicate-repair.test.js
-```
+**Tests after fix:**
 
 ```
- Test Files  1 passed (1)
-      Tests  18 passed (18)
+Test Files  2 passed (2)
+     Tests  9 passed (9)
 ```
+
+Command: `cd backend && npm test -- tests/telegram-work-request-twenty.test.js tests/telegram-work-request-files.test.js`
+
+**Commit:** _(filled after commit)_
