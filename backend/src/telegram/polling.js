@@ -1,4 +1,3 @@
-import { config } from '../config.js';
 import { getDb } from '../db/connection.js';
 import { getTelegramBotToken } from './settings.js';
 import { callTelegram } from './api-client.js';
@@ -70,15 +69,12 @@ async function pollLoop() {
   }
 }
 
-/** Start long polling when TELEGRAM_POLLING is enabled (webhook unreachable, e.g. blocked inbound). */
+/** Start Bot API getUpdates. Webhook inbound is blocked; TELEGRAM_POLLING=false is ignored. */
 export function initTelegramPolling() {
-  if (!config.telegramPolling) {
-    return;
-  }
   if (running) {
     return;
   }
   running = true;
-  console.log('[telegram] long polling enabled (TELEGRAM_POLLING)');
+  console.log('[telegram] long polling enabled');
   pollLoop();
 }
