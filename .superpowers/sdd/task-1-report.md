@@ -123,5 +123,5 @@ cd backend && npm test -- tests/telegram-work-request-parse-form.test.js
 ### Commit
 
 ```
-<SHA> test: expand telegram work-request parse-form coverage
+f24f9ee test: expand telegram work-request parse-form coverage
 ```
