@@ -460,5 +460,30 @@ export function migrate() {
   );
   for (const [key, value] of telegramDefaults) upsertSetting.run(key, value);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS telegram_work_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_number INTEGER NOT NULL UNIQUE,
+      twenty_id TEXT UNIQUE,
+      chat_id TEXT NOT NULL,
+      thread_id INTEGER NOT NULL,
+      source_message_id INTEGER NOT NULL,
+      bot_message_id INTEGER,
+      media_group_id TEXT,
+      requester_user_id TEXT,
+      requester_username TEXT,
+      requester_name TEXT,
+      last_published_text TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (chat_id, source_message_id)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_twr_album
+      ON telegram_work_requests(chat_id, media_group_id)
+      WHERE media_group_id IS NOT NULL AND media_group_id != '';
+  `);
+  db.prepare(
+    "INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_work_request_slots', '[]')",
+  ).run();
+
   console.log('Database migrated successfully');
 }
