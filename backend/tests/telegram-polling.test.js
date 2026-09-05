@@ -63,7 +63,8 @@ describe('telegram polling', () => {
       method === 'getUpdates' ? updates : true,
     );
     const processed = [];
-    const process = vi.fn((db, update) => {
+    const process = vi.fn(async (db, update) => {
+      await Promise.resolve();
       processed.push(update.update_id);
       if (update.update_id === 10) throw new Error('boom');
     });

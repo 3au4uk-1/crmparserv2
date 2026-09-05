@@ -45,7 +45,7 @@ export async function pollOnce(db, state, deps = {}) {
   for (const update of updates) {
     state.offset = update.update_id + 1;
     try {
-      process(db, update);
+      await process(db, update);
     } catch (err) {
       console.error('[telegram] polling update error:', err.message);
     }
