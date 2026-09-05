@@ -106,6 +106,47 @@ describe('publishWorkRequestReply', () => {
 });
 
 describe('handleTelegramRequestRecordEvent', () => {
+  it('reports no_link for a DONE record without a link row', async () => {
+    const db = dbWithLink();
+    db.prepare('DELETE FROM telegram_work_requests').run();
+    const updateTelegramRequest = vi.fn();
+    const publish = vi.fn();
+
+    const result = await handleTelegramRequestRecordEvent({
+      db,
+      payload: donePayload(),
+      deps: { updateTelegramRequest, publishWorkRequestReply: publish },
+    });
+
+    expect(result.action).toBe('no_link');
+    expect(updateTelegramRequest).toHaveBeenCalledWith('tw-1', {
+      publishError: 'нет связки с чатом',
+    });
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it('resolves a missing link before ignoring an IN_PROGRESS record', async () => {
+    const db = dbWithLink();
+    db.prepare('DELETE FROM telegram_work_requests').run();
+    const updateTelegramRequest = vi.fn();
+    const publish = vi.fn();
+
+    const result = await handleTelegramRequestRecordEvent({
+      db,
+      payload: {
+        record: { id: 'tw-1', stage: 'IN_PROGRESS', replyText: 'Черновик' },
+        properties: { before: { stage: 'NEW' } },
+      },
+      deps: { updateTelegramRequest, publishWorkRequestReply: publish },
+    });
+
+    expect(result.action).toBe('no_link');
+    expect(updateTelegramRequest).toHaveBeenCalledWith('tw-1', {
+      publishError: 'нет связки с чатом',
+    });
+    expect(publish).not.toHaveBeenCalled();
+  });
+
   it('reverts DONE without replyText', async () => {
     const updateTelegramRequest = vi.fn();
     const publish = vi.fn();

@@ -1,3 +1,44 @@
+# Task 7 Report: Publish DONE work-request answers
+
+**Date:** 2026-09-05
+**Branch:** `feat/telegram-bot-work-requests`
+**Commit:** `6fca983` — feat: publish work-request answers when Twenty stage is DONE
+
+## Status: DONE
+
+Implemented escaped Telegram HTML publication by editing the original acceptance message, with manager mentions on the first DONE transition and optional mentions on requested republish.
+
+The Twenty webhook now handles `telegramRequest` updates immediately after signature verification without adding the object to the board event journal. Empty DONE answers are reverted, duplicate DONE updates are no-ops, non-DONE stages are ignored, and publication failures are written to `publishError`.
+
+## TDD Evidence
+
+RED:
+
+```text
+Error: Cannot find module '../src/telegram/work-requests/publish.js'
+Test Files 1 failed (1)
+```
+
+GREEN — requested command:
+
+```text
+Test Files  2 passed (2)
+Tests       11 passed (11)
+```
+
+Command: `cd backend && npm test -- tests/telegram-work-request-publish.test.js tests/telegram-events-route.test.js`
+
+Scoped formatting check:
+
+```text
+git diff --check -- backend/src/routes/twenty-webhook.js backend/src/telegram/work-requests/publish.js backend/src/telegram/work-requests/handle-twenty-update.js backend/tests/telegram-work-request-publish.test.js
+Exit code: 0
+```
+
+## Concerns
+
+- The webhook deliberately awaits Telegram publication before returning 200; a slow Telegram request can approach Twenty's five-second retry deadline.
+- Repository-wide `git diff --check` still reports pre-existing trailing whitespace in `.superpowers/sdd/task-2-report.md`; Task 7 files are clean.
 # Task 7 Report: Backfill job, schema, routes, 409
 
 **Status:** DONE  
@@ -96,3 +137,24 @@ cd backend && npx vitest run tests/product-stream-backfill-jobs.test.js tests/tw
    Start at  14:32:28
    Duration  3.30s (transform 481ms, setup 0ms, import 3.38s, tests 177ms, environment 0ms)
 ```
+
+## Task 7 review fix: resolve links before stage handling
+
+Moved work-request link lookup ahead of the stage guard. Any record with an ID but no SQLite link now returns `no_link`, writes `publishError: 'нет связки с чатом'` when an updater is available, and never edits Telegram. Linked `IN_PROGRESS` and `NEW` records remain ignored.
+
+TDD RED:
+
+```text
+expected 'ignore' to be 'no_link'
+Test Files 1 failed (1)
+Tests      1 failed | 9 passed (10)
+```
+
+GREEN:
+
+```text
+Test Files 1 passed (1)
+Tests      10 passed (10)
+```
+
+Command: `cd backend && npm test -- tests/telegram-work-request-publish.test.js`

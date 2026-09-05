@@ -20,7 +20,7 @@ function makeUpdater(deps) {
 export async function handleTelegramRequestRecordEvent({ db, payload, deps = {} }) {
   const after = payload?.record || payload?.properties?.after;
   const before = payload?.properties?.before;
-  if (!after?.id || after.stage !== 'DONE') return { action: 'ignore' };
+  if (!after?.id) return { action: 'ignore' };
 
   const updateTelegramRequest = makeUpdater(deps);
   const link = getWorkRequestLinkByTwentyId(db, after.id);
@@ -30,6 +30,7 @@ export async function handleTelegramRequestRecordEvent({ db, payload, deps = {} 
     }
     return { action: 'no_link' };
   }
+  if (after.stage !== 'DONE') return { action: 'ignore' };
 
   const replyText = String(after.replyText ?? '');
   if (!replyText.trim()) {
