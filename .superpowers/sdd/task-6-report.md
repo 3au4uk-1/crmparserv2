@@ -70,3 +70,22 @@ Tests       18 passed (18)
 ```
 
 Command: `cd backend && npm test -- tests/telegram-work-request-inbound.test.js tests/telegram-work-request-mention.test.js tests/telegram-polling.test.js tests/telegram-work-request-store.test.js`
+
+## Album owner follow-up
+
+After collection, the lowest `message_id` is now the sole album owner. Every other sibling returns `{ handled: true, action: 'album_follower' }` before parsing, sending a reply, inserting a link, or creating a Twenty record.
+
+TDD RED:
+
+```text
+invalid two-item album: expected album_follower/refused, received refused/refused
+```
+
+GREEN:
+
+```text
+Test Files  3 passed (3)
+Tests       16 passed (16)
+```
+
+Command: `cd backend && npm test -- tests/telegram-work-request-inbound.test.js tests/telegram-work-request-mention.test.js tests/telegram-polling.test.js`

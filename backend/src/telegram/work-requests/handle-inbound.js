@@ -148,6 +148,9 @@ export async function handleWorkRequestInbound({ db, update, deps = {} }) {
     (left, right) => Number(left.message_id) - Number(right.message_id),
   );
   const source = orderedMessages[0];
+  if (source.media_group_id && message.message_id !== source.message_id) {
+    return { handled: true, action: 'album_follower' };
+  }
   if (
     source.media_group_id
     && getWorkRequestLinkByAlbum(db, chatId, source.media_group_id)

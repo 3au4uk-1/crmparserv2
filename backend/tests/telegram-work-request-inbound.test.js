@@ -172,7 +172,7 @@ describe('handleWorkRequestInbound', () => {
       await vi.advanceTimersByTimeAsync(1000);
 
       expect((await Promise.all(results)).map((result) => result.action).sort())
-        .toEqual(['accepted', 'duplicate']);
+        .toEqual(['accepted', 'album_follower']);
       expect(downloadTelegramFile).toHaveBeenCalledTimes(2);
       expect(testDeps.createTelegramRequest).toHaveBeenCalledWith(
         testDeps.gql,
@@ -216,11 +216,45 @@ describe('handleWorkRequestInbound', () => {
       await vi.advanceTimersByTimeAsync(1000);
 
       expect((await Promise.all(results)).map((result) => result.action).sort())
-        .toEqual(['accepted', 'duplicate']);
+        .toEqual(['accepted', 'album_follower']);
       expect(testDeps.createTelegramRequest).toHaveBeenCalledWith(
         testDeps.gql,
         expect.objectContaining({ brief: 'форма из первого сообщения' }),
       );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sends exactly one refusal for an invalid two-item album', async () => {
+    vi.useFakeTimers();
+    try {
+      const db = seedQuoteSlot(openMigrated());
+      const testDeps = deps();
+      const first = message(undefined, {
+        message_id: 11,
+        media_group_id: 'invalid-album',
+        text: undefined,
+        caption: '@intake_bot',
+        caption_entities: [{ type: 'mention', offset: 0, length: 11 }],
+      });
+      const second = message(undefined, {
+        message_id: 12,
+        media_group_id: 'invalid-album',
+        text: undefined,
+        entities: undefined,
+      });
+
+      const results = [
+        handleWorkRequestInbound({ db, update: { message: first }, deps: testDeps }),
+        handleWorkRequestInbound({ db, update: { message: second }, deps: testDeps }),
+      ];
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect((await Promise.all(results)).map((result) => result.action).sort())
+        .toEqual(['album_follower', 'refused']);
+      expect(testDeps.callTelegram).toHaveBeenCalledTimes(1);
+      expect(testDeps.createTelegramRequest).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
