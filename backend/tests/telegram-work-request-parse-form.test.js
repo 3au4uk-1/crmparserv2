@@ -20,6 +20,29 @@ describe('parseFormFields', () => {
     expect(fields['бронь']).toBe('123456');
     expect(fields['тз']).toBe('сделать макет');
   });
+
+  it('keeps body lines after an empty ТЗ field', () => {
+    const fields = parseFormFields([
+      '@bot',
+      'ТЗ:',
+      'цвет: красный',
+      'логотип разместить по центру',
+    ].join('\n'));
+
+    expect(fields['тз']).toBe('цвет: красный\nлоготип разместить по центру');
+  });
+
+  it('keeps continuations until the next known field', () => {
+    const fields = parseFormFields([
+      '@bot',
+      'ТЗ: первая строка',
+      'вторая строка',
+      'Бронь: 123456',
+    ].join('\n'));
+
+    expect(fields['тз']).toBe('первая строка\nвторая строка');
+    expect(fields['бронь']).toBe('123456');
+  });
 });
 
 describe('parseWorkRequestForm', () => {

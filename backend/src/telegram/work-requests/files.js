@@ -1,3 +1,5 @@
+import { gql } from '../../services/twenty-gql.js';
+
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
 const UPLOAD_FILES_FIELD_FILE = `
@@ -8,8 +10,81 @@ const UPLOAD_FILES_FIELD_FILE = `
   }
 `;
 
+const TELEGRAM_REQUEST_FILES_FIELD_METADATA = `
+  query TelegramRequestFilesFieldMetadataId($cursor: ConnectionCursor) {
+    objects(paging: { first: 100, after: $cursor }) {
+      pageInfo { hasNextPage endCursor }
+      edges {
+        node {
+          nameSingular
+          fieldsList { id name type }
+        }
+      }
+    }
+  }
+`;
+
+let cachedTelegramRequestFilesFieldMetadataId = null;
+
 function toMetadataUrl(apiUrl) {
   return String(apiUrl).replace(/\/graphql\/?$/, '/metadata');
+}
+
+function assertMetadataResponse(resp) {
+  if (resp.status >= 400) {
+    throw new Error(`resolveTelegramRequestFilesFieldMetadataId: HTTP ${resp.status}`);
+  }
+  const errors = resp.data?.errors;
+  if (errors?.length) throw new Error(errors[0].message);
+}
+
+function findTelegramRequestFilesFieldMetadataId(objects) {
+  for (const object of objects) {
+    if (object.nameSingular !== 'telegramRequest') continue;
+    const fields = object.fieldsList ?? object.fields ?? [];
+    const requestFiles = fields.find(
+      (field) => field.name === 'requestFiles' && String(field.type).toUpperCase() === 'FILES',
+    );
+    if (requestFiles?.id) return requestFiles.id;
+  }
+  return null;
+}
+
+export async function resolveTelegramRequestFilesFieldMetadataId({
+  fieldMetadataId,
+  apiUrl,
+  apiToken,
+  gqlImpl = gql,
+} = {}) {
+  if (fieldMetadataId) return fieldMetadataId;
+  const fromEnv = process.env.TWENTY_TELEGRAM_REQUEST_FILES_FIELD_METADATA_ID?.trim();
+  if (fromEnv) return fromEnv;
+  if (cachedTelegramRequestFilesFieldMetadataId) {
+    return cachedTelegramRequestFilesFieldMetadataId;
+  }
+
+  const metadataUrl = toMetadataUrl(apiUrl);
+  let cursor = null;
+  for (let page = 0; page < 20; page += 1) {
+    const resp = await gqlImpl(
+      metadataUrl,
+      apiToken,
+      TELEGRAM_REQUEST_FILES_FIELD_METADATA,
+      { cursor },
+    );
+    assertMetadataResponse(resp);
+    const connection = resp.data?.data?.objects;
+    const objects = (connection?.edges ?? []).map((edge) => edge.node).filter(Boolean);
+    const found = findTelegramRequestFilesFieldMetadataId(objects);
+    if (found) {
+      cachedTelegramRequestFilesFieldMetadataId = found;
+      return found;
+    }
+    if (!connection?.pageInfo?.hasNextPage || !connection?.pageInfo?.endCursor) break;
+    cursor = connection.pageInfo.endCursor;
+  }
+
+  throw new Error('Twenty telegramRequest requestFiles field metadata not found');
 }
 
 export function classifyTelegramFile({ fileSize }) {
@@ -85,7 +160,7 @@ export async function uploadRequestFile({
   filename,
   contentType,
   fieldMetadataId,
-  uploadFilesFieldFile,
+  uploadFilesFieldFile = uploadFilesFieldFileForWorkRequest,
   ...rest
 }) {
   const result = await uploadFilesFieldFile({

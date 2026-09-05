@@ -13,6 +13,17 @@ export const KINDS = {
 
 const LOGO_URL_KEY = 'ссылка на логотип / шрифт / брендбук';
 const LAYOUTS_URL_KEY = 'ссылка на макеты';
+const FORM_KEYS = new Set([
+  'что посчитать',
+  'тип',
+  'бронь',
+  'тз',
+  'название позиции под брендинг',
+  LOGO_URL_KEY,
+  LAYOUTS_URL_KEY,
+  'комментарий',
+  'сделка',
+]);
 
 const BLANK_VALUES = new Set(['', '-', 'нет', 'файл']);
 
@@ -38,12 +49,20 @@ export function parseFormFields(text) {
   const fields = {};
   if (!text) return fields;
 
+  let currentKey = null;
   for (const line of String(text).split(/\r?\n/)) {
     const match = line.match(/^([^:]+):\s*(.*)$/);
-    if (!match) continue;
-
-    const key = normalizeFieldKey(match[1]);
-    fields[key] = match[2];
+    const key = match ? normalizeFieldKey(match[1]) : null;
+    if (key && FORM_KEYS.has(key)) {
+      currentKey = key;
+      fields[key] = match[2];
+      continue;
+    }
+    if (currentKey) {
+      fields[currentKey] = fields[currentKey]
+        ? `${fields[currentKey]}\n${line}`
+        : line;
+    }
   }
 
   return fields;

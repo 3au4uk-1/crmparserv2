@@ -57,6 +57,7 @@ function deps(overrides = {}) {
     gql: vi.fn(),
     matchOpportunity: vi.fn().mockResolvedValue(null),
     createTelegramRequest: vi.fn().mockResolvedValue('tw-1'),
+    resolveRequestFilesFieldMetadataId: vi.fn().mockResolvedValue('field-runtime-id'),
     ...overrides,
   };
 }
@@ -131,6 +132,122 @@ describe('handleWorkRequestInbound', () => {
       'sendMessage',
       expect.objectContaining({ text: expect.stringContaining('Не удалось взять в работу') }),
     );
+  });
+
+  it('removes the unfinished link and replies when deal matching fails', async () => {
+    const db = seedQuoteSlot(openMigrated());
+    const testDeps = deps({
+      matchOpportunity: vi.fn().mockRejectedValue(new Error('Twenty search unavailable')),
+    });
+
+    const result = await handleWorkRequestInbound({
+      db,
+      update: { message: message('@intake_bot\nЧто посчитать: брендинг 1') },
+      deps: testDeps,
+    });
+
+    expect(result).toEqual({ handled: true, action: 'create_failed' });
+    expect(db.prepare('SELECT COUNT(*) AS count FROM telegram_work_requests').get().count).toBe(0);
+    expect(testDeps.createTelegramRequest).not.toHaveBeenCalled();
+    expect(testDeps.callTelegram).toHaveBeenLastCalledWith(
+      'bot-token',
+      'sendMessage',
+      expect.objectContaining({ text: expect.stringContaining('Не удалось взять в работу') }),
+    );
+  });
+
+  it('uploads a small attachment through the default uploader', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: { uploadFilesFieldFile: { id: 'file-default' } } }),
+    });
+    vi.stubGlobal('fetch', fetchImpl);
+    try {
+      const db = seedQuoteSlot(openMigrated());
+      const testDeps = deps({
+        downloadTelegramFile: vi.fn().mockResolvedValue({
+          buffer: Buffer.from('image'),
+          filename: 'quote.jpg',
+          contentType: 'image/jpeg',
+          fileSize: 5,
+        }),
+        resolveRequestFilesFieldMetadataId: vi.fn().mockResolvedValue('field-runtime-id'),
+      });
+
+      const result = await handleWorkRequestInbound({
+        db,
+        update: {
+          message: message('@intake_bot\nЧто посчитать: брендинг 1', {
+            document: {
+              file_id: 'telegram-file',
+              file_unique_id: 'telegram-unique',
+              file_size: 5,
+              file_name: 'quote.jpg',
+            },
+          }),
+        },
+        deps: testDeps,
+      });
+
+      expect(result).toEqual({ handled: true, action: 'accepted' });
+      expect(testDeps.resolveRequestFilesFieldMetadataId).toHaveBeenCalled();
+      expect(fetchImpl).toHaveBeenCalled();
+      expect(testDeps.createTelegramRequest).toHaveBeenCalledWith(
+        testDeps.gql,
+        expect.objectContaining({
+          requestFiles: [{ fileId: 'file-default', label: 'quote.jpg' }],
+          largeFileUrls: null,
+        }),
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('logs upload failures before falling back to a Telegram file marker', async () => {
+    const error = new Error('upload unavailable');
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const testDeps = deps({
+        downloadTelegramFile: vi.fn().mockResolvedValue({
+          buffer: Buffer.from('image'),
+          filename: 'quote.jpg',
+          contentType: 'image/jpeg',
+          fileSize: 5,
+        }),
+        resolveRequestFilesFieldMetadataId: vi.fn().mockResolvedValue('field-runtime-id'),
+        uploadRequestFile: vi.fn().mockRejectedValue(error),
+      });
+
+      await handleWorkRequestInbound({
+        db: seedQuoteSlot(openMigrated()),
+        update: {
+          message: message('@intake_bot\nЧто посчитать: брендинг 1', {
+            document: {
+              file_id: 'telegram-file',
+              file_unique_id: 'telegram-unique',
+              file_size: 5,
+              file_name: 'quote.jpg',
+            },
+          }),
+        },
+        deps: testDeps,
+      });
+
+      expect(consoleError).toHaveBeenCalledWith(
+        'Failed to upload Telegram work request file',
+        error,
+      );
+      expect(testDeps.createTelegramRequest).toHaveBeenCalledWith(
+        testDeps.gql,
+        expect.objectContaining({
+          requestFiles: [],
+          largeFileUrls: expect.stringContaining('telegram-file:telegram-unique quote.jpg'),
+        }),
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it('collects every file in an album when only one message contains the mention', async () => {

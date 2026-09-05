@@ -125,7 +125,7 @@ describe('handleTelegramRequestRecordEvent', () => {
     expect(publish).not.toHaveBeenCalled();
   });
 
-  it('resolves a missing link before ignoring an IN_PROGRESS record', async () => {
+  it('ignores an IN_PROGRESS record without a link or a Twenty write', async () => {
     const db = dbWithLink();
     db.prepare('DELETE FROM telegram_work_requests').run();
     const updateTelegramRequest = vi.fn();
@@ -140,10 +140,8 @@ describe('handleTelegramRequestRecordEvent', () => {
       deps: { updateTelegramRequest, publishWorkRequestReply: publish },
     });
 
-    expect(result.action).toBe('no_link');
-    expect(updateTelegramRequest).toHaveBeenCalledWith('tw-1', {
-      publishError: 'нет связки с чатом',
-    });
+    expect(result.action).toBe('ignore');
+    expect(updateTelegramRequest).not.toHaveBeenCalled();
     expect(publish).not.toHaveBeenCalled();
   });
 

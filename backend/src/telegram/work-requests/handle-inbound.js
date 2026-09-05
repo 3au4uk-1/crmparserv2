@@ -7,6 +7,7 @@ import { buildAcceptedText, buildCreateFailedText, buildRefusalText } from './co
 import {
   classifyTelegramFile,
   downloadTelegramFile as defaultDownload,
+  resolveTelegramRequestFilesFieldMetadataId as defaultResolveRequestFilesFieldMetadataId,
   uploadRequestFile as defaultUpload,
 } from './files.js';
 import { matchOpportunity as defaultMatch } from './match-deal.js';
@@ -21,7 +22,6 @@ import {
 } from './store.js';
 import { createTelegramRequest as defaultCreate, telegramMessageUrl } from './twenty.js';
 
-const REQUEST_FILES_FIELD_ID = '2f089d5d-b69c-4b5d-aaaa-ba10d58e7337';
 const albums = new Map();
 
 export async function getBotUsername(db, { token, callTelegram = defaultCallTelegram } = {}) {
@@ -105,15 +105,20 @@ async function prepareFiles(files, sourceUrl, deps) {
         unavailable.push(fileMarker(file));
         continue;
       }
+      const fieldMetadataId = await deps.resolveRequestFilesFieldMetadataId({
+        apiUrl: config.twentyApiUrl,
+        apiToken: config.twentyApiToken,
+      });
       const uploaded = await deps.uploadRequestFile({
         ...downloaded,
         filename: file.filename || downloaded.filename,
-        fieldMetadataId: REQUEST_FILES_FIELD_ID,
+        fieldMetadataId,
         apiUrl: config.twentyApiUrl,
         apiToken: config.twentyApiToken,
       });
       requestFiles.push({ fileId: uploaded.fileId, label: file.filename || downloaded.filename });
-    } catch {
+    } catch (error) {
+      console.error('Failed to upload Telegram work request file', error);
       unavailable.push(fileMarker(file));
     }
   }
@@ -189,17 +194,19 @@ export async function handleWorkRequestInbound({ db, update, deps = {} }) {
     token,
     callTelegram,
     downloadTelegramFile: deps.downloadTelegramFile ?? defaultDownload,
+    resolveRequestFilesFieldMetadataId:
+      deps.resolveRequestFilesFieldMetadataId ?? defaultResolveRequestFilesFieldMetadataId,
     uploadRequestFile: deps.uploadRequestFile ?? defaultUpload,
   });
   const gql = deps.gql ?? createTwentyGqlClient(config.twentyApiUrl, config.twentyApiToken);
-  const opportunity = await (deps.matchOpportunity ?? defaultMatch)({
-    gql,
-    booking: parsed.data.booking,
-    dealName: parsed.data.dealName,
-  });
 
   let twentyId;
   try {
+    const opportunity = await (deps.matchOpportunity ?? defaultMatch)({
+      gql,
+      booking: parsed.data.booking,
+      dealName: parsed.data.dealName,
+    });
     twentyId = await (deps.createTelegramRequest ?? defaultCreate)(gql, {
       name: `Запрос #${link.requestNumber}`,
       requestNumber: link.requestNumber,
