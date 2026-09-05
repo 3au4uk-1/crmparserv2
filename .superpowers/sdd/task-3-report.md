@@ -99,5 +99,5 @@ Command: `cd backend && npm test -- tests/telegram-work-request-copy.test.js tes
 ### Commit
 
 ```
-(fix commit SHA after commit)
+ad79601 fix: validate 6-digit booking and assert HTTP on opportunity search
 ```
