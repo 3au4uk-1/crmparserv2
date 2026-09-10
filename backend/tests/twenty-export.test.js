@@ -144,6 +144,42 @@ describe('mapLineItemToRow', () => {
     ).not.toBeNull();
   });
 
+  const restorationList = [{ id: 1, pattern: 'баннер', matchType: 'substring' }];
+
+  it('skips restoration match by default', () => {
+    expect(
+      mapLineItemToRow(base, {
+        from: '2026-06-01',
+        to: '2026-06-30',
+        includeCancelled: false,
+        restorationList,
+      }),
+    ).toBeNull();
+  });
+
+  it('includes restoration when includeRestoration is true', () => {
+    expect(
+      mapLineItemToRow(base, {
+        from: '2026-06-01',
+        to: '2026-06-30',
+        includeCancelled: false,
+        includeRestoration: true,
+        restorationList,
+      }),
+    ).not.toBeNull();
+  });
+
+  it('does not skip when restoration list is empty', () => {
+    expect(
+      mapLineItemToRow(base, {
+        from: '2026-06-01',
+        to: '2026-06-30',
+        includeCancelled: false,
+        restorationList: [],
+      }),
+    ).not.toBeNull();
+  });
+
   it('returns null lineSum when quantity missing', () => {
     const row = mapLineItemToRow(
       { ...base, kolichestvo: null },

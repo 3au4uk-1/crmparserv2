@@ -10,6 +10,7 @@ import { assertGqlSuccess, assertHttpSuccess, gql } from './twenty-gql.js';
 import { requireTwentyConfig } from './twenty-config.js';
 import { getExportJob, setExportJobFile, updateExportJob } from './export-jobs.js';
 import { EXPENSE_FIELDS } from './expense-field-names.js';
+import { isRestorationItem } from './restoration.js';
 
 const STAGE_LABEL_BY_VALUE = Object.fromEntries(
   OPPORTUNITY_STAGE_OPTIONS.map((o) => [o.value, o.label])
@@ -80,7 +81,13 @@ const DEAL_ONCE_ROW_KEYS = [...DEAL_EXPENSE_ROW_KEYS, 'amountDeal'];
 /**
  * @returns {object|null} Excel row or null if filtered out
  */
-export function mapLineItemToRow(lineItem, { from, to, includeCancelled = false }) {
+export function mapLineItemToRow(lineItem, {
+  from,
+  to,
+  includeCancelled = false,
+  includeRestoration = false,
+  restorationList = [],
+}) {
   const opportunity = lineItem?.opportunity ?? {};
   const date = resolveEffectiveDate(opportunity);
   if (!date) return null;
@@ -88,6 +95,10 @@ export function mapLineItemToRow(lineItem, { from, to, includeCancelled = false 
 
   const stage = resolveEffectiveStage(lineItem, opportunity);
   if (!includeCancelled && stage === CANCELLED_OPPORTUNITY_STAGE) return null;
+
+  if (!includeRestoration && isRestorationItem(lineItem?.name, restorationList)) {
+    return null;
+  }
 
   const unitPrice = amountMicrosToNumber(lineItem.amount);
   const quantity = parseQuantity(lineItem.kolichestvo);
