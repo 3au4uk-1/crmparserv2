@@ -1,7 +1,7 @@
 import { findDealItemByTwentyId } from './twenty-line-item-api.js';
 import { getCachedPatternLists } from './pattern-lists-cache.js';
 import { getItemsForTwenty } from './twenty-items.js';
-import { computeDealItemsTotal, parseQuantityNum } from './twenty-opportunity.js';
+import { computeDealItemsTotal, computeLineItemTotal, parseQuantityNum } from './twenty-opportunity.js';
 
 function computeOpportunityAmountRub(db, deal) {
   const allItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(deal.id);
@@ -36,11 +36,7 @@ export function writeDealItemQuantity(db, twentyLineItemId, kolichestvo) {
   } else {
     const qtyNum = Number(item.quantity_num);
     const oldQty = qtyNum > 0 ? qtyNum : parseQuantityNum(item.quantity);
-    const priceTotal = Number(item.price);
-    const sumTotal = Number(item.sum);
-    const oldTotal = Number.isFinite(priceTotal) && priceTotal >= 0
-      ? priceTotal
-      : (Number.isFinite(sumTotal) && sumTotal >= 0 ? sumTotal : 0);
+    const oldTotal = computeLineItemTotal(item, deal);
     const unit = oldQty > 0 ? oldTotal / oldQty : 0;
     const newTotal = unit * qty;
     db.prepare(`

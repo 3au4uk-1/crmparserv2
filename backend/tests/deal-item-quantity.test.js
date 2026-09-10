@@ -74,6 +74,30 @@ describe('writeDealItemQuantity', () => {
     expectHttpError(() => writeDealItemQuantity(getDb(), 'li-1', 0), 400, 'kolichestvo');
   });
 
+  it('unlocked calendar qty uses sum not unit price when they differ', () => {
+    const db = getDb();
+    const dealResult = db.prepare(`
+      INSERT INTO deals (crm_event_id, deal_key, data_source, title, twenty_id, approval_status)
+      VALUES ('evt-cal-man', 'evt-cal-man#calendar', 'calendar', 'Cal manual', 'opp-cal-man', 'synced')
+    `).run();
+    const dealId = dealResult.lastInsertRowid;
+    db.prepare(`
+      INSERT INTO deal_items (deal_id, name, price, quantity, quantity_num, sum, classification, twenty_id)
+      VALUES (?, 'Ручная строка', 1500, '2', 2, 3000, 'keyword_match', 'li-cal-manual')
+    `).run(dealId);
+
+    writeDealItemQuantity(db, 'li-cal-manual', 4);
+    const row = db.prepare('SELECT * FROM deal_items WHERE twenty_id = ?').get('li-cal-manual');
+    expect(row.amount_locked).toBe(0);
+    expect(row.price).toBe(6000);
+    expect(row.sum).toBe(6000);
+    expect(row.quantity_num).toBe(4);
+
+    const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(row.deal_id);
+    const input = buildLineItemUpdateInput(row, { deal });
+    expect(input.amount.amountMicros).toBe(1_500_000_000);
+  });
+
   it('unlocked calendar qty preserves unit and updates line total', () => {
     const db = getDb();
     const dealResult = db.prepare(`
