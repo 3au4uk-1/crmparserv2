@@ -4,6 +4,7 @@ import { migrate } from '../src/db/migrate.js';
 import { writeDealItemQuantity } from '../src/services/deal-item-quantity.js';
 import { lockDealItemAmount } from '../src/services/deal-item-amount-lock.js';
 import { resetPatternListsCacheForTests } from '../src/services/pattern-lists-cache.js';
+import { buildLineItemUpdateInput } from '../src/services/twenty-line-item.js';
 
 function expectHttpError(fn, status, messagePart) {
   try {
@@ -49,18 +50,24 @@ describe('writeDealItemQuantity', () => {
     const result = writeDealItemQuantity(db, 'li-1', 3);
     const row = db.prepare('SELECT * FROM deal_items WHERE twenty_id = ?').get('li-1');
     expect(row.quantity_num).toBe(3);
+    expect(row.price).toBe(10000);
+    expect(row.sum).toBe(30000);
     expect(row.amount_locked).toBe(0);
     expect(result.kolichestvo).toBe(3);
+    expect(result.opportunityAmountRub).toBe(35000);
+    const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(row.deal_id);
+    const input = buildLineItemUpdateInput(row, { deal });
+    expect(input.amount.amountMicros).toBe(10_000_000_000);
   });
 
   it('locked row keeps unit price and refreshes sum', () => {
     const db = getDb();
     lockDealItemAmount(db, 'li-1', 6000);
-    writeDealItemQuantity(db, 'li-1', 2);
+    writeDealItemQuantity(db, 'li-1', 3);
     const row = db.prepare('SELECT price, sum, amount_locked FROM deal_items WHERE twenty_id = ?').get('li-1');
     expect(row.amount_locked).toBe(1);
     expect(row.price).toBe(6000);
-    expect(row.sum).toBe(12000);
+    expect(row.sum).toBe(18000);
   });
 
   it('throws 400 for non-positive qty', () => {

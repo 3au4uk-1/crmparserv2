@@ -24,7 +24,8 @@ export function writeDealItemQuantity(db, twentyLineItemId, kolichestvo) {
     throw err;
   }
   const { item, deal } = findDealItemByTwentyId(db, twentyLineItemId);
-  if (item.amount_locked) {
+  const refreshSum = Boolean(item.amount_locked) || deal.data_source === 'tony';
+  if (refreshSum) {
     const unit = Number(item.price);
     const price = Number.isFinite(unit) && unit >= 0 ? unit : 0;
     db.prepare(`
