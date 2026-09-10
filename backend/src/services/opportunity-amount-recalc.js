@@ -10,7 +10,7 @@ export const ONE_RUB_MICROS = 1_000_000;
 
 const LIST_LINE_ITEMS_QUERY = `query ListLineItems($oppId: ID!) {
   dealLineItems(filter: { opportunityId: { eq: $oppId } }) {
-    edges { node { id name stage istochnik amount { amountMicros currencyCode } } }
+    edges { node { id name stage istochnik kolichestvo amount { amountMicros currencyCode } } }
   }
 }`;
 
