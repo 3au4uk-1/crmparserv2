@@ -10,6 +10,7 @@ import PageHeader from '../components/ui/PageHeader';
 
 const COLUMNS_STORAGE_KEY = 'export-twenty-columns';
 const DEALS_SHEET_STORAGE_KEY = 'export-twenty-include-deals-sheet';
+const RESTORATION_STORAGE_KEY = 'export-twenty-include-restoration';
 
 function isJobRunning(status) {
   return status === 'queued' || status === 'running';
@@ -35,6 +36,9 @@ export default function ExportTwenty() {
   const [includeCancelled, setIncludeCancelled] = useState(false);
   const [includeDealsSheet, setIncludeDealsSheet] = useState(() =>
     Boolean(readStoredJson(DEALS_SHEET_STORAGE_KEY))
+  );
+  const [includeRestoration, setIncludeRestoration] = useState(() =>
+    Boolean(readStoredJson(RESTORATION_STORAGE_KEY))
   );
   const [selectedColumns, setSelectedColumns] = useState([]);
   const [columnsReady, setColumnsReady] = useState(false);
@@ -66,11 +70,16 @@ export default function ExportTwenty() {
   }, [includeDealsSheet]);
 
   useEffect(() => {
+    localStorage.setItem(RESTORATION_STORAGE_KEY, JSON.stringify(includeRestoration));
+  }, [includeRestoration]);
+
+  useEffect(() => {
     if (!activeJob?.jobId || jobId) return;
     setJobId(activeJob.jobId);
     setFrom(activeJob.from || '');
     setTo(activeJob.to || '');
     setIncludeCancelled(Boolean(activeJob.includeCancelled));
+    setIncludeRestoration(Boolean(activeJob.includeRestoration));
     if (Array.isArray(activeJob.columns) && activeJob.columns.length) {
       setSelectedColumns(activeJob.columns);
     }
@@ -107,7 +116,7 @@ export default function ExportTwenty() {
     }
 
     startExport.mutate(
-      { from, to, includeCancelled, includeDealsSheet, columns: selectedColumns },
+      { from, to, includeCancelled, includeRestoration, includeDealsSheet, columns: selectedColumns },
       {
         onSuccess: (data) => setJobId(data.jobId),
         onError: (err) => {
@@ -183,6 +192,15 @@ export default function ExportTwenty() {
                 onChange={(e) => setIncludeCancelled(e.target.checked)}
               />
               включая отмены
+            </label>
+
+            <label className="flex items-center gap-2 pb-2 text-sm text-ink-muted">
+              <input
+                type="checkbox"
+                checked={includeRestoration}
+                onChange={(e) => setIncludeRestoration(e.target.checked)}
+              />
+              включая реставрацию
             </label>
 
             <label className="flex items-center gap-2 pb-2 text-sm text-ink-muted">
