@@ -50,22 +50,18 @@ describe('lockDealItemAmount', () => {
     `).run(dealId);
   });
 
-  it('sets amount_locked and sum, returns opportunity total', () => {
+  it('sets amount_locked, unit price, and line sum', () => {
     const db = getDb();
     const result = lockDealItemAmount(db, 'li-1', 15000);
 
-    expect(result).toEqual({
-      dealId,
-      itemId: expect.any(Number),
-      amountRub: 15000,
-      opportunityAmountRub: 20000,
-    });
-
-    const row = db.prepare('SELECT amount_locked, sum, price, quantity FROM deal_items WHERE twenty_id = ?').get('li-1');
+    const row = db.prepare(
+      'SELECT amount_locked, sum, price, quantity, quantity_num FROM deal_items WHERE twenty_id = ?',
+    ).get('li-1');
     expect(row.amount_locked).toBe(1);
-    expect(row.sum).toBe(15000);
-    expect(row.price).toBe(10000);
-    expect(row.quantity).toBe('2');
+    expect(row.price).toBe(15000);
+    expect(row.sum).toBe(30000);
+    expect(result.amountRub).toBe(15000);
+    expect(result.opportunityAmountRub).toBe(35000); // 30000 + li-2 5000
   });
 
   it('throws 404 when twenty_id is unknown', () => {
@@ -144,7 +140,7 @@ describe('lockDealItemAmount', () => {
     `).run();
 
     const result = lockDealItemAmount(db, 'li-1', 15000);
-    expect(result.opportunityAmountRub).toBe(15000);
+    expect(result.opportunityAmountRub).toBe(30000);
   });
 });
 
