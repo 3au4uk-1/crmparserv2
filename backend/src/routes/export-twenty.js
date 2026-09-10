@@ -31,6 +31,7 @@ router.post('/', (req, res) => {
     from,
     to,
     includeCancelled = false,
+    includeRestoration = false,
     columns,
     includeDealsSheet = false,
   } = req.body ?? {};
@@ -61,6 +62,7 @@ router.post('/', (req, res) => {
     from,
     to,
     includeCancelled: Boolean(includeCancelled),
+    includeRestoration: Boolean(includeRestoration),
     includeDealsSheet: Boolean(includeDealsSheet),
     columns: columnKeys,
     kind: 'twenty',
@@ -69,6 +71,7 @@ router.post('/', (req, res) => {
     from,
     to,
     includeCancelled: Boolean(includeCancelled),
+    includeRestoration: Boolean(includeRestoration),
     includeDealsSheet: Boolean(includeDealsSheet),
     columns: columnKeys,
   }).catch((err) => {
