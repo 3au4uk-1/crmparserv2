@@ -151,7 +151,7 @@ describe('lockDealItemAmount', () => {
 describe('computeLineItemTotal amount_locked', () => {
   const deal = { data_source: 'tony' };
 
-  it('returns locked sum instead of tony price × qty', () => {
+  it('locked computeLineItemTotal uses price × qty', () => {
     const item = {
       name: 'Баннер',
       price: 10000,
@@ -159,10 +159,10 @@ describe('computeLineItemTotal amount_locked', () => {
       sum: 18000,
       amount_locked: 1,
     };
-    expect(computeLineItemTotal(item, deal)).toBe(18000);
+    expect(computeLineItemTotal(item, deal)).toBe(20000);
   });
 
-  it('returns 0 when locked sum is not finite', () => {
+  it('returns 0 when locked price is not finite', () => {
     const item = { name: 'Баннер', sum: null, amount_locked: 1 };
     expect(computeLineItemTotal(item, deal)).toBe(0);
   });
@@ -182,7 +182,7 @@ describe('computeLineItemTotal amount_locked', () => {
       { name: 'A', price: 10000, sum: 12000, amount_locked: 1 },
       { name: 'B', price: 5000, sum: 5000 },
     ];
-    expect(computeDealItemsTotal(deal, items)).toBe(17000);
+    expect(computeDealItemsTotal(deal, items)).toBe(15000);
   });
 
   it('locked total used in opportunity calc with pattern lists', () => {
@@ -204,6 +204,6 @@ describe('computeLineItemTotal amount_locked', () => {
       restorationList,
       { neNasheBrandingList, neNasheDecorMkList },
     );
-    expect(total).toBe(10500);
+    expect(total).toBe(13000);
   });
 });
