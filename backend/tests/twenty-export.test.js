@@ -144,6 +144,42 @@ describe('mapLineItemToRow', () => {
     ).not.toBeNull();
   });
 
+  const restorationList = [{ id: 1, pattern: 'баннер', matchType: 'substring' }];
+
+  it('skips restoration match by default', () => {
+    expect(
+      mapLineItemToRow(base, {
+        from: '2026-06-01',
+        to: '2026-06-30',
+        includeCancelled: false,
+        restorationList,
+      }),
+    ).toBeNull();
+  });
+
+  it('includes restoration when includeRestoration is true', () => {
+    expect(
+      mapLineItemToRow(base, {
+        from: '2026-06-01',
+        to: '2026-06-30',
+        includeCancelled: false,
+        includeRestoration: true,
+        restorationList,
+      }),
+    ).not.toBeNull();
+  });
+
+  it('does not skip when restoration list is empty', () => {
+    expect(
+      mapLineItemToRow(base, {
+        from: '2026-06-01',
+        to: '2026-06-30',
+        includeCancelled: false,
+        restorationList: [],
+      }),
+    ).not.toBeNull();
+  });
+
   it('returns null lineSum when quantity missing', () => {
     const row = mapLineItemToRow(
       { ...base, kolichestvo: null },
@@ -778,6 +814,43 @@ describe('runTwentyExport', () => {
     });
   });
 
+  it('marks the job failed when loadRestorationList throws', async () => {
+    const job = createExportJob({
+      from: '2026-06-01',
+      to: '2026-06-30',
+      kind: 'twenty',
+    });
+
+    await runTwentyExport(
+      job.jobId,
+      { from: job.from, to: job.to, includeRestoration: false },
+      {
+        gqlFn: async () => ({
+          status: 200,
+          data: {
+            data: {
+              dealLineItems: {
+                edges: [],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          },
+        }),
+        requireTwentyConfigFn: () => ({ apiUrl: 'http://gql', apiToken: 'tok' }),
+        getDbFn: () => ({}),
+        loadRestorationListFn: () => {
+          throw new Error('db down');
+        },
+      }
+    );
+
+    const failed = getExportJob(job.jobId);
+    expect(failed.status).toBe('failed');
+    expect(failed.error).toEqual(expect.any(String));
+    expect(failed.error.length).toBeGreaterThan(0);
+    expect(failed.filePath).toBeNull();
+  });
+
   it('keeps pagesFetched on completed jobs after multi-page fetch', async () => {
     const job = createExportJob({
       from: '2026-06-01',
@@ -826,6 +899,8 @@ describe('runTwentyExport', () => {
       {
         gqlFn: fakeGql,
         requireTwentyConfigFn: () => ({ apiUrl: 'http://gql', apiToken: 'tok' }),
+        getDbFn: () => ({}),
+        loadRestorationListFn: () => [],
       }
     );
 

@@ -162,6 +162,24 @@ describe('calendar line items', () => {
   });
 });
 
+describe('locked line items', () => {
+  it('locked update writes unit price, not sum / new qty', () => {
+    const input = buildLineItemUpdateInput(
+      {
+        name: 'Баннер',
+        price: 6000,
+        quantity: '2',
+        quantity_num: 2,
+        sum: 6000,
+        amount_locked: 1,
+      },
+      { deal: { data_source: 'tony' } },
+    );
+    expect(input.kolichestvo).toBe(2);
+    expect(input.amount.amountMicros).toBe(6_000_000_000);
+  });
+});
+
 describe('restoration line items', () => {
   const restorationList = [{ id: 1, pattern: 'колесо фортуны', matchType: 'exact' }];
   const tonyDeal = { data_source: 'tony' };

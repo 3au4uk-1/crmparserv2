@@ -17,8 +17,8 @@ function amountMicrosToRubles(amountMicros) {
 export function upsertManualTwentyLineItem(db, twentyLineItemId, payload) {
   const deal = findDealByTwentyOpportunityId(db, payload.opportunityId);
   const qty = Number(payload.kolichestvo) > 0 ? Number(payload.kolichestvo) : 1;
-  const totalRub = amountMicrosToRubles(payload.amountMicros);
-  const unitPrice = qty > 0 ? totalRub / qty : 0;
+  const unitPrice = amountMicrosToRubles(payload.amountMicros);
+  const totalRub = unitPrice * qty;
 
   const existing = db
     .prepare('SELECT * FROM deal_items WHERE twenty_id = ?')

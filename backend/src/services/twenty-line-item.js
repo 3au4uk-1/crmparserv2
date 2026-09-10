@@ -1,4 +1,4 @@
-import { computeLineItemTotal, parseQuantityNum, DEFAULT_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
+import { computeLineItemTotal, parseQuantityNum, DEFAULT_OPPORTUNITY_STAGE, shouldZeroLineItemAmount } from './twenty-opportunity.js';
 import { findTipRuleMatch } from './tip-rules.js';
 import { resolveTipDetail } from './tip-taxonomy.js';
 import { sortProductStreams, coerceProductStreams } from './product-stream.js';
@@ -17,8 +17,21 @@ function buildLineItemFields(item, options = {}) {
   } = options;
   const qty = item.quantity_num ?? parseQuantityNum(item.quantity);
   const neNasheLists = { neNasheBrandingList, neNasheDecorMkList };
-  const lineTotal = computeLineItemTotal(item, deal, restorationList, neNasheLists);
-  const unitPrice = qty > 0 ? lineTotal / qty : 0;
+  let unitPrice;
+  if (item.amount_locked) {
+    const unit = Number(item.price);
+    unitPrice = Number.isFinite(unit) && unit >= 0 ? unit : 0;
+  } else {
+    const lineTotal = computeLineItemTotal(item, deal, restorationList, neNasheLists);
+    unitPrice = qty > 0 ? lineTotal / qty : 0;
+  }
+  if (shouldZeroLineItemAmount(item.name, {
+    restorationList,
+    neNasheBrandingList,
+    neNasheDecorMkList,
+  })) {
+    unitPrice = 0;
+  }
 
   const fields = {
     kolichestvo: qty,

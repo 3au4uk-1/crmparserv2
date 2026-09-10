@@ -33,8 +33,9 @@ describe('manual-twenty-line-item', () => {
     expect(row.classification).toBe('manual_twenty');
     expect(row.sync_override).toBe('include');
     expect(row.name).toBe('Баннер');
+    expect(row.price).toBe(1500);
+    expect(row.sum).toBe(3000);
     expect(row.quantity_num).toBe(2);
-    expect(row.sum).toBe(1500);
   });
 
   it('upsertManualTwentyLineItem updates existing row', () => {

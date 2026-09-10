@@ -11,6 +11,7 @@ import {
   upsertManualTwentyLineItem,
 } from '../services/manual-twenty-line-item.js';
 import { lockDealItemAmount } from '../services/deal-item-amount-lock.js';
+import { writeDealItemQuantity } from '../services/deal-item-quantity.js';
 import { scheduleListChangeResync } from '../services/list-change-resync.js';
 import { syncDealToTwenty } from '../services/twenty-sync.js';
 import { handleOkleykaSend } from '../telegram/handle-okleyka-send.js';
@@ -81,6 +82,23 @@ router.post('/line-items/:twentyLineItemId/amount', async (req, res, next) => {
     res.json({
       success: true,
       amountRub: result.amountRub,
+      opportunityAmountRub: result.opportunityAmountRub,
+      dealId: result.dealId,
+      sync,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/line-items/:twentyLineItemId/quantity', async (req, res, next) => {
+  try {
+    const db = getDb();
+    const result = writeDealItemQuantity(db, req.params.twentyLineItemId, req.body?.kolichestvo);
+    const sync = await syncDealToTwenty(result.dealId, { ignoreLineItemStageProtection: true });
+    res.json({
+      success: true,
+      kolichestvo: result.kolichestvo,
       opportunityAmountRub: result.opportunityAmountRub,
       dealId: result.dealId,
       sync,

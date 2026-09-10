@@ -41,7 +41,9 @@ export function sumNonCancelledLineAmountsRub(lineItems) {
   for (const item of lineItems || []) {
     if (isCancelledLineItemStage(item?.stage)) continue;
     const micros = item?.amount?.amountMicros ?? item?.amountMicros;
-    if (typeof micros === 'number' && Number.isFinite(micros)) total += micros / 1_000_000;
+    if (typeof micros !== 'number' || !Number.isFinite(micros)) continue;
+    const qty = parseQuantityNum(item?.kolichestvo ?? item?.quantity_num ?? item?.quantity);
+    total += (micros / 1_000_000) * qty;
   }
   return total;
 }
@@ -87,8 +89,10 @@ export function computeLineItemTotal(item, deal, restorationList = [], neNasheLi
     neNasheDecorMkList: decorMk,
   })) return 0;
   if (item.amount_locked) {
-    const locked = Number(item.sum);
-    return Number.isFinite(locked) ? locked : 0;
+    const unit = Number(item.price);
+    if (!Number.isFinite(unit) || unit < 0) return 0;
+    const qty = item.quantity_num ?? parseQuantityNum(item.quantity);
+    return unit * qty;
   }
   const isTony = deal?.data_source === 'tony';
   if (isTony && item.sum != null && Number.isFinite(item.sum)) {
