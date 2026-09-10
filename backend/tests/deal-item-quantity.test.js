@@ -73,4 +73,28 @@ describe('writeDealItemQuantity', () => {
   it('throws 400 for non-positive qty', () => {
     expectHttpError(() => writeDealItemQuantity(getDb(), 'li-1', 0), 400, 'kolichestvo');
   });
+
+  it('unlocked calendar qty preserves unit and updates line total', () => {
+    const db = getDb();
+    const dealResult = db.prepare(`
+      INSERT INTO deals (crm_event_id, deal_key, data_source, title, twenty_id, approval_status)
+      VALUES ('evt-cal', 'evt-cal#calendar', 'calendar', 'Cal deal', 'opp-cal', 'synced')
+    `).run();
+    const dealId = dealResult.lastInsertRowid;
+    db.prepare(`
+      INSERT INTO deal_items (deal_id, name, price, quantity, sum, classification, twenty_id)
+      VALUES (?, 'Баннер календарь', 30000, '5', 30000, 'keyword_match', 'li-cal-1')
+    `).run(dealId);
+
+    writeDealItemQuantity(db, 'li-cal-1', 10);
+    const row = db.prepare('SELECT * FROM deal_items WHERE twenty_id = ?').get('li-cal-1');
+    expect(row.amount_locked).toBe(0);
+    expect(row.price).toBe(60000);
+    expect(row.sum).toBe(60000);
+    expect(row.quantity_num).toBe(10);
+
+    const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(row.deal_id);
+    const input = buildLineItemUpdateInput(row, { deal });
+    expect(input.amount.amountMicros).toBe(6_000_000_000);
+  });
 });

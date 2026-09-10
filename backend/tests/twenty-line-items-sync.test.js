@@ -279,6 +279,25 @@ describe('listLineItemsForOpportunity', () => {
 
     expect(result).toEqual([]);
   });
+
+  it('includes kolichestvo in the GraphQL node selection', async () => {
+    const gql = vi.fn().mockResolvedValue({
+      status: 200,
+      data: { data: { dealLineItems: { edges: [] } } },
+    });
+
+    await listLineItemsForOpportunity(
+      gql,
+      'https://twenty.test/graphql',
+      'token',
+      'opp-1',
+      assertHttpSuccess,
+      assertGqlSuccess,
+    );
+
+    const query = gql.mock.calls[0][2];
+    expect(query).toContain('kolichestvo');
+  });
 });
 
 describe('updateDealLineItemProductStreams', () => {
