@@ -8,6 +8,7 @@ import { findTipRuleMatch } from './tip-rules.js';
 import { logTwentyStep } from './twenty-sync-log.js';
 import { CANCELLED_OPPORTUNITY_STAGE, DEFAULT_OPPORTUNITY_STAGE, ZERO_RUB_AMOUNT } from './twenty-opportunity.js';
 import { MANUAL_TWENTY_CLASSIFICATION } from './manual-twenty-line-item.js';
+import { publishDealLineItemEvent } from './twenty-events/publish-record-event.js';
 
 /** Line items at this stage (or null) may be deleted/updated on re-sync. */
 export const DELETABLE_LINE_ITEM_STAGE = DEFAULT_OPPORTUNITY_STAGE;
@@ -341,6 +342,7 @@ export async function syncLineItemsDiff({
     const resp = await deleteLineItem(gql, apiUrl, apiToken, lineItemId);
     assertHttpSuccess(resp, apiUrl);
     assertGqlSuccess(resp, 'Failed to delete line item in Twenty');
+    publishDealLineItemEvent('DELETED', lineItemId, { before: { id: lineItemId } });
   }
 
   for (const { twentyId, item } of toUpdate) {
@@ -356,6 +358,9 @@ export async function syncLineItemsDiff({
     assertHttpSuccess(resp, apiUrl);
     assertGqlSuccess(resp, `Failed to update line item "${item.name}" in Twenty`);
     db.prepare('UPDATE deal_items SET twenty_id = ? WHERE id = ?').run(twentyId, item.id);
+    publishDealLineItemEvent('UPDATED', twentyId, {
+      after: { id: twentyId, opportunityId: oppId, name: item.name },
+    });
   }
 
   let position = 0;
@@ -383,6 +388,9 @@ export async function syncLineItemsDiff({
     const lineItemId = resp.data?.data?.createDealLineItem?.id;
     if (!lineItemId) throw new Error(`Failed to create line item "${item.name}" in Twenty`);
     db.prepare('UPDATE deal_items SET twenty_id = ? WHERE id = ?').run(lineItemId, item.id);
+    publishDealLineItemEvent('CREATED', lineItemId, {
+      after: { id: lineItemId, opportunityId: oppId, name: item.name },
+    });
     position += 1;
   }
 
