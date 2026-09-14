@@ -1,11 +1,6 @@
 import { getDb } from '../db/connection.js';
 import { loadBlacklist } from './blacklist.js';
 import { getItemsForTwenty } from './twenty-items.js';
-import { syncDealToTwenty } from './twenty-sync.js';
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function getSetting(key) {
   const db = getDb();
@@ -29,46 +24,30 @@ export function shouldAutoApproveDeal(items, blacklist, mode) {
   return false;
 }
 
-export async function processAutoApprovals() {
+export function collectAutoApproveDealIds() {
   const mode = getSetting('approval_mode');
-  if (mode !== 'auto' && mode !== 'semi') {
-    return { mode, processed: 0, synced: 0, failed: 0, skipped: 0, errors: [] };
-  }
-
+  if (mode !== 'auto' && mode !== 'semi') return [];
   const db = getDb();
   const blacklist = loadBlacklist(db);
-  const pending = db
-    .prepare("SELECT id FROM deals WHERE approval_status = 'pending'")
-    .all();
-
-  const results = { mode, processed: 0, synced: 0, failed: 0, skipped: 0, errors: [] };
-
-  for (let i = 0; i < pending.length; i++) {
-    const { id } = pending[i];
+  const pending = db.prepare("SELECT id FROM deals WHERE approval_status = 'pending'").all();
+  const ids = [];
+  for (const { id } of pending) {
     const items = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(id);
-    if (!shouldAutoApproveDeal(items, blacklist, mode)) {
-      results.skipped++;
-      continue;
-    }
-
-    if (results.processed > 0) await delay(1000);
-
-    results.processed++;
-    try {
-      await syncDealToTwenty(id);
-      results.synced++;
-    } catch (err) {
-      results.failed++;
-      results.errors.push({ dealId: id, error: err.message });
-      console.error(`[auto-approve] sync failed for deal ${id}:`, err.message);
-    }
+    if (shouldAutoApproveDeal(items, blacklist, mode)) ids.push(id);
   }
+  return ids;
+}
 
-  if (results.processed > 0) {
-    console.log(
-      `[auto-approve] mode=${mode} processed=${results.processed} synced=${results.synced} failed=${results.failed}`
-    );
-  }
-
-  return results;
+export function processAutoApprovals() {
+  const mode = getSetting('approval_mode');
+  const dealIds = collectAutoApproveDealIds();
+  return {
+    mode,
+    processed: 0,
+    synced: 0,
+    failed: 0,
+    skipped: 0,
+    errors: [],
+    dealIds,
+  };
 }

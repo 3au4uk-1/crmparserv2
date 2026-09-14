@@ -8,8 +8,9 @@ import { parseDealTitle } from './title-parser.js';
 import { loadCompanyCodes } from './companies.js';
 import { classifyItems } from './classifier.js';
 import { formatCrmDateTime, isEventInRange, parseEventDate } from '../utils/crm-dates.js';
-import { syncDealToTwenty, cancelDealInTwenty, restoreDealInTwenty } from './twenty-sync.js';
-import { processAutoApprovals } from './auto-approve.js';
+import { cancelDealInTwenty } from './twenty-sync.js';
+import { collectAutoApproveDealIds } from './auto-approve.js';
+import { runPostParseTwentySync } from './post-parse-twenty-sync.js';
 import { buildOverrideMap, replaceDealItemsPreservingOverrides } from './deal-items-update.js';
 import {
   collectCalendarEventIds,
@@ -499,18 +500,8 @@ export async function runParsing(startDate, endDate) {
       console.log(`[twenty-sync] ${new Date().toISOString()} parse.resync_queue {"count":${dealsToResync.length},"dealIds":${JSON.stringify(dealsToResync)}}`);
     }
 
-    for (let i = 0; i < dealsToResync.length; i++) {
-      const dealId = dealsToResync[i];
-      if (i > 0) await delay(1000);
-      console.log(`[twenty-sync] ${new Date().toISOString()} parse.resync_start {"dealId":${dealId},"index":${i + 1},"total":${dealsToResync.length}}`);
-      try {
-        await syncDealToTwenty(dealId);
-        console.log(`[twenty-sync] ${new Date().toISOString()} parse.resync_done {"dealId":${dealId}}`);
-      } catch (err) {
-        console.error(`[twenty-sync] ${new Date().toISOString()} parse.resync_failed {"dealId":${dealId},"error":${JSON.stringify(err.message)}}`);
-      }
-    }
-
+    let missingDeals = [];
+    let restoredDeals = [];
     if (inRangeCount === 0) {
       console.log(
         `[twenty-sync] ${new Date().toISOString()} parse.skip_calendar_cancel_restore {"reason":"empty_in_range_calendar"}`
@@ -518,7 +509,7 @@ export async function runParsing(startDate, endDate) {
     } else {
       const calendarEventIds = collectCalendarEventIds(events, startDate, endDate);
       const calendarBookingNumbers = collectCalendarBookingNumbers(events, startDate, endDate);
-      const missingDeals = collectDealsReadyToCancelFromCalendar(
+      missingDeals = collectDealsReadyToCancelFromCalendar(
         db,
         calendarEventIds,
         startDate,
@@ -532,24 +523,7 @@ export async function runParsing(startDate, endDate) {
         );
       }
 
-      for (let i = 0; i < missingDeals.length; i++) {
-        const deal = missingDeals[i];
-        if (i > 0) await delay(1000);
-        console.log(
-          `[twenty-sync] ${new Date().toISOString()} parse.cancel_start {"dealId":${deal.id},"crmEventId":${JSON.stringify(deal.crm_event_id)},"index":${i + 1},"total":${missingDeals.length}}`
-        );
-        try {
-          const result = await cancelDealInTwenty(deal.id);
-          if (result && !result.skipped) counters.cancelledDeals++;
-          console.log(`[twenty-sync] ${new Date().toISOString()} parse.cancel_done {"dealId":${deal.id}}`);
-        } catch (err) {
-          console.error(
-            `[twenty-sync] ${new Date().toISOString()} parse.cancel_failed {"dealId":${deal.id},"error":${JSON.stringify(err.message)}}`
-          );
-        }
-      }
-
-      const restoredDeals = findCancelledDealsBackInCalendar(
+      restoredDeals = findCancelledDealsBackInCalendar(
         db,
         calendarEventIds,
         startDate,
@@ -562,26 +536,20 @@ export async function runParsing(startDate, endDate) {
           `[twenty-sync] ${new Date().toISOString()} parse.restore_queue {"count":${restoredDeals.length},"dealIds":${JSON.stringify(restoredDeals.map((d) => d.id))}}`
         );
       }
-
-      for (let i = 0; i < restoredDeals.length; i++) {
-        const deal = restoredDeals[i];
-        if (i > 0) await delay(1000);
-        console.log(
-          `[twenty-sync] ${new Date().toISOString()} parse.restore_start {"dealId":${deal.id},"crmEventId":${JSON.stringify(deal.crm_event_id)},"index":${i + 1},"total":${restoredDeals.length}}`
-        );
-        try {
-          const result = await restoreDealInTwenty(deal.id);
-          if (result && !result.skipped) counters.restoredDeals++;
-          console.log(`[twenty-sync] ${new Date().toISOString()} parse.restore_done {"dealId":${deal.id}}`);
-        } catch (err) {
-          console.error(
-            `[twenty-sync] ${new Date().toISOString()} parse.restore_failed {"dealId":${deal.id},"error":${JSON.stringify(err.message)}}`
-          );
-        }
-      }
     }
 
-    const autoApprove = await processAutoApprovals();
+    const autoApproveDealIds = collectAutoApproveDealIds();
+    const postParse = await runPostParseTwentySync({
+      resyncDealIds: dealsToResync,
+      cancelDealIds: inRangeCount === 0 ? [] : missingDeals.map((d) => d.id),
+      restoreDealIds: inRangeCount === 0 ? [] : restoredDeals.map((d) => d.id),
+      autoApproveDealIds,
+    });
+    const autoApprove = {
+      mode: getSetting('approval_mode'),
+      dealIds: autoApproveDealIds,
+      postParse,
+    };
 
     return {
       runId,
