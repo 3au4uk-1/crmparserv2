@@ -19,6 +19,25 @@ function memoryDb() {
       load_date TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS telegram_okleyka_outbox (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      line_item_id TEXT NOT NULL,
+      opportunity_id TEXT,
+      text TEXT NOT NULL,
+      file_urls_json TEXT NOT NULL DEFAULT '[]',
+      sent_by TEXT,
+      force INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL,
+      error TEXT,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TEXT,
+      sending_started_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_telegram_okleyka_outbox_open
+      ON telegram_okleyka_outbox(line_item_id)
+      WHERE status IN ('pending', 'sending');
   `);
   db.prepare(
     `INSERT INTO settings VALUES ('telegram_chat_map', ?)`,
@@ -26,17 +45,28 @@ function memoryDb() {
   return db;
 }
 
+function sendDeps(overrides = {}) {
+  return {
+    sendOkleykaToTelegram: vi.fn(async () => ({ messageIds: [7] })),
+    patchOkleykaTelegramFields: vi.fn(),
+    createWrapOkleykaTask: vi.fn(),
+    isUserbotConfigured: () => true,
+    getUserbotClient: vi.fn(async () => ({ id: 'client' })),
+    kickOkleykaDrain: vi.fn().mockResolvedValue(),
+    ...overrides,
+  };
+}
+
 describe('handleOkleykaSend', () => {
   beforeEach(() => clearHooksForTests());
 
-  it('returns alreadySent without calling telegram when log exists', async () => {
+  it('returns alreadySent without calling telegram or kicking drain when log exists', async () => {
     const db = memoryDb();
     db.prepare(
       `INSERT INTO telegram_send_log (event, line_item_id, chat_id, telegram_message_ids)
        VALUES ('okleyka.send', 'li-1', '-1001', '[1]')`,
     ).run();
-    const send = vi.fn();
-    const patch = vi.fn();
+    const deps = sendDeps();
     const result = await handleOkleykaSend(
       db,
       {
@@ -46,21 +76,21 @@ describe('handleOkleykaSend', () => {
         fileUrls: [],
         force: false,
       },
-      {
-        sendOkleykaToTelegram: send,
-        patchOkleykaTelegramFields: patch,
-        isUserbotConfigured: () => true,
-        getUserbotClient: async () => ({}),
-      },
+      deps,
     );
     expect(result.alreadySent).toBe(true);
-    expect(send).not.toHaveBeenCalled();
+    expect(deps.sendOkleykaToTelegram).not.toHaveBeenCalled();
+    expect(deps.createWrapOkleykaTask).not.toHaveBeenCalled();
+    expect(deps.getUserbotClient).not.toHaveBeenCalled();
+    expect(deps.kickOkleykaDrain).not.toHaveBeenCalled();
+    expect(
+      db.prepare(`SELECT COUNT(*) AS n FROM telegram_okleyka_outbox`).get().n,
+    ).toBe(0);
   });
 
-  it('sends, logs, and patches on success', async () => {
+  it('enqueues a pending job and kicks drain without sending telegram', async () => {
     const db = memoryDb();
-    const send = vi.fn(async () => ({ messageIds: [7] }));
-    const patch = vi.fn(async () => {});
+    const deps = sendDeps();
     const result = await handleOkleykaSend(
       db,
       {
@@ -68,199 +98,129 @@ describe('handleOkleykaSend', () => {
         lineItemId: 'li-2',
         opportunityId: 'opp-2',
         text: 'Заказ: t',
-        fileUrls: [],
+        fileUrls: ['https://cdn.example.com/a.jpg'],
         sentBy: { name: 'Ann' },
         force: false,
       },
-      {
-        sendOkleykaToTelegram: send,
-        patchOkleykaTelegramFields: patch,
-        isUserbotConfigured: () => true,
-        getUserbotClient: async () => ({ id: 'client' }),
-        createWrapOkleykaTask: vi.fn().mockResolvedValue({ id: 't1' }),
-      },
+      deps,
     );
-    expect(result.ok).toBe(true);
-    expect(result.messageIds).toEqual([7]);
-    expect(send).toHaveBeenCalledOnce();
-    expect(patch).toHaveBeenCalledOnce();
-  });
-
-  it('passes threadId from destination to send', async () => {
-    const db = memoryDb();
-    db.prepare(`UPDATE settings SET value = ? WHERE key = 'telegram_chat_map'`).run(
-      JSON.stringify({ 'okleyka.send': { chatId: '-1001', threadId: 42 } }),
-    );
-    const send = vi.fn(async () => ({ messageIds: [7] }));
-    const patch = vi.fn(async () => {});
-    await handleOkleykaSend(
-      db,
-      {
-        event: 'okleyka.send',
-        lineItemId: 'li-3',
-        text: 'Заказ: t',
-        fileUrls: [],
-        force: false,
-      },
-      {
-        sendOkleykaToTelegram: send,
-        patchOkleykaTelegramFields: patch,
-        isUserbotConfigured: () => true,
-        getUserbotClient: async () => ({ id: 'client' }),
-        createWrapOkleykaTask: vi.fn().mockResolvedValue({ id: 't1' }),
-      },
-    );
-    expect(send).toHaveBeenCalledWith(expect.objectContaining({
-      chatId: '-1001',
-      threadId: 42,
-      client: { id: 'client' },
-    }));
-  });
-
-  it('creates wrap task after telegram success with text and fileUrls', async () => {
-    const db = memoryDb();
-    const send = vi.fn(async () => ({ messageIds: [7] }));
-    const patch = vi.fn(async () => {});
-    const createWrap = vi.fn().mockResolvedValue({ id: 't1' });
-    const result = await handleOkleykaSend(
-      db,
-      {
-        event: 'okleyka.send',
-        lineItemId: 'li-wrap',
-        opportunityId: 'opp-wrap',
-        text: 'Заказ: wrap',
-        fileUrls: ['https://cdn.example.com/a.jpg'],
-        force: false,
-      },
-      {
-        sendOkleykaToTelegram: send,
-        patchOkleykaTelegramFields: patch,
-        isUserbotConfigured: () => true,
-        getUserbotClient: async () => ({}),
-        createWrapOkleykaTask: createWrap,
-      },
-    );
-    expect(result.ok).toBe(true);
-    expect(createWrap).toHaveBeenCalledWith({
-      lineItemId: 'li-wrap',
-      opportunityId: 'opp-wrap',
-      text: 'Заказ: wrap',
-      fileUrls: ['https://cdn.example.com/a.jpg'],
-      force: false,
+    expect(result).toEqual({
+      ok: true,
+      queued: true,
+      jobId: result.jobId,
+      status: 'pending',
     });
+    expect(result.jobId).toEqual(expect.any(Number));
+    expect(deps.sendOkleykaToTelegram).not.toHaveBeenCalled();
+    expect(deps.createWrapOkleykaTask).not.toHaveBeenCalled();
+    expect(deps.patchOkleykaTelegramFields).not.toHaveBeenCalled();
+    expect(deps.getUserbotClient).not.toHaveBeenCalled();
+    expect(deps.kickOkleykaDrain).toHaveBeenCalledOnce();
+    expect(deps.kickOkleykaDrain).toHaveBeenCalledWith(db);
+
+    const row = db
+      .prepare(`SELECT * FROM telegram_okleyka_outbox WHERE id = ?`)
+      .get(result.jobId);
+    expect(row).toMatchObject({
+      line_item_id: 'li-2',
+      opportunity_id: 'opp-2',
+      text: 'Заказ: t',
+      sent_by: 'Ann',
+      force: 0,
+      status: 'pending',
+    });
+    expect(JSON.parse(row.file_urls_json)).toEqual(['https://cdn.example.com/a.jpg']);
   });
 
-  it('keeps telegram ok when wrap task throws and sets wrap_task_failed warning', async () => {
-    const db = memoryDb();
-    const send = vi.fn(async () => ({ messageIds: [7] }));
-    const patch = vi.fn(async () => {});
-    const createWrap = vi.fn().mockRejectedValue(new Error('twenty down'));
-    const result = await handleOkleykaSend(
-      db,
-      {
-        event: 'okleyka.send',
-        lineItemId: 'li-wrap-fail',
-        opportunityId: 'opp-wrap',
-        text: 'Заказ: wrap',
-        fileUrls: [],
-        force: false,
-      },
-      {
-        sendOkleykaToTelegram: send,
-        patchOkleykaTelegramFields: patch,
-        isUserbotConfigured: () => true,
-        getUserbotClient: async () => ({}),
-        createWrapOkleykaTask: createWrap,
-      },
-    );
-    expect(result.ok).toBe(true);
-    expect(result.warning).toBeTruthy();
-    expect(result.warning).toContain('wrap_task_failed');
-  });
-
-  it('does not create wrap task when alreadySent', async () => {
+  it('enqueues with force even when send log exists', async () => {
     const db = memoryDb();
     db.prepare(
       `INSERT INTO telegram_send_log (event, line_item_id, chat_id, telegram_message_ids)
-       VALUES ('okleyka.send', 'li-1', '-1001', '[1]')`,
+       VALUES ('okleyka.send', 'li-force', '-1001', '[1]')`,
     ).run();
-    const send = vi.fn();
-    const patch = vi.fn();
-    const createWrap = vi.fn();
+    const deps = sendDeps();
     const result = await handleOkleykaSend(
       db,
       {
         event: 'okleyka.send',
-        lineItemId: 'li-1',
-        text: 'x',
+        lineItemId: 'li-force',
+        text: 'again',
         fileUrls: [],
-        force: false,
+        force: true,
       },
-      {
-        sendOkleykaToTelegram: send,
-        patchOkleykaTelegramFields: patch,
-        isUserbotConfigured: () => true,
-        getUserbotClient: async () => ({}),
-        createWrapOkleykaTask: createWrap,
-      },
+      deps,
     );
-    expect(result.alreadySent).toBe(true);
-    expect(createWrap).not.toHaveBeenCalled();
+    expect(result.queued).toBe(true);
+    expect(result.status).toBe('pending');
+    expect(deps.sendOkleykaToTelegram).not.toHaveBeenCalled();
+    expect(deps.kickOkleykaDrain).toHaveBeenCalledOnce();
+    const row = db
+      .prepare(`SELECT force FROM telegram_okleyka_outbox WHERE id = ?`)
+      .get(result.jobId);
+    expect(row.force).toBe(1);
   });
 
-  it('does not create wrap task when telegram send throws', async () => {
+  it('returns 503 when userbot is not configured', async () => {
     const db = memoryDb();
-    const send = vi.fn(async () => {
-      throw new Error('telegram down');
-    });
-    const createWrap = vi.fn();
+    const deps = sendDeps({ isUserbotConfigured: () => false });
     await expect(
       handleOkleykaSend(
         db,
         {
           event: 'okleyka.send',
-          lineItemId: 'li-throw',
+          lineItemId: 'li-503',
           text: 'x',
           fileUrls: [],
-          force: false,
         },
-        {
-          sendOkleykaToTelegram: send,
-          patchOkleykaTelegramFields: vi.fn(),
-          isUserbotConfigured: () => true,
-          getUserbotClient: async () => ({}),
-          createWrapOkleykaTask: createWrap,
-        },
+        deps,
       ),
-    ).rejects.toThrow('telegram down');
-    expect(createWrap).not.toHaveBeenCalled();
+    ).rejects.toMatchObject({
+      status: 503,
+      message: 'Telegram не настроен (нужен user-bot и чат оклейки)',
+    });
+    expect(deps.kickOkleykaDrain).not.toHaveBeenCalled();
   });
 
-  it('appends wrap_task_failed when CRM patch already warned', async () => {
+  it('returns 503 when okleyka chat is missing', async () => {
     const db = memoryDb();
-    const send = vi.fn(async () => ({ messageIds: [7] }));
-    const patch = vi.fn(async () => {
-      throw new Error('crm down');
-    });
-    const createWrap = vi.fn().mockRejectedValue(new Error('twenty down'));
-    const result = await handleOkleykaSend(
-      db,
-      {
-        event: 'okleyka.send',
-        lineItemId: 'li-both',
-        text: 'x',
-        fileUrls: [],
-        force: false,
-      },
-      {
-        sendOkleykaToTelegram: send,
-        patchOkleykaTelegramFields: patch,
-        isUserbotConfigured: () => true,
-        getUserbotClient: async () => ({}),
-        createWrapOkleykaTask: createWrap,
-      },
+    db.prepare(`UPDATE settings SET value = ? WHERE key = 'telegram_chat_map'`).run(
+      JSON.stringify({ 'okleyka.send': '' }),
     );
-    expect(result.ok).toBe(true);
-    expect(result.warning).toBe('crm_patch_failed,wrap_task_failed');
+    const deps = sendDeps();
+    await expect(
+      handleOkleykaSend(
+        db,
+        {
+          event: 'okleyka.send',
+          lineItemId: 'li-no-chat',
+          text: 'x',
+          fileUrls: [],
+        },
+        deps,
+      ),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(deps.kickOkleykaDrain).not.toHaveBeenCalled();
+    expect(deps.sendOkleykaToTelegram).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid event with 400', async () => {
+    const db = memoryDb();
+    await expect(
+      handleOkleykaSend(db, { event: 'other', lineItemId: 'li-1', text: 'x' }, sendDeps()),
+    ).rejects.toMatchObject({ status: 400, message: 'Unsupported event: other' });
+  });
+
+  it('rejects missing lineItemId with 400', async () => {
+    const db = memoryDb();
+    await expect(
+      handleOkleykaSend(db, { event: 'okleyka.send', text: 'x' }, sendDeps()),
+    ).rejects.toMatchObject({ status: 400, message: 'lineItemId required' });
+  });
+
+  it('rejects missing text with 400', async () => {
+    const db = memoryDb();
+    await expect(
+      handleOkleykaSend(db, { event: 'okleyka.send', lineItemId: 'li-1' }, sendDeps()),
+    ).rejects.toMatchObject({ status: 400, message: 'text required' });
   });
 });

@@ -1,13 +1,8 @@
 import { getTelegramDestination } from './settings.js';
-import {
-  findLastSend,
-  hashOkleykaPayload,
-  insertSendLog,
-} from './send-log.js';
-import { sendOkleykaToTelegram } from './outbound.js';
-import { patchOkleykaTelegramFields } from './crm-log.js';
-import { getUserbotClient, isUserbotConfigured } from './userbot/client.js';
-import { createWrapOkleykaTask } from './create-wrap-task.js';
+import { findLastSend } from './send-log.js';
+import { isUserbotConfigured } from './userbot/client.js';
+import { enqueueOkleykaJob } from './okleyka-outbox.js';
+import { kickOkleykaDrain } from './okleyka-drain.js';
 
 function resolveSentBy(sentBy) {
   if (!sentBy) return null;
@@ -28,10 +23,7 @@ function configError(message) {
 }
 
 export async function handleOkleykaSend(db, body, deps = {}) {
-  const sendOkleyka = deps.sendOkleykaToTelegram ?? sendOkleykaToTelegram;
-  const patchFields = deps.patchOkleykaTelegramFields ?? patchOkleykaTelegramFields;
   const configured = deps.isUserbotConfigured ?? (() => isUserbotConfigured(db));
-  const getClient = deps.getUserbotClient ?? (() => getUserbotClient(db));
 
   const event = body?.event;
   const lineItemId = body?.lineItemId;
@@ -53,7 +45,6 @@ export async function handleOkleykaSend(db, body, deps = {}) {
   if (!configured() || !dest?.chatId) {
     throw configError('Telegram не настроен (нужен user-bot и чат оклейки)');
   }
-  const { chatId, threadId } = dest;
 
   const existing = findLastSend(db, event, lineItemId);
   if (existing && !force) {
@@ -64,57 +55,16 @@ export async function handleOkleykaSend(db, body, deps = {}) {
     };
   }
 
-  const client = await getClient();
-  const sendResult = await sendOkleyka({
-    client,
-    chatId,
-    threadId,
-    text,
-    fileUrls,
-  });
-
-  const loggedAt = new Date().toISOString();
-  insertSendLog(db, {
-    event,
+  const job = enqueueOkleykaJob(db, {
     lineItemId,
     opportunityId: body?.opportunityId,
-    chatId,
+    text,
+    fileUrls,
     sentBy: resolveSentBy(body?.sentBy),
-    payloadHash: hashOkleykaPayload(text, fileUrls),
-    telegramMessageIds: sendResult.messageIds,
+    force,
   });
-
-  let warning = sendResult.warning;
-  try {
-    await patchFields({
-      lineItemId,
-      sentAt: loggedAt,
-      sentBy: resolveSentBy(body?.sentBy),
-      chatId,
-    });
-  } catch (err) {
-    console.error('[telegram] CRM patch failed:', err.message);
-    warning = 'crm_patch_failed';
-  }
-
-  try {
-    const createWrap = deps.createWrapOkleykaTask ?? createWrapOkleykaTask;
-    await createWrap({
-      lineItemId,
-      opportunityId: body?.opportunityId,
-      text,
-      fileUrls,
-      force,
-    });
-  } catch (err) {
-    console.error('[telegram] wrap task failed:', err.message);
-    warning = warning ? `${warning},wrap_task_failed` : 'wrap_task_failed';
-  }
-
-  return {
-    ok: true,
-    messageIds: sendResult.messageIds,
-    loggedAt,
-    ...(warning ? { warning } : {}),
-  };
+  console.log(`[telegram] okleyka queued job=${job.id} lineItem=${lineItemId}`);
+  const kick = deps.kickOkleykaDrain ?? kickOkleykaDrain;
+  void kick(db).catch((err) => console.error('[telegram] okleyka drain kick:', err.message));
+  return { ok: true, queued: true, jobId: job.id, status: job.status };
 }

@@ -15,6 +15,7 @@ import { writeDealItemQuantity } from '../services/deal-item-quantity.js';
 import { scheduleListChangeResync } from '../services/list-change-resync.js';
 import { syncDealToTwenty } from '../services/twenty-sync.js';
 import { handleOkleykaSend } from '../telegram/handle-okleyka-send.js';
+import { getOkleykaJobStatus } from '../telegram/okleyka-outbox.js';
 import { queueBannerPodryadCatchUp } from '../telegram/banner-podryad/run.js';
 import { getEventJournal, isTwentyEventsEnabled } from '../services/twenty-events/index.js';
 import { waitForEvents } from '../services/twenty-events/wait-for-events.js';
@@ -141,6 +142,12 @@ router.post('/line-items/:twentyLineItemId/archive', (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+router.get('/telegram/okleyka-jobs/:lineItemId', (req, res) => {
+  const lineItemId = String(req.params.lineItemId || '').trim();
+  if (!lineItemId) return res.status(400).json({ error: 'lineItemId required' });
+  res.json(getOkleykaJobStatus(getDb(), lineItemId));
 });
 
 router.post('/telegram/events', async (req, res, next) => {

@@ -56,6 +56,13 @@ Pending login is in-memory — restart mid-wizard → start from phone again.
 
 On `/telegram` → **Оклейка → отправка**: pick chat (and forum topic if needed). Twenty calls `okleyka.send`; crmparser sends via user-bot MTProto (user-bot must already be in that chat).
 
+### Okleyka outbox + auto-reconnect
+
+- Okleyka sends are **queued in SQLite** (`telegram_okleyka_outbox`) until Telegram accepts the message. A background drain processes the queue; startup kicks any pending jobs.
+- **MTProto TIMEOUT** (transient network/proxy blips) is recovered automatically: the user-bot watchdog runs `getMe` every **60s** and triggers reconnect with backoff. **Do not restart the crmparser container** for a lone TIMEOUT — wait for reconnect.
+- If the session is **revoked** (`AUTH_KEY_UNREGISTERED` / `SESSION_REVOKED`), reconnect stops permanently. Operator must **re-login** via `/telegram` → User-bot wizard (§3).
+- Stale `sending` rows stuck after a crash are reset to `pending` on startup (`recoverStaleOkleykaSending`).
+
 ## 6. Team App chat mirror (PWA ↔ Telegram topic)
 
 Mirrors the Team App company chat into one forum topic and handles DM link codes. User-bot must be logged in (§3) and a member of the target supergroup.
@@ -125,6 +132,9 @@ See xray sidecar: `TELEGRAM_PROXY_URL=socks5://xray:1080`. User-bot MTProto goes
 | `backend/src/telegram/userbot/reconcile.js` | Dialog discovery + auto-invite trigger |
 | `backend/src/telegram/auto-invite.js` | Capability check, cap 5, delays, invites |
 | `backend/src/telegram/outbound.js` | Okleyka via GramJS |
+| `backend/src/telegram/okleyka-outbox.js` | SQLite outbox enqueue + stale recovery |
+| `backend/src/telegram/okleyka-drain.js` | Background drain + startup kick |
+| `backend/src/telegram/userbot/reconnect.js` | Watchdog + reconnect loop |
 | `backend/src/telegram/userbot/client.js` | Lazy GramJS client + proxy |
 | `frontend/src/pages/Telegram.jsx` | UI |
 | `ops/xray/` | VLESS proxy sidecar config |

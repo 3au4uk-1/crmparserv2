@@ -239,6 +239,26 @@ CREATE TABLE IF NOT EXISTS telegram_send_log (
 CREATE INDEX IF NOT EXISTS idx_telegram_send_log_event_line
   ON telegram_send_log(event, line_item_id);
 
+CREATE TABLE IF NOT EXISTS telegram_okleyka_outbox (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  line_item_id TEXT NOT NULL,
+  opportunity_id TEXT,
+  text TEXT NOT NULL,
+  file_urls_json TEXT NOT NULL DEFAULT '[]',
+  sent_by TEXT,
+  force INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL,
+  error TEXT,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at TEXT,
+  sending_started_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_telegram_okleyka_outbox_open
+  ON telegram_okleyka_outbox(line_item_id)
+  WHERE status IN ('pending', 'sending');
+
 CREATE TABLE IF NOT EXISTS telegram_chats (
   chat_id TEXT PRIMARY KEY,
   title TEXT NOT NULL DEFAULT '',

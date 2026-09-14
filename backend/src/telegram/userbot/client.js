@@ -63,6 +63,10 @@ export async function getUserbotClient(db) {
   return clientPromise;
 }
 
+export function peekUserbotClientPromise() {
+  return clientPromise;
+}
+
 export function resetUserbotClient() {
   if (clientPromise) {
     clientPromise
