@@ -2,6 +2,14 @@
 
 Protect Twenty prod interactive traffic during scheduled/manual parses by lowering crmparser concurrency and API pressure.
 
+## Superseded for API-key limit (2026-09-14)
+
+**Do not follow the old “leave ~55 req/min for CRM UI” advice.** The Twenty API-key long limit is now **800** tokens / 60s (`API_RATE_LIMITING_LONG_LIMIT=800` on `twenty-server`; TTL stays 60000). Parser client should stay at `TWENTY_API_RATE_LIMIT_MAX=720` with `TWENTY_SYNC_CONCURRENCY=6`. The 2026-07-31 `TWENTY_API_RATE_LIMIT_MAX=40` throttle below is historical only.
+
+- Twenty prod compose: `oI7-NCBTpfyrxJBitrJrd0` (`twenty`) — live `printenv` on `twenty-server` is `800`.
+- Twenty staging compose: `eMjWv7p-ovnfQ7XnpFKTe` (`twenty-staging`) — compose patched; stack was not running, so container verify is pending next start.
+- Do **not** change `API_RATE_LIMITING_SHORT_*`.
+
 ## Context
 
 - **Prod compose:** `JWIhULvt6slzDxT8AQXyWz` (project `crmparser`)
