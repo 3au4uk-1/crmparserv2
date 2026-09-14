@@ -27,6 +27,23 @@ import {
 } from './twenty-sync-log.js';
 import { createTwentyGqlClient, gql } from './twenty-gql.js';
 import { runPrintSheetRefresh as runPrintSheetRefreshLocked } from './print-sheet-runner.js';
+import { createInFlightCache } from './twenty-inflight-cache.js';
+
+let warehouseCacheRef = createInFlightCache();
+let companyCacheRef = createInFlightCache();
+let personCacheRef = createInFlightCache();
+
+export function setTwentySyncInFlightCaches({ warehouse, company, person } = {}) {
+  if (warehouse) warehouseCacheRef = warehouse;
+  if (company) companyCacheRef = company;
+  if (person) personCacheRef = person;
+}
+
+export function resetTwentySyncInFlightCaches() {
+  warehouseCacheRef = createInFlightCache();
+  companyCacheRef = createInFlightCache();
+  personCacheRef = createInFlightCache();
+}
 
 function assertHttpSuccess(resp, apiUrl) {
   if (resp.status === 404) {
@@ -97,134 +114,141 @@ async function findOrCreateWarehouseItem(apiUrl, apiToken, name, warehouseCache)
     return warehouseCache.get(name);
   }
 
-  const searchResp = await gql(
-    apiUrl,
-    apiToken,
-    `query FindWarehouseItem($name: String!) {
-      products(filter: { name: { eq: $name } }) { edges { node { id } } }
-    }`,
-    { name }
-  );
-  assertHttpSuccess(searchResp, apiUrl);
-  assertGqlSuccess(searchResp, 'Failed to search warehouse item in Twenty');
+  const id = await warehouseCacheRef.getOrStart(name, async () => {
+    const searchResp = await gql(
+      apiUrl,
+      apiToken,
+      `query FindWarehouseItem($name: String!) {
+        products(filter: { name: { eq: $name } }) { edges { node { id } } }
+      }`,
+      { name }
+    );
+    assertHttpSuccess(searchResp, apiUrl);
+    assertGqlSuccess(searchResp, 'Failed to search warehouse item in Twenty');
 
-  const existing = searchResp.data?.data?.products?.edges?.[0]?.node;
-  if (existing) {
-    warehouseCache?.set(name, existing.id);
-    return existing.id;
-  }
+    const existing = searchResp.data?.data?.products?.edges?.[0]?.node;
+    if (existing) {
+      return existing.id;
+    }
 
-  const createResp = await gql(
-    apiUrl,
-    apiToken,
-    `mutation CreateWarehouseItem($input: ProductCreateInput!) {
-      createProduct(data: $input) { id }
-    }`,
-    { input: buildWarehouseItemCreateInput(name) }
-  );
-  assertHttpSuccess(createResp, apiUrl);
-  assertGqlSuccess(createResp, `Failed to create warehouse item "${name}" in Twenty`);
+    const createResp = await gql(
+      apiUrl,
+      apiToken,
+      `mutation CreateWarehouseItem($input: ProductCreateInput!) {
+        createProduct(data: $input) { id }
+      }`,
+      { input: buildWarehouseItemCreateInput(name) }
+    );
+    assertHttpSuccess(createResp, apiUrl);
+    assertGqlSuccess(createResp, `Failed to create warehouse item "${name}" in Twenty`);
 
-  const newId = createResp.data?.data?.createProduct?.id;
-  if (!newId) throw new Error(`Failed to create warehouse item "${name}" in Twenty`);
-  warehouseCache?.set(name, newId);
-  return newId;
+    const newId = createResp.data?.data?.createProduct?.id;
+    if (!newId) throw new Error(`Failed to create warehouse item "${name}" in Twenty`);
+    return newId;
+  });
+
+  warehouseCache?.set(name, id);
+  return id;
 }
 
 async function findOrCreateCompany(apiUrl, apiToken, code) {
-  const db = getDb();
-  const company = db.prepare('SELECT * FROM companies WHERE code = ?').get(code);
-  if (!company) return null;
+  return companyCacheRef.getOrStart(code, async () => {
+    const db = getDb();
+    const company = db.prepare('SELECT * FROM companies WHERE code = ?').get(code);
+    if (!company) return null;
 
-  if (company.twenty_id) return company.twenty_id;
+    if (company.twenty_id) return company.twenty_id;
 
-  const searchResp = await gql(
-    apiUrl,
-    apiToken,
-    `query FindCompany($name: String!) {
-      companies(filter: { name: { eq: $name } }) { edges { node { id } } }
-    }`,
-    { name: company.full_name }
-  );
-  assertHttpSuccess(searchResp, apiUrl);
-  assertGqlSuccess(searchResp, 'Failed to search company in Twenty');
+    const searchResp = await gql(
+      apiUrl,
+      apiToken,
+      `query FindCompany($name: String!) {
+        companies(filter: { name: { eq: $name } }) { edges { node { id } } }
+      }`,
+      { name: company.full_name }
+    );
+    assertHttpSuccess(searchResp, apiUrl);
+    assertGqlSuccess(searchResp, 'Failed to search company in Twenty');
 
-  const existing = searchResp.data?.data?.companies?.edges?.[0]?.node;
-  if (existing) {
-    db.prepare('UPDATE companies SET twenty_id = ? WHERE id = ?').run(existing.id, company.id);
-    return existing.id;
-  }
+    const existing = searchResp.data?.data?.companies?.edges?.[0]?.node;
+    if (existing) {
+      db.prepare('UPDATE companies SET twenty_id = ? WHERE id = ?').run(existing.id, company.id);
+      return existing.id;
+    }
 
-  const createResp = await gql(
-    apiUrl,
-    apiToken,
-    `mutation CreateCompany($input: CompanyCreateInput!) {
-      createCompany(data: $input) { id }
-    }`,
-    { input: { name: company.full_name } }
-  );
-  assertHttpSuccess(createResp, apiUrl);
-  assertGqlSuccess(createResp, 'Failed to create company in Twenty');
+    const createResp = await gql(
+      apiUrl,
+      apiToken,
+      `mutation CreateCompany($input: CompanyCreateInput!) {
+        createCompany(data: $input) { id }
+      }`,
+      { input: { name: company.full_name } }
+    );
+    assertHttpSuccess(createResp, apiUrl);
+    assertGqlSuccess(createResp, 'Failed to create company in Twenty');
 
-  const newId = createResp.data?.data?.createCompany?.id;
-  if (newId) {
-    db.prepare('UPDATE companies SET twenty_id = ? WHERE id = ?').run(newId, company.id);
-  }
-  return newId;
+    const newId = createResp.data?.data?.createCompany?.id;
+    if (newId) {
+      db.prepare('UPDATE companies SET twenty_id = ? WHERE id = ?').run(newId, company.id);
+    }
+    return newId;
+  });
 }
 
 async function findOrCreatePerson(apiUrl, apiToken, managerName, companyTwentyId) {
-  const db = getDb();
+  return personCacheRef.getOrStart(`${managerName}|${companyTwentyId || ''}`, async () => {
+    const db = getDb();
 
-  const manager = db.prepare('SELECT * FROM managers WHERE name = ?').get(managerName);
-  if (manager?.twenty_id) return manager.twenty_id;
+    const manager = db.prepare('SELECT * FROM managers WHERE name = ?').get(managerName);
+    if (manager?.twenty_id) return manager.twenty_id;
 
-  const searchResp = await gql(
-    apiUrl,
-    apiToken,
-    `query FindPerson($lastName: String!) {
-      people(filter: { name: { lastName: { eq: $lastName } } }) { edges { node { id } } }
-    }`,
-    { lastName: managerName }
-  );
-  assertHttpSuccess(searchResp, apiUrl);
-  assertGqlSuccess(searchResp, 'Failed to search person in Twenty');
+    const searchResp = await gql(
+      apiUrl,
+      apiToken,
+      `query FindPerson($lastName: String!) {
+        people(filter: { name: { lastName: { eq: $lastName } } }) { edges { node { id } } }
+      }`,
+      { lastName: managerName }
+    );
+    assertHttpSuccess(searchResp, apiUrl);
+    assertGqlSuccess(searchResp, 'Failed to search person in Twenty');
 
-  const existing = searchResp.data?.data?.people?.edges?.[0]?.node;
-  if (existing) {
-    if (manager) {
-      db.prepare('UPDATE managers SET twenty_id = ? WHERE id = ?').run(existing.id, manager.id);
-    } else {
-      db.prepare('INSERT INTO managers (name, twenty_id) VALUES (?, ?)').run(managerName, existing.id);
+    const existing = searchResp.data?.data?.people?.edges?.[0]?.node;
+    if (existing) {
+      if (manager) {
+        db.prepare('UPDATE managers SET twenty_id = ? WHERE id = ?').run(existing.id, manager.id);
+      } else {
+        db.prepare('INSERT INTO managers (name, twenty_id) VALUES (?, ?)').run(managerName, existing.id);
+      }
+      return existing.id;
     }
-    return existing.id;
-  }
 
-  const input = {
-    name: { lastName: managerName, firstName: '' },
-  };
-  if (companyTwentyId) input.companyId = companyTwentyId;
+    const input = {
+      name: { lastName: managerName, firstName: '' },
+    };
+    if (companyTwentyId) input.companyId = companyTwentyId;
 
-  const createResp = await gql(
-    apiUrl,
-    apiToken,
-    `mutation CreatePerson($input: PersonCreateInput!) {
-      createPerson(data: $input) { id }
-    }`,
-    { input }
-  );
-  assertHttpSuccess(createResp, apiUrl);
-  assertGqlSuccess(createResp, 'Failed to create person in Twenty');
+    const createResp = await gql(
+      apiUrl,
+      apiToken,
+      `mutation CreatePerson($input: PersonCreateInput!) {
+        createPerson(data: $input) { id }
+      }`,
+      { input }
+    );
+    assertHttpSuccess(createResp, apiUrl);
+    assertGqlSuccess(createResp, 'Failed to create person in Twenty');
 
-  const newId = createResp.data?.data?.createPerson?.id;
-  if (newId) {
-    if (manager) {
-      db.prepare('UPDATE managers SET twenty_id = ? WHERE id = ?').run(newId, manager.id);
-    } else {
-      db.prepare('INSERT INTO managers (name, twenty_id) VALUES (?, ?)').run(managerName, newId);
+    const newId = createResp.data?.data?.createPerson?.id;
+    if (newId) {
+      if (manager) {
+        db.prepare('UPDATE managers SET twenty_id = ? WHERE id = ?').run(newId, manager.id);
+      } else {
+        db.prepare('INSERT INTO managers (name, twenty_id) VALUES (?, ?)').run(managerName, newId);
+      }
     }
-  }
-  return newId;
+    return newId;
+  });
 }
 
 async function resolveCompanyAndPerson(deal, twenty) {
