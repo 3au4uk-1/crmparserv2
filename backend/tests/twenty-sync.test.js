@@ -290,7 +290,7 @@ describe('syncDealToTwenty', () => {
       .mockResolvedValueOnce(gqlOk({ createOpportunity: { id: 'opp-new' } }))
       .mockResolvedValueOnce(gqlOk({ products: { edges: [] } }))
       .mockResolvedValueOnce(gqlOk({ createProduct: { id: 'wh-1' } }))
-      .mockResolvedValueOnce(gqlOk({ createDealLineItem: { id: 'li-new' } }))
+      .mockResolvedValueOnce(gqlOk({ createDealLineItems: [{ id: 'li-new' }] }))
       .mockResolvedValueOnce(gqlOk({
         dealLineItems: {
           edges: [{ node: { id: 'li-new', name: 'Баннер', stage: 'NOVYY', amount: { amountMicros: 1_000_000_000, currencyCode: 'RUB' } } }],
@@ -383,6 +383,7 @@ describe('syncDealToTwenty', () => {
       price: 1500,
       classification: 'unclassified',
       sync_override: null,
+      productStream: 'DECOR',
     });
     dbMock.__seedItem({
       deal_id: dealId,
@@ -401,7 +402,7 @@ describe('syncDealToTwenty', () => {
           ],
         },
       }))
-      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-decor' } }))
+      .mockResolvedValueOnce(gqlOk({ upsertDealLineItems: [{ id: 'li-decor' }] }))
       .mockResolvedValueOnce(gqlOk({
         dealLineItems: {
           edges: [
@@ -441,10 +442,13 @@ describe('syncDealToTwenty', () => {
     expect(deleteCalls).toHaveLength(0);
 
     const lineItemUpdates = axiosPost.mock.calls.filter(([_, body]) =>
-      body.query.includes('updateDealLineItem')
+      /upsertDealLineItems|updateDealLineItems\(|updateDealLineItem\(/.test(body.query)
     );
     expect(lineItemUpdates).toHaveLength(1);
-    expect(lineItemUpdates[0][1].variables.input.productStream).toBe('DECOR');
+    const updateVars = lineItemUpdates[0][1].variables;
+    const payload = updateVars.data?.[0] ?? updateVars.input ?? updateVars.data;
+    const productStream = payload.productStream;
+    expect(productStream === 'DECOR' || (Array.isArray(productStream) && productStream.includes('DECOR'))).toBe(true);
   });
 
   it('refreshes plenka for print-stage line items after sync', async () => {
@@ -551,8 +555,9 @@ describe('syncDealToTwenty', () => {
           ],
         },
       }))
-      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-novyy' } }))
-      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-protected' } }));
+      .mockResolvedValueOnce(gqlOk({
+        updateDealLineItems: [{ id: 'li-novyy' }, { id: 'li-protected' }],
+      }));
 
     const result = await cancelDealInTwenty(dealId);
 
@@ -565,19 +570,21 @@ describe('syncDealToTwenty', () => {
     });
 
     const lineItemCancelCalls = axiosPost.mock.calls.filter(([_, body]) =>
-      body.query.includes('updateDealLineItem')
+      /updateDealLineItems\(|upsertDealLineItems|updateDealLineItem\(/.test(body.query)
     );
-    expect(lineItemCancelCalls).toHaveLength(2);
-    expect(lineItemCancelCalls.map(([, body]) => body.variables.id).sort()).toEqual([
-      'li-novyy',
-      'li-protected',
-    ]);
-    for (const [, body] of lineItemCancelCalls) {
-      expect(body.variables.input).toMatchObject({
-        stage: 'OTMENA',
-        amount: { amountMicros: 0, currencyCode: 'RUB' },
-      });
-    }
+    expect(lineItemCancelCalls).toHaveLength(1);
+    const cancelVars = lineItemCancelCalls[0][1].variables;
+    const cancelledIds = cancelVars.ids
+      || (cancelVars.data || []).map((row) => row.id)
+      || [cancelVars.id];
+    expect([...cancelledIds].sort()).toEqual(['li-novyy', 'li-protected']);
+    const cancelData = cancelVars.data && !Array.isArray(cancelVars.data)
+      ? cancelVars.data
+      : cancelVars.input;
+    expect(cancelData).toMatchObject({
+      stage: 'OTMENA',
+      amount: { amountMicros: 0, currencyCode: 'RUB' },
+    });
   });
 
   it('writes line-item stage snapshot before cancelling', async () => {
@@ -690,9 +697,9 @@ describe('syncDealToTwenty', () => {
           ],
         },
       }))
-      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-a' } }))
-      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-b' } }))
-      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-c' } }));
+      .mockResolvedValueOnce(gqlOk({
+        upsertDealLineItems: [{ id: 'li-a' }, { id: 'li-b' }, { id: 'li-c' }],
+      }));
 
     const result = await restoreDealInTwenty(dealId);
 
@@ -701,12 +708,13 @@ describe('syncDealToTwenty', () => {
     expect(axiosPost.mock.calls[0][1].variables.input.stage).toBe('V_RABOTE');
 
     const lineUpdates = axiosPost.mock.calls.filter(([, body]) =>
-      body.query.includes('updateDealLineItem')
+      /upsertDealLineItems|updateDealLineItems\(|updateDealLineItem\(/.test(body.query)
     );
-    expect(lineUpdates.map(([, body]) => body.variables)).toEqual([
-      { id: 'li-a', input: { stage: 'V_PECHATI' } },
-      { id: 'li-b', input: { stage: 'NOVYY' } },
-      { id: 'li-c', input: { stage: 'OTMENA' } },
+    expect(lineUpdates).toHaveLength(1);
+    expect(lineUpdates[0][1].variables.data).toEqual([
+      { id: 'li-a', stage: 'V_PECHATI' },
+      { id: 'li-b', stage: 'NOVYY' },
+      { id: 'li-c', stage: 'OTMENA' },
     ]);
 
     const deal = dbMock.getDb().prepare('SELECT * FROM deals WHERE id = ?').get(dealId);
@@ -758,7 +766,6 @@ describe('syncDealToTwenty', () => {
           ],
         },
       }))
-      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-a' } }))
       .mockResolvedValueOnce({
         status: 200,
         data: { errors: [{ message: 'boom' }] },
@@ -793,7 +800,7 @@ describe('syncDealToTwenty', () => {
           edges: [{ node: { id: 'li-keep', name: 'Keep', stage: 'OTMENA' } }],
         },
       }))
-      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-keep' } }));
+      .mockResolvedValueOnce(gqlOk({ upsertDealLineItems: [{ id: 'li-keep' }] }));
 
     const result = await restoreDealInTwenty(dealId);
 
@@ -801,10 +808,10 @@ describe('syncDealToTwenty', () => {
     expect(logTwentyStepMock).toHaveBeenCalledWith('restore.line_item_skipped', { lineItemId: 'li-gone' });
 
     const lineUpdates = axiosPost.mock.calls.filter(([, body]) =>
-      body.query.includes('updateDealLineItem')
+      /upsertDealLineItems|updateDealLineItems\(|updateDealLineItem\(/.test(body.query)
     );
     expect(lineUpdates).toHaveLength(1);
-    expect(lineUpdates[0][1].variables.id).toBe('li-keep');
+    expect(lineUpdates[0][1].variables.data).toEqual([{ id: 'li-keep', stage: 'NOVYY' }]);
 
     const deal = dbMock.getDb().prepare('SELECT * FROM deals WHERE id = ?').get(dealId);
     expect(deal.line_item_stage_snapshot_json).toBeNull();

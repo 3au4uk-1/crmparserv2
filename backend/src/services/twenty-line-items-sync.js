@@ -10,6 +10,13 @@ import { logTwentyStep } from './twenty-sync-log.js';
 import { CANCELLED_OPPORTUNITY_STAGE, DEFAULT_OPPORTUNITY_STAGE, ZERO_RUB_AMOUNT } from './twenty-opportunity.js';
 import { MANUAL_TWENTY_CLASSIFICATION } from './manual-twenty-line-item.js';
 import { publishDealLineItemEvent } from './twenty-events/publish-record-event.js';
+import {
+  createDealLineItemsBatch,
+  deleteDealLineItemsBatch,
+  upsertDealLineItemsBatch,
+  updateDealLineItemsSameDataBatch,
+  isSchemaBatchError,
+} from './twenty-batch.js';
 
 /** Line items at this stage (or null) may be deleted/updated on re-sync. */
 export const DELETABLE_LINE_ITEM_STAGE = DEFAULT_OPPORTUNITY_STAGE;
@@ -249,31 +256,38 @@ export async function cancelLineItemsForOpportunity(
   } = {},
 ) {
   const existingLineItems = await listLineItemsForOpportunity(gql, apiUrl, apiToken, oppId);
-  let cancelled = 0;
+  const ids = existingLineItems
+    .filter((li) => li.stage !== cancelledStage)
+    .map((li) => li.id);
+  const data = { stage: cancelledStage, amount: ZERO_RUB_AMOUNT };
 
-  for (const li of existingLineItems) {
-    if (li.stage === cancelledStage) continue;
-
-    logTwentyStep('line_items.cancel', { lineItemId: li.id, name: li.name, fromStage: li.stage });
-
-    const resp = await gql(
-      apiUrl,
-      apiToken,
-      `mutation UpdateDealLineItem($id: ID!, $input: DealLineItemUpdateInput!) {
-        updateDealLineItem(id: $id, data: $input) { id }
-      }`,
-      { id: li.id, input: { stage: cancelledStage, amount: ZERO_RUB_AMOUNT } }
-    );
-
-    if (assertHttpSuccess) assertHttpSuccess(resp, apiUrl);
-    if (assertGqlSuccess) {
-      assertGqlSuccess(resp, `Failed to cancel line item "${li.name}" in Twenty`);
+  if (ids.length) {
+    logTwentyStep('line_items.cancel', { count: ids.length });
+    try {
+      await updateDealLineItemsSameDataBatch({
+        gql,
+        apiUrl,
+        apiToken,
+        ids,
+        data,
+        assertHttpSuccess: assertHttpSuccess || (() => {}),
+        assertGqlSuccess: assertGqlSuccess || (() => {}),
+      });
+    } catch (err) {
+      if (!isSchemaBatchError(err)) throw err;
+      await upsertDealLineItemsBatch({
+        gql,
+        apiUrl,
+        apiToken,
+        rows: ids.map((id) => ({ id, data })),
+        assertHttpSuccess: assertHttpSuccess || (() => {}),
+        assertGqlSuccess: assertGqlSuccess || (() => {}),
+        allowAliasFallback: true,
+      });
     }
-
-    cancelled += 1;
   }
 
-  return { cancelled, total: existingLineItems.length };
+  return { cancelled: ids.length, total: existingLineItems.length };
 }
 
 export async function syncLineItemsDiff({
@@ -359,61 +373,76 @@ export async function syncLineItemsDiff({
     logTwentyStep('line_items.banner_tip', { names: bannerItems.map((i) => i.name) });
   }
 
-  for (const lineItemId of toDelete) {
-    logTwentyStep('line_items.delete', { lineItemId });
-    const resp = await deleteLineItem(gql, apiUrl, apiToken, lineItemId);
-    assertHttpSuccess(resp, apiUrl);
-    assertGqlSuccess(resp, 'Failed to delete line item in Twenty');
-    publishDealLineItemEvent('DELETED', lineItemId, { before: { id: lineItemId } });
-  }
-
-  for (const { twentyId, item } of toUpdate) {
-    logTwentyStep('line_items.update', { lineItemId: twentyId, name: item.name, price: item.price });
-    const resp = await gql(
+  if (toDelete.length) {
+    logTwentyStep('line_items.delete', { count: toDelete.length });
+    await deleteDealLineItemsBatch({
+      gql,
       apiUrl,
       apiToken,
-      `mutation UpdateDealLineItem($id: ID!, $input: DealLineItemUpdateInput!) {
-        updateDealLineItem(id: $id, data: $input) { id }
-      }`,
-      { id: twentyId, input: buildLineItemUpdateInput(item, lineItemOptions) }
-    );
-    assertHttpSuccess(resp, apiUrl);
-    assertGqlSuccess(resp, `Failed to update line item "${item.name}" in Twenty`);
-    db.prepare('UPDATE deal_items SET twenty_id = ? WHERE id = ?').run(twentyId, item.id);
-    publishDealLineItemEvent('UPDATED', twentyId, {
-      after: { id: twentyId, opportunityId: oppId, name: item.name },
+      ids: toDelete,
+      assertHttpSuccess,
+      assertGqlSuccess,
     });
+    for (const lineItemId of toDelete) {
+      publishDealLineItemEvent('DELETED', lineItemId, { before: { id: lineItemId } });
+    }
   }
 
-  let position = 0;
-  for (const item of toCreate) {
-    logTwentyStep('line_items.create', { name: item.name, price: item.price });
-    const warehouseItemId = await findOrCreateWarehouseItem(apiUrl, apiToken, item.name);
-    const resp = await gql(
+  if (toUpdate.length) {
+    logTwentyStep('line_items.update', { count: toUpdate.length });
+    await upsertDealLineItemsBatch({
+      gql,
       apiUrl,
       apiToken,
-      `mutation CreateDealLineItem($input: DealLineItemCreateInput!) {
-        createDealLineItem(data: $input) { id }
-      }`,
-      {
-        input: buildLineItemCreateInput(
-          item,
-          warehouseItemId,
-          oppId,
-          position === 0 ? 'first' : position,
-          lineItemOptions
-        ),
+      rows: toUpdate.map(({ twentyId, item }) => ({
+        id: twentyId,
+        data: buildLineItemUpdateInput(item, lineItemOptions),
+      })),
+      assertHttpSuccess,
+      assertGqlSuccess,
+    });
+    for (const { twentyId, item } of toUpdate) {
+      db.prepare('UPDATE deal_items SET twenty_id = ? WHERE id = ?').run(twentyId, item.id);
+      publishDealLineItemEvent('UPDATED', twentyId, {
+        after: { id: twentyId, opportunityId: oppId, name: item.name },
+      });
+    }
+  }
+
+  if (toCreate.length) {
+    logTwentyStep('line_items.create', { count: toCreate.length });
+    const warehouseIdsByName = new Map();
+    for (const item of toCreate) {
+      if (!warehouseIdsByName.has(item.name)) {
+        warehouseIdsByName.set(
+          item.name,
+          await findOrCreateWarehouseItem(apiUrl, apiToken, item.name),
+        );
       }
-    );
-    assertHttpSuccess(resp, apiUrl);
-    assertGqlSuccess(resp, `Failed to create line item "${item.name}" in Twenty`);
-    const lineItemId = resp.data?.data?.createDealLineItem?.id;
-    if (!lineItemId) throw new Error(`Failed to create line item "${item.name}" in Twenty`);
-    db.prepare('UPDATE deal_items SET twenty_id = ? WHERE id = ?').run(lineItemId, item.id);
-    publishDealLineItemEvent('CREATED', lineItemId, {
-      after: { id: lineItemId, opportunityId: oppId, name: item.name },
+    }
+    const inputs = toCreate.map((item, index) => buildLineItemCreateInput(
+      item,
+      warehouseIdsByName.get(item.name),
+      oppId,
+      index === 0 ? 'first' : index,
+      lineItemOptions,
+    ));
+    const created = await createDealLineItemsBatch({
+      gql,
+      apiUrl,
+      apiToken,
+      inputs,
+      assertHttpSuccess,
+      assertGqlSuccess,
     });
-    position += 1;
+    for (let i = 0; i < toCreate.length; i += 1) {
+      const item = toCreate[i];
+      const lineItemId = created[i].id;
+      db.prepare('UPDATE deal_items SET twenty_id = ? WHERE id = ?').run(lineItemId, item.id);
+      publishDealLineItemEvent('CREATED', lineItemId, {
+        after: { id: lineItemId, opportunityId: oppId, name: item.name },
+      });
+    }
   }
 
   return { updated: toUpdate.length, created: toCreate.length, deleted: toDelete.length };

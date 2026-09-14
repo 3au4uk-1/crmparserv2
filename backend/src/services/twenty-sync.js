@@ -17,6 +17,7 @@ import {
   listLineItemsForOpportunity,
   syncLineItemsDiff,
 } from './twenty-line-items-sync.js';
+import { upsertDealLineItemsBatch } from './twenty-batch.js';
 import {
   beginTwentySyncContext,
   endTwentySyncContext,
@@ -643,27 +644,24 @@ export async function restoreDealInTwenty(dealId) {
       deal.twenty_id,
     );
     const existingLineItemIds = new Set(existingLineItems.map((li) => li.id));
-
+    const restoreRows = [];
     for (const entry of snapshot) {
       if (!entry?.id) continue;
       if (!existingLineItemIds.has(entry.id)) {
         logTwentyStep('restore.line_item_skipped', { lineItemId: entry.id });
         continue;
       }
-      const resp = await gql(
-        twenty.apiUrl,
-        twenty.apiToken,
-        `mutation UpdateDealLineItem($id: ID!, $input: DealLineItemUpdateInput!) {
-          updateDealLineItem(id: $id, data: $input) { id }
-        }`,
-        { id: entry.id, input: { stage: entry.stage ?? null } }
-      );
-      assertHttpSuccess(resp, twenty.apiUrl);
-      assertGqlSuccess(resp, `Failed to restore line item ${entry.id} in Twenty`);
-      if (!resp.data?.data?.updateDealLineItem?.id) {
-        logTwentyStep('restore.line_item_skipped', { lineItemId: entry.id });
-        continue;
-      }
+      restoreRows.push({ id: entry.id, data: { stage: entry.stage ?? null } });
+    }
+    if (restoreRows.length) {
+      await upsertDealLineItemsBatch({
+        gql,
+        apiUrl: twenty.apiUrl,
+        apiToken: twenty.apiToken,
+        rows: restoreRows,
+        assertHttpSuccess,
+        assertGqlSuccess,
+      });
     }
 
     db.prepare(`
