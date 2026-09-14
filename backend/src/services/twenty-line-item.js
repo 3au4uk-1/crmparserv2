@@ -1,7 +1,7 @@
 import { computeLineItemTotal, parseQuantityNum, DEFAULT_OPPORTUNITY_STAGE, shouldZeroLineItemAmount } from './twenty-opportunity.js';
 import { findTipRuleMatch } from './tip-rules.js';
 import { resolveTipDetail } from './tip-taxonomy.js';
-import { sortProductStreams, coerceProductStreams } from './product-stream.js';
+import { productStreamsEqual, sortProductStreams, coerceProductStreams } from './product-stream.js';
 
 export function buildWarehouseItemCreateInput(name, position = 'first') {
   return { name, position };
@@ -78,4 +78,25 @@ export function buildLineItemCreateInput(item, warehouseItemId, opportunityId, p
 
 export function buildLineItemUpdateInput(item, options = {}) {
   return buildLineItemFields(item, options);
+}
+
+export function lineItemFieldsEqual(existing, desired) {
+  if (!existing) return false;
+  if ((existing.kolichestvo ?? 1) !== (desired.kolichestvo ?? 1)) return false;
+  if ((existing.amount?.amountMicros ?? 0) !== (desired.amount?.amountMicros ?? 0)) return false;
+  if ((existing.istochnik || 'PARSER') !== (desired.istochnik || 'PARSER')) return false;
+  if (!productStreamsEqual(
+    coerceProductStreams(existing.productStream),
+    coerceProductStreams(desired.productStream),
+  )) return false;
+  if (Object.prototype.hasOwnProperty.call(desired, 'kommentariy')) {
+    if ((existing.kommentariy || '') !== (desired.kommentariy || '')) return false;
+  }
+  if (Object.prototype.hasOwnProperty.call(desired, 'tip')) {
+    if ((existing.tip || null) !== (desired.tip || null)) return false;
+  }
+  if (Object.prototype.hasOwnProperty.call(desired, 'tipDetail')) {
+    if ((existing.tipDetail || null) !== (desired.tipDetail || null)) return false;
+  }
+  return true;
 }

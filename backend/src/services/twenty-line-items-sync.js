@@ -1,6 +1,7 @@
 import {
   buildLineItemCreateInput,
   buildLineItemUpdateInput,
+  lineItemFieldsEqual,
 } from './twenty-line-item.js';
 import { normalizePattern } from './blacklist.js';
 import { shouldZeroLineItemAmount } from './twenty-opportunity.js';
@@ -127,6 +128,16 @@ export function computeLineItemDiff(
   return { toUpdate, toCreate, toDelete, preserved };
 }
 
+export function applyFieldSkip(diff, existingLineItems, lineItemOptions = {}) {
+  const byId = new Map((existingLineItems || []).map((li) => [li.id, li]));
+  const toUpdate = (diff.toUpdate || []).filter(({ twentyId, item }) => {
+    const current = byId.get(twentyId);
+    const desired = buildLineItemUpdateInput(item, lineItemOptions);
+    return !lineItemFieldsEqual(current, desired);
+  });
+  return { ...diff, toUpdate };
+}
+
 export async function listLineItemsForOpportunity(
   gql,
   apiUrl,
@@ -140,7 +151,7 @@ export async function listLineItemsForOpportunity(
     apiToken,
     `query ListLineItems($oppId: ID!) {
       dealLineItems(filter: { opportunityId: { eq: $oppId } }) {
-        edges { node { id name stage istochnik productStream kolichestvo amount { amountMicros currencyCode } } }
+        edges { node { id name stage istochnik productStream kolichestvo kommentariy tip tipDetail amount { amountMicros currencyCode } } }
       }
     }`,
     { oppId }
@@ -284,13 +295,24 @@ export async function syncLineItemsDiff({
   ignoreStageProtection = false,
   scoped = false,
 }) {
-  const { toUpdate, toCreate, toDelete, preserved } = computeLineItemDiff(
+  const identity = computeLineItemDiff(
     existingLineItems,
     eligibleItems,
     {
       ignoreStageProtection,
       manualParserTwentyIds: getManualParserTwentyIds(db),
       scoped,
+    },
+  );
+  const { toUpdate, toCreate, toDelete, preserved } = applyFieldSkip(
+    identity,
+    existingLineItems,
+    {
+      deal,
+      restorationList,
+      neNasheBrandingList,
+      neNasheDecorMkList,
+      tipRules,
     },
   );
 

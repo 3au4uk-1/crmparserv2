@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   computeLineItemDiff,
+  applyFieldSkip,
   isProtectedLineItemStage,
   listLineItemsForOpportunity,
   updateDealLineItemProductStreams,
@@ -222,6 +223,37 @@ describe('computeLineItemDiff', () => {
     expect(scoped.preserved).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: 'li-brand', name: 'Баннер' })]),
     );
+  });
+});
+
+describe('applyFieldSkip', () => {
+  it('drops identity updates whose payload fields already match', () => {
+    const existing = [{
+      id: 'li-1',
+      name: 'Баннер',
+      stage: 'NOVYY',
+      istochnik: 'PARSER',
+      productStream: ['BRANDING'],
+      kolichestvo: 1,
+      amount: { amountMicros: 100_000_000, currencyCode: 'RUB' },
+      kommentariy: '',
+    }];
+    const item = {
+      id: 10,
+      name: 'Баннер',
+      quantity_num: 1,
+      price: 100,
+      comment: '',
+      productStreams: ['BRANDING'],
+    };
+    const identity = {
+      toUpdate: [{ twentyId: 'li-1', item }],
+      toCreate: [],
+      toDelete: [],
+      preserved: [],
+    };
+    const skipped = applyFieldSkip(identity, existing, {});
+    expect(skipped.toUpdate).toEqual([]);
   });
 });
 
