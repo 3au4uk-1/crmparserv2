@@ -172,7 +172,7 @@ describe('restore-missing-twenty-jobs', () => {
     const result = await restoreMissingDealInTwenty(1);
     expect(result).toEqual({ action: 'adopted', twentyId: 'opp-new' });
     expect(testDb.prepare('SELECT twenty_id FROM deals WHERE id = 1').get().twenty_id).toBe('opp-new');
-    expect(syncDealToTwentyMock).toHaveBeenCalledWith(1);
+    expect(syncDealToTwentyMock).toHaveBeenCalledWith(1, { skipPrintSheetRefresh: true });
   });
 
   it('recreates opportunity when missing in Twenty', async () => {
@@ -186,7 +186,7 @@ describe('restore-missing-twenty-jobs', () => {
     expect(result).toEqual({ action: 'created', twentyId: 'opp-created' });
     expect(testDb.prepare('SELECT twenty_id FROM deals WHERE id = 1').get().twenty_id).toBeNull();
     expect(testDb.prepare('SELECT twenty_id FROM deal_items WHERE deal_id = 1').get().twenty_id).toBeNull();
-    expect(syncDealToTwentyMock).toHaveBeenCalledWith(1);
+    expect(syncDealToTwentyMock).toHaveBeenCalledWith(1, { skipPrintSheetRefresh: true });
   });
 
   it('recovers stale running jobs on startup', () => {
@@ -223,6 +223,24 @@ describe('restore-missing-twenty-jobs', () => {
     expect(finished.dealsSkipped).toBe(1);
     expect(finished.dealsRestored).toBe(1);
     expect(runPrintSheetRefreshMock).toHaveBeenCalledOnce();
+    expect(syncDealToTwentyMock).toHaveBeenCalledWith(2, { skipPrintSheetRefresh: true });
+  });
+
+  it('uses skipPrintSheetRefresh on per-deal sync and refreshes print sheet once after pool', async () => {
+    testDb.prepare("INSERT INTO deals (twenty_id) VALUES ('opp-1')").run();
+    testDb.prepare("INSERT INTO deals (twenty_id) VALUES ('opp-2')").run();
+    opportunityExistsInTwentyMock.mockResolvedValue(false);
+    findTwentyOpportunityIdByBookingMock.mockResolvedValue(null);
+    syncDealToTwentyMock.mockResolvedValue({ twentyId: 'opp-new', action: 'created' });
+    runPrintSheetRefreshMock.mockResolvedValue({ exported: 1 });
+
+    const job = createRestoreMissingTwentyJob({ trigger: 'manual' });
+    const promise = executeRestoreMissingTwentyJob(job.jobId);
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(syncDealToTwentyMock.mock.calls.every(([, opts]) => opts?.skipPrintSheetRefresh)).toBe(true);
+    expect(runPrintSheetRefreshMock).toHaveBeenCalledTimes(1);
   });
 
   it('does not delay 1s between deals', async () => {

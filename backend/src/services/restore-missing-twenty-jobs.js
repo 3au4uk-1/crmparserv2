@@ -198,13 +198,13 @@ export async function restoreMissingDealInTwenty(dealId) {
         WHERE id = ?
       `).run(adoptedId, dealId);
       db.prepare('UPDATE deal_items SET twenty_id = NULL WHERE deal_id = ?').run(dealId);
-      const result = await syncDealToTwenty(dealId);
+      const result = await syncDealToTwenty(dealId, { skipPrintSheetRefresh: true });
       return { action: 'adopted', twentyId: result.twentyId ?? adoptedId };
     }
   }
 
   clearDealTwentyLink(db, dealId);
-  const result = await syncDealToTwenty(dealId);
+  const result = await syncDealToTwenty(dealId, { skipPrintSheetRefresh: true });
   return { action: 'created', twentyId: result.twentyId };
 }
 
