@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import express from 'express';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -73,6 +76,20 @@ function createDb() {
       deals_total INTEGER DEFAULT 0,
       deals_done INTEGER DEFAULT 0,
       deals_restored INTEGER DEFAULT 0,
+      deals_failed INTEGER DEFAULT 0,
+      errors_json TEXT,
+      error TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE product_stream_backfill_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      status TEXT NOT NULL DEFAULT 'queued',
+      trigger TEXT NOT NULL DEFAULT 'manual',
+      started_at TEXT,
+      finished_at TEXT,
+      deals_total INTEGER DEFAULT 0,
+      deals_done INTEGER DEFAULT 0,
+      deals_updated INTEGER DEFAULT 0,
       deals_failed INTEGER DEFAULT 0,
       errors_json TEXT,
       error TEXT,
@@ -310,6 +327,31 @@ describe('decor-mk-scan-jobs', () => {
     expect(finished.dealsDone).toBe(1);
     expect(finished.dealsUpdated).toBe(0);
     expect(finished.status).toBe('completed');
+  });
+
+  it('does not delay 1s between deals and uses skipPrintSheetRefresh', async () => {
+    insertDeal({ id: 1, load_date: '2026-08-15', twenty_id: 'opp-1' });
+    insertItem({ deal_id: 1, name: 'Гирлянда' });
+    insertDeal({ id: 2, load_date: '2026-08-16', twenty_id: 'opp-2' });
+    insertItem({ deal_id: 2, name: 'Фотозона' });
+
+    syncDealToTwentyMock.mockResolvedValue({ action: 'updated', twentyId: 'opp-1' });
+
+    const started = Date.now();
+    const job = createDecorMkScanJob({ from: '2026-08-01', to: '2026-08-31' });
+    const promise = executeDecorMkScanJob(job.jobId);
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(syncDealToTwentyMock).toHaveBeenCalledTimes(2);
+    expect(syncDealToTwentyMock.mock.calls.every(([, opts]) => opts.skipPrintSheetRefresh)).toBe(true);
+    expect(
+      readFileSync(
+        path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/services/decor-mk-scan-jobs.js'),
+        'utf8',
+      ),
+    ).not.toMatch(/DELAY_MS/);
   });
 });
 

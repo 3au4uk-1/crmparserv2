@@ -1,4 +1,5 @@
 import { getDb } from '../db/connection.js';
+import { runDealSyncPool } from './deal-sync-pool.js';
 import { requireTwentyConfig } from './twenty-config.js';
 import { gql, assertHttpSuccess, assertGqlSuccess } from './twenty-gql.js';
 import {
@@ -10,13 +11,8 @@ import { loadProductStreamContext } from './twenty-items.js';
 
 const ACTIVE_STATUSES = new Set(['queued', 'running']);
 const MAX_ERRORS = 50;
-const DELAY_MS = 1000;
 
 const jobs = new Map();
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function parseErrorsJson(raw) {
   if (!raw) return [];
@@ -206,64 +202,59 @@ export async function executeProductStreamBackfillJob(jobId) {
   const streamContext = loadProductStreamContext(db);
 
   try {
-    for (let i = 0; i < dealIds.length; i++) {
-      if (i > 0) await delay(DELAY_MS);
-      const dealId = dealIds[i];
+    await runDealSyncPool(dealIds, async (dealId) => {
+      const deal = db.prepare('SELECT id, twenty_id FROM deals WHERE id = ?').get(dealId);
+      if (!deal?.twenty_id) {
+        throw new Error('Deal has no twenty_id');
+      }
 
-      try {
-        const deal = db.prepare('SELECT id, twenty_id FROM deals WHERE id = ?').get(dealId);
-        if (!deal?.twenty_id) {
-          throw new Error('Deal has no twenty_id');
-        }
+      const parserItems = db
+        .prepare('SELECT * FROM deal_items WHERE deal_id = ?')
+        .all(dealId);
 
-        const parserItems = db
-          .prepare('SELECT * FROM deal_items WHERE deal_id = ?')
-          .all(dealId);
+      const twentyLineItems = await listLineItemsForOpportunity(
+        gql,
+        twenty.apiUrl,
+        twenty.apiToken,
+        deal.twenty_id,
+        assertHttpSuccess,
+        assertGqlSuccess,
+      );
 
-        const twentyLineItems = await listLineItemsForOpportunity(
+      const { toUpdate } = planProductStreamBackfill({
+        parserItems,
+        twentyLineItems,
+        streamContext,
+      });
+
+      for (const update of toUpdate) {
+        await updateDealLineItemProductStreams(
           gql,
           twenty.apiUrl,
           twenty.apiToken,
-          deal.twenty_id,
+          update.twentyId,
+          update.productStreams,
           assertHttpSuccess,
           assertGqlSuccess,
         );
-
-        const { toUpdate } = planProductStreamBackfill({
-          parserItems,
-          twentyLineItems,
-          streamContext,
-        });
-
-        for (const update of toUpdate) {
-          await updateDealLineItemProductStreams(
-            gql,
-            twenty.apiUrl,
-            twenty.apiToken,
-            update.twentyId,
-            update.productStreams,
-            assertHttpSuccess,
-            assertGqlSuccess,
-          );
-        }
-
-        if (toUpdate.length > 0) {
-          job.dealsUpdated += 1;
-        }
-      } catch (err) {
-        job.dealsFailed += 1;
-        if (job.errors.length < MAX_ERRORS) {
-          job.errors.push({
-            dealId,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-        console.error(`[product-stream-backfill] deal ${dealId} failed:`, err.message);
       }
 
-      job.dealsDone += 1;
-      persistJobProgress(db, job.jobId, job);
-    }
+      return { toUpdate };
+    }, {
+      onDealSettled: ({ dealId, ok, result, error }) => {
+        job.dealsDone += 1;
+        if (ok && result?.toUpdate?.length > 0) {
+          job.dealsUpdated += 1;
+        }
+        if (!ok) {
+          job.dealsFailed += 1;
+          if (job.errors.length < MAX_ERRORS) {
+            job.errors.push({ dealId, error: error instanceof Error ? error.message : String(error) });
+          }
+        }
+        persistJobProgress(db, job.jobId, job);
+      },
+    });
 
     const finishedAt = new Date().toISOString();
     const status = job.dealsFailed > 0 ? 'completed_with_errors' : 'completed';

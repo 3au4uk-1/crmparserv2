@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import express from 'express';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -274,6 +277,27 @@ describe('product-stream-backfill-jobs', () => {
     expect(finished.dealsFailed).toBe(1);
     expect(finished.status).toBe('completed_with_errors');
     expect(finished.errors).toEqual([{ dealId: 2, error: 'Twenty timeout' }]);
+  });
+
+  it('does not delay 1s between deals', async () => {
+    testDb.prepare("INSERT INTO deals (id, twenty_id, approval_status) VALUES (1, 'opp-1', 'synced')").run();
+    testDb.prepare("INSERT INTO deals (id, twenty_id, approval_status) VALUES (2, 'opp-2', 'synced')").run();
+    listLineItemsForOpportunityMock.mockResolvedValue([]);
+    planProductStreamBackfillMock.mockReturnValue({ toUpdate: [], skipped: 0 });
+
+    const started = Date.now();
+    const job = createProductStreamBackfillJob({ trigger: 'manual' });
+    const promise = executeProductStreamBackfillJob(job.jobId);
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(
+      readFileSync(
+        path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/services/product-stream-backfill-jobs.js'),
+        'utf8',
+      ),
+    ).not.toMatch(/DELAY_MS/);
   });
 
   it('marks job failed when Twenty is not configured', async () => {

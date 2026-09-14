@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import express from 'express';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -68,6 +71,21 @@ function createDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       status TEXT NOT NULL DEFAULT 'queued',
       trigger TEXT NOT NULL DEFAULT 'manual',
+      started_at TEXT,
+      finished_at TEXT,
+      deals_total INTEGER DEFAULT 0,
+      deals_done INTEGER DEFAULT 0,
+      deals_updated INTEGER DEFAULT 0,
+      deals_failed INTEGER DEFAULT 0,
+      errors_json TEXT,
+      error TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE decor_mk_scan_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      status TEXT NOT NULL DEFAULT 'queued',
+      from_date TEXT NOT NULL,
+      to_date TEXT NOT NULL,
       started_at TEXT,
       finished_at TEXT,
       deals_total INTEGER DEFAULT 0,
@@ -205,6 +223,30 @@ describe('restore-missing-twenty-jobs', () => {
     expect(finished.dealsSkipped).toBe(1);
     expect(finished.dealsRestored).toBe(1);
     expect(runPrintSheetRefreshMock).toHaveBeenCalledOnce();
+  });
+
+  it('does not delay 1s between deals', async () => {
+    testDb.prepare("INSERT INTO deals (twenty_id) VALUES ('opp-1')").run();
+    testDb.prepare("INSERT INTO deals (twenty_id) VALUES ('opp-2')").run();
+    opportunityExistsInTwentyMock.mockResolvedValue(false);
+    findTwentyOpportunityIdByBookingMock.mockResolvedValue(null);
+    syncDealToTwentyMock.mockResolvedValue({ twentyId: 'opp-new', action: 'created' });
+    runPrintSheetRefreshMock.mockResolvedValue({ exported: 1 });
+
+    const started = Date.now();
+    const job = createRestoreMissingTwentyJob({ trigger: 'manual' });
+    const promise = executeRestoreMissingTwentyJob(job.jobId);
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(runPrintSheetRefreshMock).toHaveBeenCalledTimes(1);
+    expect(
+      readFileSync(
+        path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/services/restore-missing-twenty-jobs.js'),
+        'utf8',
+      ),
+    ).not.toMatch(/DELAY_MS/);
   });
 });
 

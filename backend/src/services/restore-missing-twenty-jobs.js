@@ -1,16 +1,12 @@
 import { getDb } from '../db/connection.js';
+import { runDealSyncPool } from './deal-sync-pool.js';
 import { findTwentyOpportunityIdByBooking, opportunityExistsInTwenty } from './twenty-lookup.js';
 import { syncDealToTwenty, runPrintSheetRefresh } from './twenty-sync.js';
 
 const ACTIVE_STATUSES = new Set(['queued', 'running']);
 const MAX_ERRORS = 50;
-const DELAY_MS = 1000;
 
 const jobs = new Map();
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function parseErrorsJson(raw) {
   if (!raw) return [];
@@ -239,42 +235,32 @@ export async function executeRestoreMissingTwentyJob(jobId) {
      WHERE id = ?`,
   ).run('running', startedAt, deals.length, Number(job.jobId));
 
-  let anyRestored = false;
-
   try {
-    for (let i = 0; i < deals.length; i++) {
-      if (i > 0) await delay(DELAY_MS);
-      const deal = deals[i];
-
-      try {
-        const result = await restoreMissingDealInTwenty(deal.id);
-        if (result.action === 'skipped') {
+    const dealIds = deals.map((deal) => deal.id);
+    await runDealSyncPool(dealIds, async (dealId) => {
+      return restoreMissingDealInTwenty(dealId);
+    }, {
+      onDealSettled: ({ dealId, ok, result, error }) => {
+        job.dealsDone += 1;
+        if (ok && result?.action === 'skipped') {
           job.dealsSkipped += 1;
-        } else {
+        } else if (ok) {
           job.dealsRestored += 1;
-          anyRestored = true;
         }
-      } catch (err) {
-        job.dealsFailed += 1;
-        if (job.errors.length < MAX_ERRORS) {
-          job.errors.push({
-            dealId: deal.id,
-            error: err instanceof Error ? err.message : String(err),
-          });
+        if (!ok) {
+          job.dealsFailed += 1;
+          if (job.errors.length < MAX_ERRORS) {
+            job.errors.push({ dealId, error: error instanceof Error ? error.message : String(error) });
+          }
         }
-        console.error(`[restore-missing-twenty] deal ${deal.id} failed:`, err.message);
-      }
+        persistJobProgress(db, job.jobId, job);
+      },
+    });
 
-      job.dealsDone += 1;
-      persistJobProgress(db, job.jobId, job);
-    }
-
-    if (anyRestored) {
-      try {
-        await runPrintSheetRefresh();
-      } catch (err) {
-        console.warn('[restore-missing-twenty] print sheet refresh failed:', err.message);
-      }
+    try {
+      await runPrintSheetRefresh();
+    } catch (err) {
+      console.warn('[restore-missing-twenty] print sheet refresh failed:', err.message);
     }
 
     const finishedAt = new Date().toISOString();

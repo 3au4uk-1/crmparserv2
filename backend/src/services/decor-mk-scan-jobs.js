@@ -1,17 +1,13 @@
 import { getDb } from '../db/connection.js';
+import { runDealSyncPool } from './deal-sync-pool.js';
 import { loadProductStreamContext, resolveItemProductStreams } from './twenty-items.js';
 import { syncDealToTwenty } from './twenty-sync.js';
 
 const ACTIVE_STATUSES = new Set(['queued', 'running']);
 const MAX_ERRORS = 50;
-const DELAY_MS = 1000;
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const jobs = new Map();
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function parseErrorsJson(raw) {
   if (!raw) return [];
@@ -205,37 +201,33 @@ export async function executeDecorMkScanJob(jobId) {
        WHERE id = ?`,
     ).run('running', startedAt, dealIds.length, Number(job.jobId));
 
-    for (let i = 0; i < dealIds.length; i++) {
-      if (i > 0) await delay(DELAY_MS);
-      const dealId = dealIds[i];
-
-      try {
-        const result = await syncDealToTwenty(dealId, {
-          skipPrintSheetRefresh: true,
-          ignoreLineItemStageProtection: true,
-          productStreams: ['DECOR', 'MK'],
-        });
+    await runDealSyncPool(dealIds, async (dealId) => {
+      return syncDealToTwenty(dealId, {
+        skipPrintSheetRefresh: true,
+        ignoreLineItemStageProtection: true,
+        productStreams: ['DECOR', 'MK'],
+      });
+    }, {
+      onDealSettled: ({ dealId, ok, result, error }) => {
+        job.dealsDone += 1;
         if (
-          result?.action === 'updated'
-          || result?.action === 'updated_empty'
-          || result?.action === 'created'
+          ok && (
+            result?.action === 'updated'
+            || result?.action === 'updated_empty'
+            || result?.action === 'created'
+          )
         ) {
           job.dealsUpdated += 1;
         }
-      } catch (err) {
-        job.dealsFailed += 1;
-        if (job.errors.length < MAX_ERRORS) {
-          job.errors.push({
-            dealId,
-            error: err instanceof Error ? err.message : String(err),
-          });
+        if (!ok) {
+          job.dealsFailed += 1;
+          if (job.errors.length < MAX_ERRORS) {
+            job.errors.push({ dealId, error: error instanceof Error ? error.message : String(error) });
+          }
         }
-        console.error(`[decor-mk-scan] deal ${dealId} failed:`, err.message);
-      }
-
-      job.dealsDone += 1;
-      persistJobProgress(db, job.jobId, job);
-    }
+        persistJobProgress(db, job.jobId, job);
+      },
+    });
 
     const finishedAt = new Date().toISOString();
     const status = job.dealsFailed > 0 ? 'completed_with_errors' : 'completed';

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import express from 'express';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -210,6 +213,31 @@ describe('bulk-resync-jobs', () => {
     expect(finished.dealsFailed).toBe(1);
     expect(finished.status).toBe('completed_with_errors');
     expect(finished.errors).toEqual([{ dealId: 2, error: 'Twenty timeout' }]);
+  });
+
+  it('does not delay 1s between deals and uses skipPrintSheetRefresh', async () => {
+    testDb.prepare('INSERT INTO deals (id, twenty_id, title) VALUES (1, ?, ?)').run('opp-1', 'Deal 1');
+    testDb.prepare('INSERT INTO deals (id, twenty_id, title) VALUES (2, ?, ?)').run('opp-2', 'Deal 2');
+
+    syncDealToTwentyMock.mockResolvedValue({ action: 'updated', twentyId: 'opp-1' });
+    runPrintSheetRefreshMock.mockResolvedValue({ exported: 1 });
+
+    const started = Date.now();
+    const job = createBulkResyncJob({ trigger: 'manual' });
+    const promise = executeBulkResyncJob(job.jobId);
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(syncDealToTwentyMock).toHaveBeenCalledTimes(2);
+    expect(syncDealToTwentyMock.mock.calls.every(([, opts]) => opts.skipPrintSheetRefresh)).toBe(true);
+    expect(runPrintSheetRefreshMock).toHaveBeenCalledTimes(1);
+    expect(
+      readFileSync(
+        path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/services/bulk-resync-jobs.js'),
+        'utf8',
+      ),
+    ).not.toMatch(/DELAY_MS/);
   });
 });
 
