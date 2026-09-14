@@ -26,6 +26,8 @@ export async function runPostParseTwentySync({
 
   let skipped_noop = 0;
   let failed = 0;
+  let cancelled_ok = 0;
+  let restored_ok = 0;
   const deals =
     resyncDealIds.length + cancelDealIds.length + restoreDealIds.length + autoApproveDealIds.length;
 
@@ -35,8 +37,18 @@ export async function runPostParseTwentySync({
   };
 
   await runDealSyncPool(resyncDealIds, (id) => syncDealToTwenty(id, { skipPrintSheetRefresh: true }), { onDealSettled: onSettle });
-  await runDealSyncPool(cancelDealIds, (id) => cancelDealInTwenty(id), { onDealSettled: onSettle });
-  await runDealSyncPool(restoreDealIds, (id) => restoreDealInTwenty(id), { onDealSettled: onSettle });
+  await runDealSyncPool(cancelDealIds, (id) => cancelDealInTwenty(id), {
+    onDealSettled: (evt) => {
+      onSettle(evt);
+      if (evt.ok && evt.result && !evt.result.skipped) cancelled_ok += 1;
+    },
+  });
+  await runDealSyncPool(restoreDealIds, (id) => restoreDealInTwenty(id), {
+    onDealSettled: (evt) => {
+      onSettle(evt);
+      if (evt.ok && evt.result && !evt.result.skipped) restored_ok += 1;
+    },
+  });
   await runDealSyncPool(autoApproveDealIds, (id) => syncDealToTwenty(id, { skipPrintSheetRefresh: true }), { onDealSettled: onSettle });
 
   try {
@@ -53,6 +65,8 @@ export async function runPostParseTwentySync({
     rate_limited: counters.rateLimitedCount,
     failed,
     duration_ms: Date.now() - started,
+    cancelled_ok,
+    restored_ok,
   };
   console.log(`[twenty-sync] ${new Date().toISOString()} post_parse.done ${JSON.stringify(summary)}`);
   resetTwentySyncInFlightCaches();

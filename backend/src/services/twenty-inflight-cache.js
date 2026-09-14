@@ -3,7 +3,11 @@ export function createInFlightCache() {
   return {
     getOrStart(key, fn) {
       if (!map.has(key)) {
-        map.set(key, Promise.resolve().then(fn));
+        const promise = Promise.resolve().then(fn);
+        map.set(key, promise);
+        promise.catch(() => {
+          if (map.get(key) === promise) map.delete(key);
+        });
       }
       return map.get(key);
     },

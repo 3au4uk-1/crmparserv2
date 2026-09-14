@@ -286,6 +286,74 @@ describe('syncDealToTwenty', () => {
     expect(axiosPost.mock.calls.some(([, body]) => String(body.query).includes('updateOpportunityAmount'))).toBe(false);
   });
 
+  it('sends updateOpportunity on payment-only change and does not return noop', async () => {
+    const dealId = dbMock.__seedDeal({
+      id: 21,
+      twenty_id: 'opp-pay',
+      approval_status: 'synced',
+      title: 'Deal A',
+      start_date: '2026-06-10',
+      crm_event_id: 'e21',
+      payment_amount: 1000,
+      payment_status: 'PREDOPLATA',
+    });
+    dbMock.__seedItem({
+      deal_id: dealId,
+      name: 'Баннер',
+      price: 2000,
+      classification: 'keyword_match',
+      sync_override: null,
+    });
+
+    const matchingLineItem = {
+      id: 'li-1',
+      name: 'Баннер',
+      stage: 'NOVYY',
+      istochnik: 'PARSER',
+      productStream: ['BRANDING'],
+      kolichestvo: 1,
+      amount: { amountMicros: 2_000_000_000, currencyCode: 'RUB' },
+    };
+    const opportunity = {
+      id: 'opp-pay',
+      name: 'Deal A',
+      companyId: null,
+      pointOfContactId: null,
+      closeDate: '2026-06-10T00:00:00+03:00',
+      arrivalTime: null,
+      readyTime: null,
+      workTime: null,
+      dismantleTime: null,
+      loadDate: null,
+      amount: { amountMicros: 2_000_000_000, currencyCode: 'RUB' },
+      tonyLink: null,
+      bitrixLink: null,
+      summaPostupleniy: { amountMicros: 0, currencyCode: 'RUB' },
+      statusOplaty: 'NE_OPLACHENO',
+    };
+
+    axiosPost.mockImplementation((_url, body) => {
+      const query = String(body.query);
+      if (query.includes('opportunities') && query.includes('dealLineItems')) {
+        return Promise.resolve(gqlOk({
+          opportunities: { edges: [{ node: opportunity }] },
+          dealLineItems: { edges: [{ node: matchingLineItem }] },
+        }));
+      }
+      if (query.includes('updateOpportunity')) {
+        return Promise.resolve(gqlOk({ updateOpportunity: { id: 'opp-pay' } }));
+      }
+      if (/upsertDealLineItems|updateDealLineItems\(|updateDealLineItem\(/.test(query)) {
+        return Promise.resolve(gqlOk({ upsertDealLineItems: [{ id: 'li-1' }] }));
+      }
+      return Promise.resolve(gqlOk({}));
+    });
+
+    const result = await syncDealToTwenty(dealId, { skipPrintSheetRefresh: true });
+    expect(result.action).toBe('updated');
+    expect(axiosPost.mock.calls.some(([, body]) => String(body.query).includes('updateOpportunity'))).toBe(true);
+  });
+
   it('does not list line items a second time after syncLineItemsDiff', async () => {
     const dealId = dbMock.__seedDeal({
       id: 1,

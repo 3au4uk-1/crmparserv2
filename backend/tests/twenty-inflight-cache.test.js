@@ -17,4 +17,18 @@ describe('createInFlightCache', () => {
     expect(b).toBe('id-1');
     expect(starts).toBe(1);
   });
+
+  it('drops a rejected entry so the next getOrStart retries fn', async () => {
+    const cache = createInFlightCache();
+    let starts = 0;
+    const fn = () => {
+      starts += 1;
+      if (starts === 1) return Promise.reject(new Error('lookup failed'));
+      return Promise.resolve('id-2');
+    };
+
+    await expect(cache.getOrStart('Баннер', fn)).rejects.toThrow('lookup failed');
+    await expect(cache.getOrStart('Баннер', fn)).resolves.toBe('id-2');
+    expect(starts).toBe(2);
+  });
 });

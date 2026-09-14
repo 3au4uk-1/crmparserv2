@@ -557,8 +557,8 @@ export async function runParsing(startDate, endDate) {
       newDeals: counters.newDeals,
       updatedDeals: counters.updatedDeals,
       skippedDeals: counters.skippedDeals,
-      cancelledDeals: counters.cancelledDeals,
-      restoredDeals: counters.restoredDeals,
+      cancelledDeals: counters.cancelledDeals + (postParse.cancelled_ok || 0),
+      restoredDeals: counters.restoredDeals + (postParse.restored_ok || 0),
       outOfRange,
       autoApprove,
     };

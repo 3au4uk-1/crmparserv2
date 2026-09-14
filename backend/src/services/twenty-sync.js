@@ -22,6 +22,7 @@ import { upsertDealLineItemsBatch } from './twenty-batch.js';
 import {
   beginTwentySyncContext,
   endTwentySyncContext,
+  runTwentySyncContext,
   logTwenty,
   logTwentyStep,
 } from './twenty-sync-log.js';
@@ -550,77 +551,80 @@ export async function syncDealToTwenty(
   }
 
   const mode = deal.twenty_id ? 'update' : 'create';
-
-  beginTwentySyncContext({
+  const syncCtx = {
     dealId,
     twentyId: deal.twenty_id || null,
     mode,
     title: deal.title,
-  });
+  };
 
-  logTwentyStep('sync.start', {
-    mode,
-    apiUrl: twenty.apiUrl,
-    configSource: twenty.source,
-    timeoutMs: config.twentyApiTimeoutMs,
-    totalItems: allItems.length,
-    eligibleItems: scopedItems.length,
-    eligibleNames: scopedItems.map((i) => i.name).slice(0, 10),
-    productStreams: streamFilterActive ? productStreams : undefined,
-  });
+  return runTwentySyncContext(syncCtx, async () => {
+    beginTwentySyncContext(syncCtx);
 
-  try {
-    let result;
-    if (deal.twenty_id) {
-      result = await updateDealInTwenty(
-        dealId,
-        deal,
-        scopedItems,
-        twenty,
-        restorationList,
-        neNasheBrandingList,
-        neNasheDecorMkList,
-        tipRules,
-        { ignoreLineItemStageProtection, productStreams },
-      );
-    } else {
-      if (scopedItems.length === 0) {
-        const message = 'Нет позиций для переноса в Twenty';
-        db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(message, dealId);
-        logSyncRun(dealId, 'failed', null, message, 'created');
-        logTwenty('warn', 'sync.aborted', { reason: message });
-        throw new Error(message);
+    logTwentyStep('sync.start', {
+      mode,
+      apiUrl: twenty.apiUrl,
+      configSource: twenty.source,
+      timeoutMs: config.twentyApiTimeoutMs,
+      totalItems: allItems.length,
+      eligibleItems: scopedItems.length,
+      eligibleNames: scopedItems.map((i) => i.name).slice(0, 10),
+      productStreams: streamFilterActive ? productStreams : undefined,
+    });
+
+    try {
+      let result;
+      if (deal.twenty_id) {
+        result = await updateDealInTwenty(
+          dealId,
+          deal,
+          scopedItems,
+          twenty,
+          restorationList,
+          neNasheBrandingList,
+          neNasheDecorMkList,
+          tipRules,
+          { ignoreLineItemStageProtection, productStreams },
+        );
+      } else {
+        if (scopedItems.length === 0) {
+          const message = 'Нет позиций для переноса в Twenty';
+          db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(message, dealId);
+          logSyncRun(dealId, 'failed', null, message, 'created');
+          logTwenty('warn', 'sync.aborted', { reason: message });
+          throw new Error(message);
+        }
+
+        result = await createDealInTwenty(
+          dealId,
+          deal,
+          scopedItems,
+          twenty,
+          restorationList,
+          neNasheBrandingList,
+          neNasheDecorMkList,
+          tipRules,
+        );
       }
 
-      result = await createDealInTwenty(
-        dealId,
-        deal,
-        scopedItems,
-        twenty,
-        restorationList,
-        neNasheBrandingList,
-        neNasheDecorMkList,
-        tipRules,
-      );
+      if (!skipPrintSheetRefresh) {
+        await refreshPrintSheetAfterSync(twenty, result.twentyId);
+      }
+      return result;
+    } catch (err) {
+      logTwenty('error', 'sync.failed', { mode, error: err.message });
+      if (deal.twenty_id) {
+        db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
+        logSyncRun(dealId, 'failed', deal.twenty_id, err.message, 'updated');
+      } else {
+        db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
+        logSyncRun(dealId, 'failed', null, err.message, 'created');
+      }
+      throw err;
+    } finally {
+      endTwentySyncContext();
     }
-
-    if (!skipPrintSheetRefresh) {
-      await refreshPrintSheetAfterSync(twenty, result.twentyId);
-    }
-    return result;
-  } catch (err) {
-    logTwenty('error', 'sync.failed', { mode, error: err.message });
-    if (deal.twenty_id) {
-      db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
-      logSyncRun(dealId, 'failed', deal.twenty_id, err.message, 'updated');
-    } else {
-      db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
-      logSyncRun(dealId, 'failed', null, err.message, 'created');
-    }
-    throw err;
-  } finally {
-    endTwentySyncContext();
-  }
+  });
 }
 
 export async function restoreDealInTwenty(dealId) {
@@ -644,78 +648,82 @@ export async function restoreDealInTwenty(dealId) {
     }
   }
 
-  beginTwentySyncContext({
+  const restoreCtx = {
     dealId,
     twentyId: deal.twenty_id,
     mode: 'restore',
     title: deal.title,
-  });
+  };
 
-  logTwentyStep('restore.start', { oppId: deal.twenty_id, stage, lineItemCount: snapshot.length });
+  return runTwentySyncContext(restoreCtx, async () => {
+    beginTwentySyncContext(restoreCtx);
 
-  try {
-    const oppResp = await gql(
-      twenty.apiUrl,
-      twenty.apiToken,
-      `mutation RestoreOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
-        updateOpportunity(id: $id, data: $input) { id }
-      }`,
-      { id: deal.twenty_id, input: { stage } }
-    );
-    assertHttpSuccess(oppResp, twenty.apiUrl);
-    assertGqlSuccess(oppResp, 'Failed to restore opportunity in Twenty');
+    logTwentyStep('restore.start', { oppId: deal.twenty_id, stage, lineItemCount: snapshot.length });
 
-    const existingLineItems = await listLineItemsForOpportunity(
-      gql,
-      twenty.apiUrl,
-      twenty.apiToken,
-      deal.twenty_id,
-    );
-    const existingLineItemIds = new Set(existingLineItems.map((li) => li.id));
-    const restoreRows = [];
-    for (const entry of snapshot) {
-      if (!entry?.id) continue;
-      if (!existingLineItemIds.has(entry.id)) {
-        logTwentyStep('restore.line_item_skipped', { lineItemId: entry.id });
-        continue;
-      }
-      restoreRows.push({ id: entry.id, data: { stage: entry.stage ?? null } });
-    }
-    if (restoreRows.length) {
-      await upsertDealLineItemsBatch({
+    try {
+      const oppResp = await gql(
+        twenty.apiUrl,
+        twenty.apiToken,
+        `mutation RestoreOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
+          updateOpportunity(id: $id, data: $input) { id }
+        }`,
+        { id: deal.twenty_id, input: { stage } }
+      );
+      assertHttpSuccess(oppResp, twenty.apiUrl);
+      assertGqlSuccess(oppResp, 'Failed to restore opportunity in Twenty');
+
+      const existingLineItems = await listLineItemsForOpportunity(
         gql,
-        apiUrl: twenty.apiUrl,
-        apiToken: twenty.apiToken,
-        rows: restoreRows,
-        assertHttpSuccess,
-        assertGqlSuccess,
-      });
+        twenty.apiUrl,
+        twenty.apiToken,
+        deal.twenty_id,
+      );
+      const existingLineItemIds = new Set(existingLineItems.map((li) => li.id));
+      const restoreRows = [];
+      for (const entry of snapshot) {
+        if (!entry?.id) continue;
+        if (!existingLineItemIds.has(entry.id)) {
+          logTwentyStep('restore.line_item_skipped', { lineItemId: entry.id });
+          continue;
+        }
+        restoreRows.push({ id: entry.id, data: { stage: entry.stage ?? null } });
+      }
+      if (restoreRows.length) {
+        await upsertDealLineItemsBatch({
+          gql,
+          apiUrl: twenty.apiUrl,
+          apiToken: twenty.apiToken,
+          rows: restoreRows,
+          assertHttpSuccess,
+          assertGqlSuccess,
+        });
+      }
+
+      db.prepare(`
+        UPDATE deals SET
+          twenty_stage = ?,
+          status = NULL,
+          pre_cancel_opportunity_stage = NULL,
+          line_item_stage_snapshot_json = NULL,
+          calendar_miss_streak = 0,
+          synced_at = datetime('now'),
+          twenty_error = NULL,
+          updated_at = datetime('now')
+        WHERE id = ?
+      `).run(stage, dealId);
+
+      logSyncRun(dealId, 'success', deal.twenty_id, null, 'restored');
+      logTwentyStep('restore.done', { oppId: deal.twenty_id, stage });
+      return { twentyId: deal.twenty_id, action: 'restored', stage };
+    } catch (err) {
+      logTwenty('error', 'restore.failed', { error: err.message });
+      db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
+      logSyncRun(dealId, 'failed', deal.twenty_id, err.message, 'restored');
+      throw err;
+    } finally {
+      endTwentySyncContext();
     }
-
-    db.prepare(`
-      UPDATE deals SET
-        twenty_stage = ?,
-        status = NULL,
-        pre_cancel_opportunity_stage = NULL,
-        line_item_stage_snapshot_json = NULL,
-        calendar_miss_streak = 0,
-        synced_at = datetime('now'),
-        twenty_error = NULL,
-        updated_at = datetime('now')
-      WHERE id = ?
-    `).run(stage, dealId);
-
-    logSyncRun(dealId, 'success', deal.twenty_id, null, 'restored');
-    logTwentyStep('restore.done', { oppId: deal.twenty_id, stage });
-    return { twentyId: deal.twenty_id, action: 'restored', stage };
-  } catch (err) {
-    logTwenty('error', 'restore.failed', { error: err.message });
-    db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
-    logSyncRun(dealId, 'failed', deal.twenty_id, err.message, 'restored');
-    throw err;
-  } finally {
-    endTwentySyncContext();
-  }
+  });
 }
 
 export async function cancelDealInTwenty(dealId) {
@@ -728,80 +736,84 @@ export async function cancelDealInTwenty(dealId) {
     return { twentyId: deal.twenty_id, action: 'cancelled', skipped: true };
   }
 
-  beginTwentySyncContext({
+  const cancelCtx = {
     dealId,
     twentyId: deal.twenty_id,
     mode: 'cancel',
     title: deal.title,
-  });
+  };
 
-  logTwentyStep('cancel.start', { oppId: deal.twenty_id });
+  return runTwentySyncContext(cancelCtx, async () => {
+    beginTwentySyncContext(cancelCtx);
 
-  try {
-    const existingLineItems = await listLineItemsForOpportunity(
-      gql,
-      twenty.apiUrl,
-      twenty.apiToken,
-      deal.twenty_id,
-    );
+    logTwentyStep('cancel.start', { oppId: deal.twenty_id });
 
-    const existingSnapshot = deal.line_item_stage_snapshot_json;
-    if (!existingSnapshot) {
-      const snapshot = existingLineItems.map((li) => ({ id: li.id, stage: li.stage ?? null }));
-      const snapshotWrite = db.prepare(`
-        UPDATE deals
-        SET pre_cancel_opportunity_stage = ?,
-            line_item_stage_snapshot_json = ?
-        WHERE id = ?
-          AND (line_item_stage_snapshot_json IS NULL OR line_item_stage_snapshot_json = '')
-      `).run(deal.twenty_stage ?? null, JSON.stringify(snapshot), dealId);
-      if (snapshotWrite.changes > 0) {
-        logTwentyStep('cancel.snapshot', {
-          lineItemCount: snapshot.length,
-          opportunityStage: deal.twenty_stage ?? null,
-        });
+    try {
+      const existingLineItems = await listLineItemsForOpportunity(
+        gql,
+        twenty.apiUrl,
+        twenty.apiToken,
+        deal.twenty_id,
+      );
+
+      const existingSnapshot = deal.line_item_stage_snapshot_json;
+      if (!existingSnapshot) {
+        const snapshot = existingLineItems.map((li) => ({ id: li.id, stage: li.stage ?? null }));
+        const snapshotWrite = db.prepare(`
+          UPDATE deals
+          SET pre_cancel_opportunity_stage = ?,
+              line_item_stage_snapshot_json = ?
+          WHERE id = ?
+            AND (line_item_stage_snapshot_json IS NULL OR line_item_stage_snapshot_json = '')
+        `).run(deal.twenty_stage ?? null, JSON.stringify(snapshot), dealId);
+        if (snapshotWrite.changes > 0) {
+          logTwentyStep('cancel.snapshot', {
+            lineItemCount: snapshot.length,
+            opportunityStage: deal.twenty_stage ?? null,
+          });
+        }
       }
+
+      const oppResp = await gql(
+        twenty.apiUrl,
+        twenty.apiToken,
+        `mutation CancelOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
+          updateOpportunity(id: $id, data: $input) { id }
+        }`,
+        { id: deal.twenty_id, input: { stage: CANCELLED_OPPORTUNITY_STAGE, amount: ZERO_RUB_AMOUNT } }
+      );
+      assertHttpSuccess(oppResp, twenty.apiUrl);
+      assertGqlSuccess(oppResp, 'Failed to cancel opportunity in Twenty');
+
+      const lineItemCancel = await cancelLineItemsForOpportunity(
+        gql,
+        twenty.apiUrl,
+        twenty.apiToken,
+        deal.twenty_id,
+        { assertHttpSuccess, assertGqlSuccess },
+      );
+      logTwentyStep('cancel.line_items', lineItemCancel);
+
+      db.prepare(`
+        UPDATE deals SET
+          twenty_stage = ?,
+          status = ?,
+          synced_at = datetime('now'),
+          twenty_error = NULL,
+          updated_at = datetime('now')
+        WHERE id = ?
+      `).run(CANCELLED_OPPORTUNITY_STAGE, 'отмена', dealId);
+
+      logSyncRun(dealId, 'success', deal.twenty_id, null, 'cancelled');
+      logTwentyStep('cancel.done', { oppId: deal.twenty_id });
+      return { twentyId: deal.twenty_id, action: 'cancelled' };
+    } catch (err) {
+      logTwenty('error', 'cancel.failed', { error: err.message });
+      db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
+      logSyncRun(dealId, 'failed', deal.twenty_id, err.message, 'cancelled');
+      throw err;
+    } finally {
+      endTwentySyncContext();
     }
-
-    const oppResp = await gql(
-      twenty.apiUrl,
-      twenty.apiToken,
-      `mutation CancelOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
-        updateOpportunity(id: $id, data: $input) { id }
-      }`,
-      { id: deal.twenty_id, input: { stage: CANCELLED_OPPORTUNITY_STAGE, amount: ZERO_RUB_AMOUNT } }
-    );
-    assertHttpSuccess(oppResp, twenty.apiUrl);
-    assertGqlSuccess(oppResp, 'Failed to cancel opportunity in Twenty');
-
-    const lineItemCancel = await cancelLineItemsForOpportunity(
-      gql,
-      twenty.apiUrl,
-      twenty.apiToken,
-      deal.twenty_id,
-      { assertHttpSuccess, assertGqlSuccess },
-    );
-    logTwentyStep('cancel.line_items', lineItemCancel);
-
-    db.prepare(`
-      UPDATE deals SET
-        twenty_stage = ?,
-        status = ?,
-        synced_at = datetime('now'),
-        twenty_error = NULL,
-        updated_at = datetime('now')
-      WHERE id = ?
-    `).run(CANCELLED_OPPORTUNITY_STAGE, 'отмена', dealId);
-
-    logSyncRun(dealId, 'success', deal.twenty_id, null, 'cancelled');
-    logTwentyStep('cancel.done', { oppId: deal.twenty_id });
-    return { twentyId: deal.twenty_id, action: 'cancelled' };
-  } catch (err) {
-    logTwenty('error', 'cancel.failed', { error: err.message });
-    db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
-    logSyncRun(dealId, 'failed', deal.twenty_id, err.message, 'cancelled');
-    throw err;
-  } finally {
-    endTwentySyncContext();
-  }
+  });
 }

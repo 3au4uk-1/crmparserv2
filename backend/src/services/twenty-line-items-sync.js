@@ -183,6 +183,8 @@ export async function fetchOpportunityAndLineItems(
             id name companyId pointOfContactId closeDate
             arrivalTime readyTime workTime dismantleTime loadDate
             amount { amountMicros currencyCode }
+            summaPostupleniy { amountMicros currencyCode }
+            statusOplaty
             tonyLink { primaryLinkUrl }
             bitrixLink { primaryLinkUrl }
           }
@@ -355,18 +357,6 @@ export async function syncLineItemsDiff({
       scoped,
     },
   );
-  const { toUpdate, toCreate, toDelete, preserved } = applyFieldSkip(
-    identity,
-    existingLineItems,
-    {
-      deal,
-      restorationList,
-      neNasheBrandingList,
-      neNasheDecorMkList,
-      tipRules,
-    },
-  );
-
   const lineItemOptions = {
     deal,
     restorationList,
@@ -374,6 +364,15 @@ export async function syncLineItemsDiff({
     neNasheDecorMkList,
     tipRules,
   };
+  const { toUpdate, toCreate, toDelete, preserved } = applyFieldSkip(
+    identity,
+    existingLineItems,
+    lineItemOptions,
+  );
+
+  for (const { twentyId, item } of identity.toUpdate) {
+    db.prepare('UPDATE deal_items SET twenty_id = ? WHERE id = ?').run(twentyId, item.id);
+  }
 
   logTwentyStep('line_items.diff', {
     toUpdate: toUpdate.length,

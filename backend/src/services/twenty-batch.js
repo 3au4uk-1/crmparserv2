@@ -9,9 +9,10 @@ export function chunk(items, size = TWENTY_BATCH_SIZE) {
 
 export function isSchemaBatchError(err) {
   const message = err?.message || String(err);
-  if (/limit reached|tokens per|429/i.test(message)) return false;
-  if (/\b5\d\d\b/.test(message)) return false;
-  return /cannot query field|unknown argument|upsertDealLineItems|did not exist|Cannot query/i.test(message);
+  if (/limit reached|tokens per|429/i.test(message) || err?.status === 429) return false;
+  if (/\b5\d\d\b/.test(message) || (err?.status >= 500 && err?.status < 600)) return false;
+  if (err?.status === 400 || /HTTP 400\b/.test(message)) return true;
+  return /cannot query field|unknown argument|upsertDealLineItems|did not exist|Cannot query|unknown type|DealLineItemUpsertInput/i.test(message);
 }
 
 export async function createDealLineItemsBatch({

@@ -184,20 +184,40 @@ function linkUrl(value) {
   return value?.primaryLinkUrl || value || null;
 }
 
+function isMissingInstant(value) {
+  return value == null || value === '';
+}
+
+function instantsEqual(a, b) {
+  if (isMissingInstant(a) && isMissingInstant(b)) return true;
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  if (Number.isNaN(ta) || Number.isNaN(tb)) return false;
+  return ta === tb;
+}
+
 export function opportunityFieldsEqual(existing, next) {
   if (!existing) return false;
   if ((existing.name || '') !== (next.name || '')) return false;
   if ((existing.amount?.amountMicros ?? 0) !== (next.amount?.amountMicros ?? 0)) return false;
   if ((existing.companyId || null) !== (next.companyId || null)) return false;
   if ((existing.pointOfContactId || null) !== (next.pointOfContactId || null)) return false;
-  if ((existing.closeDate || '') !== (next.closeDate || '')) return false;
+  if (!instantsEqual(existing.closeDate, next.closeDate)) return false;
   if ((existing.arrivalTime || null) !== (next.arrivalTime || null)) return false;
   if ((existing.readyTime || null) !== (next.readyTime || null)) return false;
   if ((existing.workTime || null) !== (next.workTime || null)) return false;
   if ((existing.dismantleTime || null) !== (next.dismantleTime || null)) return false;
-  if ((existing.loadDate || null) !== (next.loadDate || null)) return false;
+  if (!instantsEqual(existing.loadDate, next.loadDate)) return false;
   if (linkUrl(existing.tonyLink) !== linkUrl(next.tonyLink)) return false;
   if (linkUrl(existing.bitrixLink) !== linkUrl(next.bitrixLink)) return false;
+  if (Object.prototype.hasOwnProperty.call(next, PAYMENT_FIELDS.amount)) {
+    const existingMicros = existing[PAYMENT_FIELDS.amount]?.amountMicros ?? 0;
+    const nextMicros = next[PAYMENT_FIELDS.amount]?.amountMicros ?? 0;
+    if (existingMicros !== nextMicros) return false;
+  }
+  if (Object.prototype.hasOwnProperty.call(next, PAYMENT_FIELDS.status)) {
+    if ((existing[PAYMENT_FIELDS.status] || null) !== (next[PAYMENT_FIELDS.status] || null)) return false;
+  }
   return true;
 }
 

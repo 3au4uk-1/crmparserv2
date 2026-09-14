@@ -76,4 +76,29 @@ describe('runPostParseTwentySync', () => {
     });
     expect(order).toEqual(['s1', 'c2', 'r3', 's4']);
   });
+
+  it('counts successful cancel and restore queue results, not skipped', async () => {
+    cancelDealInTwenty
+      .mockResolvedValueOnce({ action: 'cancelled' })
+      .mockResolvedValueOnce({ action: 'cancelled', skipped: true });
+    restoreDealInTwenty
+      .mockResolvedValueOnce({ action: 'restored' })
+      .mockResolvedValueOnce({ action: 'restored', skipped: true });
+
+    const summary = await runPostParseTwentySync({
+      resyncDealIds: [],
+      cancelDealIds: [1, 2],
+      restoreDealIds: [3, 4],
+      autoApproveDealIds: [],
+    });
+
+    expect(summary.cancelled_ok).toBe(1);
+    expect(summary.restored_ok).toBe(1);
+    expect(summary.deals).toBe(4);
+    expect(summary.skipped_noop).toBe(0);
+    expect(summary.failed).toBe(0);
+    expect(summary.gql_count).toBe(3);
+    expect(summary.rate_limited).toBe(1);
+    expect(typeof summary.duration_ms).toBe('number');
+  });
 });

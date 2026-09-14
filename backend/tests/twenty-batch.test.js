@@ -107,4 +107,14 @@ describe('isSchemaBatchError', () => {
     expect(isSchemaBatchError(new Error('Cannot query field upsertDealLineItems'))).toBe(true);
     expect(isSchemaBatchError(new Error('Limit reached (100 tokens per 60000 ms)'))).toBe(false);
   });
+
+  it('is true for unknown upsert input type', () => {
+    expect(isSchemaBatchError(new Error('Unknown type "DealLineItemUpsertInput"'))).toBe(true);
+  });
+
+  it('is true for HTTP 400 schema errors and false for 5xx', () => {
+    expect(isSchemaBatchError(new Error('Twenty API error: HTTP 400'))).toBe(true);
+    expect(isSchemaBatchError(Object.assign(new Error('bad request'), { status: 400 }))).toBe(true);
+    expect(isSchemaBatchError(new Error('Twenty API error: HTTP 500'))).toBe(false);
+  });
 });
