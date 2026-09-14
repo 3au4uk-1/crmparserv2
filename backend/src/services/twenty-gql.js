@@ -11,6 +11,18 @@ import {
   parseTwentyRateLimitWaitMs,
 } from './twenty-rate-limit.js';
 
+let gqlCount = 0;
+let rateLimitedCount = 0;
+
+export function resetTwentyGqlCounters() {
+  gqlCount = 0;
+  rateLimitedCount = 0;
+}
+
+export function getTwentyGqlCounters() {
+  return { gqlCount, rateLimitedCount };
+}
+
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -47,6 +59,10 @@ export async function gql(apiUrl, apiToken, query, variables = {}, attempt = 0) 
   const operation = parseGqlOperation(query);
   const startedAt = Date.now();
 
+  if (attempt === 0) {
+    gqlCount += 1;
+  }
+
   logTwenty('info', 'gql request start', {
     operation,
     attempt: attempt + 1,
@@ -77,6 +93,7 @@ export async function gql(apiUrl, apiToken, query, variables = {}, attempt = 0) 
     const rateLimitMessage = gqlErrors.find(isTwentyRateLimitError);
 
     if ((resp.status === 429 || rateLimitMessage) && attempt < maxAttempts - 1) {
+      rateLimitedCount += 1;
       const waitMs = rateLimitMessage
         ? parseTwentyRateLimitWaitMs(rateLimitMessage)
         : config.twentyApiRateLimitWindowMs;
