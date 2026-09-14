@@ -170,6 +170,43 @@ export async function listLineItemsForOpportunity(
   return resp.data?.data?.dealLineItems?.edges?.map((e) => e.node) || [];
 }
 
+export async function fetchOpportunityAndLineItems(
+  gql, apiUrl, apiToken, oppId, assertHttpSuccess, assertGqlSuccess,
+) {
+  const resp = await gql(
+    apiUrl,
+    apiToken,
+    `query OpportunityAndLineItems($oppId: ID!) {
+      opportunities(filter: { id: { eq: $oppId } }, first: 1) {
+        edges {
+          node {
+            id name companyId pointOfContactId closeDate
+            arrivalTime readyTime workTime dismantleTime loadDate
+            amount { amountMicros currencyCode }
+            tonyLink { primaryLinkUrl }
+            bitrixLink { primaryLinkUrl }
+          }
+        }
+      }
+      dealLineItems(filter: { opportunityId: { eq: $oppId } }) {
+        edges {
+          node {
+            id name stage istochnik productStream kolichestvo kommentariy tip tipDetail
+            amount { amountMicros currencyCode }
+          }
+        }
+      }
+    }`,
+    { oppId },
+  );
+  assertHttpSuccess(resp, apiUrl);
+  assertGqlSuccess(resp, 'Failed to load opportunity and line items');
+  return {
+    opportunity: resp.data?.data?.opportunities?.edges?.[0]?.node || null,
+    lineItems: resp.data?.data?.dealLineItems?.edges?.map((e) => e.node) || [],
+  };
+}
+
 export async function updateDealLineItemProductStreams(
   gql,
   apiUrl,
@@ -388,20 +425,27 @@ export async function syncLineItemsDiff({
     }
   }
 
-  if (toUpdate.length) {
-    logTwentyStep('line_items.update', { count: toUpdate.length });
+  const toUpdateWithData = toUpdate.map(({ twentyId, item }) => ({
+    twentyId,
+    item,
+    data: buildLineItemUpdateInput(item, lineItemOptions),
+  }));
+  const createdNodes = [];
+
+  if (toUpdateWithData.length) {
+    logTwentyStep('line_items.update', { count: toUpdateWithData.length });
     await upsertDealLineItemsBatch({
       gql,
       apiUrl,
       apiToken,
-      rows: toUpdate.map(({ twentyId, item }) => ({
+      rows: toUpdateWithData.map(({ twentyId, data }) => ({
         id: twentyId,
-        data: buildLineItemUpdateInput(item, lineItemOptions),
+        data,
       })),
       assertHttpSuccess,
       assertGqlSuccess,
     });
-    for (const { twentyId, item } of toUpdate) {
+    for (const { twentyId, item } of toUpdateWithData) {
       db.prepare('UPDATE deal_items SET twenty_id = ? WHERE id = ?').run(twentyId, item.id);
       publishDealLineItemEvent('UPDATED', twentyId, {
         after: { id: twentyId, opportunityId: oppId, name: item.name },
@@ -438,6 +482,13 @@ export async function syncLineItemsDiff({
     for (let i = 0; i < toCreate.length; i += 1) {
       const item = toCreate[i];
       const lineItemId = created[i].id;
+      const input = inputs[i];
+      createdNodes.push({
+        id: lineItemId,
+        amount: input.amount,
+        kolichestvo: input.kolichestvo,
+        stage: DEFAULT_OPPORTUNITY_STAGE,
+      });
       db.prepare('UPDATE deal_items SET twenty_id = ? WHERE id = ?').run(lineItemId, item.id);
       publishDealLineItemEvent('CREATED', lineItemId, {
         after: { id: lineItemId, opportunityId: oppId, name: item.name },
@@ -445,5 +496,13 @@ export async function syncLineItemsDiff({
     }
   }
 
-  return { updated: toUpdate.length, created: toCreate.length, deleted: toDelete.length };
+  return {
+    updated: toUpdateWithData.length,
+    created: toCreate.length,
+    deleted: toDelete.length,
+    toUpdate: toUpdateWithData,
+    toCreate,
+    toDelete,
+    createdNodes,
+  };
 }

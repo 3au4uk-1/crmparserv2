@@ -6,7 +6,7 @@ import { loadRestorationList, isRestorationItem } from './restoration.js';
 import { loadNeNasheBrandingList, isNeNasheBrandingItem } from './ne-nashe-branding.js';
 import { loadNeNasheDecorMkList, isNeNasheDecorMkItem } from './ne-nashe-decor-mk.js';
 import { loadTipRules, findTipRuleMatch } from './tip-rules.js';
-import { buildOpportunityAmountInputFromLineItems, buildOpportunityInput, computeDealItemsTotal, computeLineItemTotal, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE, ZERO_RUB_AMOUNT } from './twenty-opportunity.js';
+import { buildOpportunityAmountInputFromLineItems, buildOpportunityInput, computeDealItemsTotal, computeLineItemTotal, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE, ZERO_RUB_AMOUNT, opportunityFieldsEqual, applyLineItemMutationsInMemory } from './twenty-opportunity.js';
 import {
   getItemsForTwenty,
   getItemEligibleReason,
@@ -14,6 +14,7 @@ import {
 import { buildWarehouseItemCreateInput } from './twenty-line-item.js';
 import {
   cancelLineItemsForOpportunity,
+  fetchOpportunityAndLineItems,
   listLineItemsForOpportunity,
   syncLineItemsDiff,
 } from './twenty-line-items-sync.js';
@@ -248,30 +249,6 @@ function createLineItemSyncDeps(warehouseCache) {
   };
 }
 
-async function updateOpportunityAmountFromLineItems(twenty, oppId) {
-  const lineItems = await listLineItemsForOpportunity(
-    gql, twenty.apiUrl, twenty.apiToken, oppId,
-  );
-  const amount = buildOpportunityAmountInputFromLineItems(lineItems);
-
-  logTwentyStep('sync.opportunity_amount', {
-    oppId,
-    amountMicros: amount.amountMicros,
-    lineItemCount: lineItems.length,
-  });
-
-  const resp = await gql(
-    twenty.apiUrl,
-    twenty.apiToken,
-    `mutation UpdateOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
-      updateOpportunity(id: $id, data: $input) { id }
-    }`,
-    { id: oppId, input: { amount } },
-  );
-  assertHttpSuccess(resp, twenty.apiUrl);
-  assertGqlSuccess(resp, 'Failed to update opportunity amount in Twenty');
-}
-
 async function updateDealInTwenty(
   dealId,
   deal,
@@ -287,51 +264,27 @@ async function updateDealInTwenty(
   const oppId = deal.twenty_id;
   const scoped = Array.isArray(productStreams) && productStreams.length > 0;
 
+  logTwentyStep('update.list_line_items', { oppId });
+
+  const { opportunity, lineItems: existingLineItems } = await fetchOpportunityAndLineItems(
+    gql, twenty.apiUrl, twenty.apiToken, oppId, assertHttpSuccess, assertGqlSuccess,
+  );
+
+  let companyTwentyId = null;
+  let personTwentyId = null;
   if (!scoped) {
     logTwentyStep('update.resolve_company_person', {
       companyCode: deal.company_code || null,
       managerName: deal.manager_name || null,
     });
 
-    const { companyTwentyId, personTwentyId } = await resolveCompanyAndPerson(deal, twenty);
+    ({ companyTwentyId, personTwentyId } = await resolveCompanyAndPerson(deal, twenty));
 
     logTwentyStep('update.resolve_company_person.done', {
       companyTwentyId,
       personTwentyId,
     });
-
-    const oppInput = buildOpportunityInput(deal, items, {
-      includeStage: false,
-      companyTwentyId,
-      personTwentyId,
-      restorationList,
-      neNasheBrandingList,
-      neNasheDecorMkList,
-    });
-
-    logTwentyStep('update.opportunity', {
-      oppId,
-      eligibleItems: items.length,
-      amountMicros: oppInput.amount?.amountMicros,
-    });
-
-    const oppResp = await gql(
-      twenty.apiUrl,
-      twenty.apiToken,
-      `mutation UpdateOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
-        updateOpportunity(id: $id, data: $input) { id }
-      }`,
-      { id: oppId, input: oppInput }
-    );
-    assertHttpSuccess(oppResp, twenty.apiUrl);
-    assertGqlSuccess(oppResp, 'Failed to update opportunity in Twenty');
   }
-
-  logTwentyStep('update.list_line_items', { oppId });
-
-  const existingLineItems = await listLineItemsForOpportunity(
-    gql, twenty.apiUrl, twenty.apiToken, oppId
-  );
 
   logTwentyStep('update.line_items_diff', {
     existingCount: existingLineItems.length,
@@ -340,7 +293,7 @@ async function updateDealInTwenty(
   });
 
   const warehouseCache = new Map();
-  await syncLineItemsDiff({
+  const diff = await syncLineItemsDiff({
     ...createLineItemSyncDeps(warehouseCache),
     apiUrl: twenty.apiUrl,
     apiToken: twenty.apiToken,
@@ -357,7 +310,60 @@ async function updateDealInTwenty(
     scoped,
   });
 
-  await updateOpportunityAmountFromLineItems(twenty, oppId);
+  const nextLineItems = applyLineItemMutationsInMemory(existingLineItems, {
+    toUpdate: diff.toUpdate,
+    toDelete: diff.toDelete,
+    createdNodes: diff.createdNodes,
+  });
+  const amount = buildOpportunityAmountInputFromLineItems(nextLineItems);
+
+  const oppInput = buildOpportunityInput(deal, items, {
+    includeStage: false,
+    companyTwentyId,
+    personTwentyId,
+    restorationList,
+    neNasheBrandingList,
+    neNasheDecorMkList,
+  });
+  oppInput.amount = amount;
+
+  const lineItemsChanged = diff.toUpdate.length > 0
+    || diff.toCreate.length > 0
+    || diff.toDelete.length > 0;
+
+  const skipOpportunityWrite = scoped
+    ? !lineItemsChanged
+    : !lineItemsChanged && opportunityFieldsEqual(opportunity, oppInput);
+
+  if (skipOpportunityWrite) {
+    db.prepare(`
+      UPDATE deals SET synced_at = datetime('now'), twenty_error = NULL WHERE id = ?
+    `).run(dealId);
+
+    logSyncRun(dealId, 'success', oppId, null, 'noop');
+    logTwentyStep('update.done', { action: 'noop', itemCount: items.length });
+    return { twentyId: oppId, action: 'noop', itemCount: items.length };
+  }
+
+  const input = scoped ? { amount } : oppInput;
+
+  logTwentyStep('update.opportunity', {
+    oppId,
+    eligibleItems: items.length,
+    amountMicros: amount.amountMicros,
+    scoped,
+  });
+
+  const oppResp = await gql(
+    twenty.apiUrl,
+    twenty.apiToken,
+    `mutation UpdateOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
+      updateOpportunity(id: $id, data: $input) { id }
+    }`,
+    { id: oppId, input },
+  );
+  assertHttpSuccess(oppResp, twenty.apiUrl);
+  assertGqlSuccess(oppResp, 'Failed to update opportunity in Twenty');
 
   const action = items.length === 0 ? 'updated_empty' : 'updated';
 
@@ -423,8 +429,6 @@ async function createDealInTwenty(
     neNasheDecorMkList,
     tipRules,
   });
-
-  await updateOpportunityAmountFromLineItems(twenty, oppId);
 
   db.prepare(`
     UPDATE deals SET

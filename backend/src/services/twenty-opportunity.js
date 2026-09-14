@@ -179,3 +179,50 @@ export function buildOpportunityInput(deal, items, options = {}) {
 
   return input;
 }
+
+function linkUrl(value) {
+  return value?.primaryLinkUrl || value || null;
+}
+
+export function opportunityFieldsEqual(existing, next) {
+  if (!existing) return false;
+  if ((existing.name || '') !== (next.name || '')) return false;
+  if ((existing.amount?.amountMicros ?? 0) !== (next.amount?.amountMicros ?? 0)) return false;
+  if ((existing.companyId || null) !== (next.companyId || null)) return false;
+  if ((existing.pointOfContactId || null) !== (next.pointOfContactId || null)) return false;
+  if ((existing.closeDate || '') !== (next.closeDate || '')) return false;
+  if ((existing.arrivalTime || null) !== (next.arrivalTime || null)) return false;
+  if ((existing.readyTime || null) !== (next.readyTime || null)) return false;
+  if ((existing.workTime || null) !== (next.workTime || null)) return false;
+  if ((existing.dismantleTime || null) !== (next.dismantleTime || null)) return false;
+  if ((existing.loadDate || null) !== (next.loadDate || null)) return false;
+  if (linkUrl(existing.tonyLink) !== linkUrl(next.tonyLink)) return false;
+  if (linkUrl(existing.bitrixLink) !== linkUrl(next.bitrixLink)) return false;
+  return true;
+}
+
+export function applyLineItemMutationsInMemory(existingLineItems, {
+  toUpdate = [],
+  toDelete = [],
+  createdNodes = [],
+} = {}) {
+  const deleted = new Set(toDelete);
+  const updates = new Map(toUpdate.map(({ twentyId, item, data }) => [twentyId, data || item]));
+  const next = [];
+  for (const li of existingLineItems || []) {
+    if (deleted.has(li.id)) continue;
+    const patch = updates.get(li.id);
+    if (!patch) {
+      next.push(li);
+      continue;
+    }
+    next.push({
+      ...li,
+      kolichestvo: patch.kolichestvo ?? li.kolichestvo,
+      amount: patch.amount ?? li.amount,
+      stage: li.stage,
+    });
+  }
+  for (const node of createdNodes) next.push(node);
+  return next;
+}

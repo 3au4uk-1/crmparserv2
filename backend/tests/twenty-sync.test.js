@@ -198,16 +198,11 @@ describe('syncDealToTwenty', () => {
     });
 
     axiosPost
-      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-existing' } }))
       .mockResolvedValueOnce(gqlOk({
+        opportunities: { edges: [{ node: { id: 'opp-existing', name: 'Old' } }] },
         dealLineItems: { edges: [{ node: { id: 'li-1', name: 'Баннер' } }] },
       }))
-      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-1' } }))
-      .mockResolvedValueOnce(gqlOk({
-        dealLineItems: {
-          edges: [{ node: { id: 'li-1', name: 'Баннер', stage: 'NOVYY', amount: { amountMicros: 2_000_000_000, currencyCode: 'RUB' } } }],
-        },
-      }))
+      .mockResolvedValueOnce(gqlOk({ upsertDealLineItems: [{ id: 'li-1' }] }))
       .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-existing' } }));
 
     runPrintSheetRefreshMock.mockResolvedValue({ exported: 0, readbackUpdated: 0, sessionsCleared: 0 });
@@ -219,6 +214,107 @@ describe('syncDealToTwenty', () => {
       body.query.includes('updateOpportunity')
     )).toBe(true);
     expect(runPrintSheetRefreshMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns noop and does not updateOpportunity when fields and line items match', async () => {
+    const dealId = dbMock.__seedDeal({
+      id: 20,
+      twenty_id: 'opp-noop',
+      approval_status: 'synced',
+      title: 'Deal A',
+      start_date: '2026-06-10',
+      crm_event_id: 'e20',
+    });
+    dbMock.__seedItem({
+      deal_id: dealId,
+      name: 'Баннер',
+      price: 2000,
+      classification: 'keyword_match',
+      sync_override: null,
+    });
+
+    const matchingLineItem = {
+      id: 'li-1',
+      name: 'Баннер',
+      stage: 'NOVYY',
+      istochnik: 'PARSER',
+      productStream: ['BRANDING'],
+      kolichestvo: 1,
+      amount: { amountMicros: 2_000_000_000, currencyCode: 'RUB' },
+    };
+    const matchingOpportunity = {
+      id: 'opp-noop',
+      name: 'Deal A',
+      companyId: null,
+      pointOfContactId: null,
+      closeDate: '2026-06-10T00:00:00+03:00',
+      arrivalTime: null,
+      readyTime: null,
+      workTime: null,
+      dismantleTime: null,
+      loadDate: null,
+      amount: { amountMicros: 2_000_000_000, currencyCode: 'RUB' },
+      tonyLink: null,
+      bitrixLink: null,
+    };
+
+    axiosPost.mockImplementation((_url, body) => {
+      const query = String(body.query);
+      if (query.includes('opportunities') && query.includes('dealLineItems')) {
+        return Promise.resolve(gqlOk({
+          opportunities: { edges: [{ node: matchingOpportunity }] },
+          dealLineItems: { edges: [{ node: matchingLineItem }] },
+        }));
+      }
+      if (query.includes('dealLineItems')) {
+        return Promise.resolve(gqlOk({
+          dealLineItems: { edges: [{ node: matchingLineItem }] },
+        }));
+      }
+      if (query.includes('updateOpportunity')) {
+        return Promise.resolve(gqlOk({ updateOpportunity: { id: 'opp-noop' } }));
+      }
+      if (/upsertDealLineItems|updateDealLineItems\(|updateDealLineItem\(/.test(query)) {
+        return Promise.resolve(gqlOk({ upsertDealLineItems: [{ id: 'li-1' }] }));
+      }
+      return Promise.resolve(gqlOk({}));
+    });
+
+    const result = await syncDealToTwenty(dealId, { skipPrintSheetRefresh: true });
+    expect(result.action).toBe('noop');
+    expect(axiosPost.mock.calls.some(([, body]) => String(body.query).includes('updateOpportunity'))).toBe(false);
+    expect(axiosPost.mock.calls.some(([, body]) => String(body.query).includes('updateOpportunityAmount'))).toBe(false);
+  });
+
+  it('does not list line items a second time after syncLineItemsDiff', async () => {
+    const dealId = dbMock.__seedDeal({
+      id: 1,
+      twenty_id: 'opp-existing',
+      approval_status: 'synced',
+      title: 'Updated deal',
+      start_date: '2026-06-10',
+      crm_event_id: 'e1',
+    });
+    dbMock.__seedItem({
+      deal_id: dealId,
+      name: 'Баннер',
+      price: 2000,
+      classification: 'keyword_match',
+      sync_override: null,
+    });
+
+    axiosPost
+      .mockResolvedValueOnce(gqlOk({
+        opportunities: { edges: [{ node: { id: 'opp-existing', name: 'Old' } }] },
+        dealLineItems: { edges: [{ node: { id: 'li-1', name: 'Баннер' } }] },
+      }))
+      .mockResolvedValueOnce(gqlOk({ upsertDealLineItems: [{ id: 'li-1' }] }))
+      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-existing' } }));
+
+    await syncDealToTwenty(dealId, { skipPrintSheetRefresh: true });
+
+    const listCalls = axiosPost.mock.calls.filter(([, body]) => String(body.query).includes('dealLineItems'));
+    expect(listCalls.length).toBe(1);
   });
 
   it('recalculates opportunity amount from non-OTMENA line items after sync', async () => {
@@ -239,8 +335,8 @@ describe('syncDealToTwenty', () => {
     });
 
     axiosPost
-      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-amount' } }))
       .mockResolvedValueOnce(gqlOk({
+        opportunities: { edges: [{ node: { id: 'opp-amount', name: 'Amount deal' } }] },
         dealLineItems: {
           edges: [
             { node: { id: 'li-active', name: 'Баннер', stage: 'NOVYY', amount: { amountMicros: 10_000_000_000, currencyCode: 'RUB' } } },
@@ -248,15 +344,7 @@ describe('syncDealToTwenty', () => {
           ],
         },
       }))
-      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-active' } }))
-      .mockResolvedValueOnce(gqlOk({
-        dealLineItems: {
-          edges: [
-            { node: { id: 'li-active', name: 'Баннер', stage: 'NOVYY', amount: { amountMicros: 10_000_000_000, currencyCode: 'RUB' } } },
-            { node: { id: 'li-cancelled', name: 'Old', stage: 'OTMENA', amount: { amountMicros: 5_000_000_000, currencyCode: 'RUB' } } },
-          ],
-        },
-      }))
+      .mockResolvedValueOnce(gqlOk({ upsertDealLineItems: [{ id: 'li-active' }] }))
       .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-amount' } }));
 
     await syncDealToTwenty(dealId);
@@ -264,11 +352,12 @@ describe('syncDealToTwenty', () => {
     const updateCalls = axiosPost.mock.calls.filter(([_, body]) =>
       body.query.includes('updateOpportunity')
     );
-    expect(updateCalls).toHaveLength(2);
-    expect(updateCalls[1][1].variables.input).toEqual({
-      amount: { amountMicros: 10_000_000_000, currencyCode: 'RUB' },
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0][1].variables.input.amount).toEqual({
+      amountMicros: 2_000_000_000,
+      currencyCode: 'RUB',
     });
-    expect(updateCalls[1][1].variables.input).not.toHaveProperty('name');
+    expect(updateCalls[0][1].variables.input).toHaveProperty('name');
   });
 
   it('creates opportunity when no twenty_id', async () => {
@@ -290,13 +379,7 @@ describe('syncDealToTwenty', () => {
       .mockResolvedValueOnce(gqlOk({ createOpportunity: { id: 'opp-new' } }))
       .mockResolvedValueOnce(gqlOk({ products: { edges: [] } }))
       .mockResolvedValueOnce(gqlOk({ createProduct: { id: 'wh-1' } }))
-      .mockResolvedValueOnce(gqlOk({ createDealLineItems: [{ id: 'li-new' }] }))
-      .mockResolvedValueOnce(gqlOk({
-        dealLineItems: {
-          edges: [{ node: { id: 'li-new', name: 'Баннер', stage: 'NOVYY', amount: { amountMicros: 1_000_000_000, currencyCode: 'RUB' } } }],
-        },
-      }))
-      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-new' } }));
+      .mockResolvedValueOnce(gqlOk({ createDealLineItems: [{ id: 'li-new' }] }));
 
     runPrintSheetRefreshMock.mockResolvedValue({ exported: 0, readbackUpdated: 0, sessionsCleared: 0 });
 
@@ -323,16 +406,11 @@ describe('syncDealToTwenty', () => {
     });
 
     axiosPost
-      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-skip-print' } }))
       .mockResolvedValueOnce(gqlOk({
+        opportunities: { edges: [{ node: { id: 'opp-skip-print', name: 'Old' } }] },
         dealLineItems: { edges: [{ node: { id: 'li-1', name: 'Баннер', stage: 'NOVYY' } }] },
       }))
-      .mockResolvedValueOnce(gqlOk({ updateDealLineItem: { id: 'li-1' } }))
-      .mockResolvedValueOnce(gqlOk({
-        dealLineItems: {
-          edges: [{ node: { id: 'li-1', name: 'Баннер', stage: 'NOVYY', amount: { amountMicros: 1_000_000_000, currencyCode: 'RUB' } } }],
-        },
-      }))
+      .mockResolvedValueOnce(gqlOk({ upsertDealLineItems: [{ id: 'li-1' }] }))
       .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-skip-print' } }));
 
     runPrintSheetRefreshMock.mockResolvedValue({ exported: 0, readbackUpdated: 0, sessionsCleared: 0 });
@@ -395,6 +473,7 @@ describe('syncDealToTwenty', () => {
 
     axiosPost
       .mockResolvedValueOnce(gqlOk({
+        opportunities: { edges: [{ node: { id: 'opp-scoped', name: 'Decor scoped deal' } }] },
         dealLineItems: {
           edges: [
             { node: { id: 'li-branding', name: 'Баннер', stage: 'NOVYY' } },
@@ -403,14 +482,6 @@ describe('syncDealToTwenty', () => {
         },
       }))
       .mockResolvedValueOnce(gqlOk({ upsertDealLineItems: [{ id: 'li-decor' }] }))
-      .mockResolvedValueOnce(gqlOk({
-        dealLineItems: {
-          edges: [
-            { node: { id: 'li-branding', name: 'Баннер', stage: 'NOVYY', amount: { amountMicros: 1_000_000_000, currencyCode: 'RUB' } } },
-            { node: { id: 'li-decor', name: 'Гирлянда', stage: 'NOVYY', amount: { amountMicros: 1_500_000_000, currencyCode: 'RUB' } } },
-          ],
-        },
-      }))
       .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-scoped' } }));
 
     const result = await syncDealToTwenty(dealId, {
@@ -462,9 +533,10 @@ describe('syncDealToTwenty', () => {
     });
 
     axiosPost
-      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-print' } }))
-      .mockResolvedValueOnce(gqlOk({ dealLineItems: { edges: [] } }))
-      .mockResolvedValueOnce(gqlOk({ dealLineItems: { edges: [] } }))
+      .mockResolvedValueOnce(gqlOk({
+        opportunities: { edges: [] },
+        dealLineItems: { edges: [] },
+      }))
       .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-print' } }));
 
     runPrintSheetRefreshMock.mockResolvedValue({ exported: 0, readbackUpdated: 1, sessionsCleared: 0 });
@@ -496,14 +568,9 @@ describe('syncDealToTwenty', () => {
     });
 
     axiosPost
-      .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-dates' } }))
       .mockResolvedValueOnce(gqlOk({
+        opportunities: { edges: [{ node: { id: 'opp-dates', name: 'Dates deal' } }] },
         dealLineItems: { edges: [{ node: { id: 'li-protected', name: 'Баннер', stage: 'V_PECHATI' } }] },
-      }))
-      .mockResolvedValueOnce(gqlOk({
-        dealLineItems: {
-          edges: [{ node: { id: 'li-protected', name: 'Баннер', stage: 'V_PECHATI', amount: { amountMicros: 2_000_000_000, currencyCode: 'RUB' } } }],
-        },
       }))
       .mockResolvedValueOnce(gqlOk({ updateOpportunity: { id: 'opp-dates' } }));
 
