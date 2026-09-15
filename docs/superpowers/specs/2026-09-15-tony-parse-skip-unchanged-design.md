@@ -1,7 +1,7 @@
 # Ускорение парсинга Tony: probe `updated_at` + конкурентность 8 — дизайн
 
 **Дата:** 2026-09-15  
-**Статус:** Утверждён к написанию плана реализации  
+**Статус:** Реализовано  
 **Репозиторий:** `crmparserv2`  
 **Связанные спеки:** `2026-06-20-parsing-optimization-design.md`, `2026-06-21-parse-schedule-optimization-design.md`, `2026-09-14-twenty-sync-speed-design.md`
 
