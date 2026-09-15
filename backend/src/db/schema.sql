@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS deals (
   work_time TEXT,
   dismantle_time TEXT,
   tony_order_id TEXT,
+  tony_updated_at TEXT,
   content_hash TEXT,
   approval_status TEXT NOT NULL DEFAULT 'pending',
   twenty_id TEXT,

@@ -242,6 +242,7 @@ export function migrate(db = getDb()) {
   ensureColumn(db, 'deal_items', 'amount_locked', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'deals', 'twenty_error', 'TEXT');
   ensureColumn(db, 'deals', 'tony_order_id', 'TEXT');
+  ensureColumn(db, 'deals', 'tony_updated_at', 'TEXT');
   ensureColumn(db, 'deals', 'arrival_time', 'TEXT');
   ensureColumn(db, 'deals', 'ready_time', 'TEXT');
   ensureColumn(db, 'deals', 'work_time', 'TEXT');
