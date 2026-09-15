@@ -1,3 +1,8 @@
+export function persistTonyUpdatedAt(db, dealId, stamp) {
+  if (!dealId || stamp == null || stamp === '') return;
+  db.prepare('UPDATE deals SET tony_updated_at = ? WHERE id = ?').run(String(stamp), dealId);
+}
+
 export function shouldSkipTonyFullFetch({ probeEnabled, probe, existingStamp, dataSource }) {
   if (!probeEnabled) return false;
   if (!probe?.ok || probe.notFound || probe.deleted) return false;

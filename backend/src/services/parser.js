@@ -20,8 +20,9 @@ import {
 } from './calendar-missing.js';
 import { extractBookingNumbers } from './booking-numbers.js';
 import { tonyLogin, getTonyConfig } from './tony-auth.js';
-import { fetchTonyOrderHtml } from './tony-client.js';
+import { fetchTonyOrderHtml, fetchTonyOrderInfo } from './tony-client.js';
 import { parseTonyOrder } from './tony-parser.js';
+import { shouldSkipTonyFullFetch, loadTonyUpdatedAtMap, persistTonyUpdatedAt } from './tony-unchanged.js';
 import { buildTonyDealFields, buildTonyItems, tonyContentHash } from './tony-mapping.js';
 import { planEventReconciliation } from './tony-reconcile.js';
 import { createPool, withRetry } from './fetch-pool.js';
@@ -163,7 +164,11 @@ export async function fetchEventData(event, eventId, tonyReady) {
 }
 
 /** Pooled, delay-free variant of resolveTonyOrders for the parallel pipeline. */
-async function resolveTonyOrdersPooled(tonyReady, bookingNumbers, run) {
+async function resolveTonyOrdersPooled(tonyReady, bookingNumbers, run, {
+  stamps = new Map(),
+  probeEnabled = false,
+  stats = null,
+} = {}) {
   const orders = new Map();
   if (!tonyReady) return orders;
   const retryRun = (fn) => run(() => withRetry(fn, {
@@ -171,9 +176,36 @@ async function resolveTonyOrdersPooled(tonyReady, bookingNumbers, run) {
   }));
   await Promise.all(
     bookingNumbers.map(async (n) => {
+      let probe = null;
+      if (probeEnabled) {
+        try {
+          probe = await fetchTonyOrderInfo(n, { run: retryRun });
+          if (stats && probe.ok) stats.tony_probe++;
+        } catch (err) {
+          console.error(`[tony] probe failed for order ${n}: ${err.message}`);
+          if (stats) stats.tony_probe_fail++;
+          return;
+        }
+        if (!probe.ok || probe.notFound || probe.deleted) return;
+        const known = stamps.get(String(n));
+        if (shouldSkipTonyFullFetch({
+          probeEnabled: true,
+          probe,
+          existingStamp: known?.stamp ?? null,
+          dataSource: known?.dataSource ?? null,
+        })) {
+          if (stats) stats.tony_skip++;
+          return;
+        }
+      }
       try {
         const html = await fetchTonyOrderHtml(n, { run: retryRun });
-        if (html) orders.set(n, parseTonyOrder(html));
+        if (html) {
+          const parsed = parseTonyOrder(html);
+          if (probe?.updatedAt) parsed.tonyUpdatedAt = probe.updatedAt;
+          orders.set(n, parsed);
+          if (stats) stats.tony_full++;
+        }
       } catch (err) {
         console.error(`[tony] failed to fetch order ${n}: ${err.message}`);
       }
@@ -183,7 +215,7 @@ async function resolveTonyOrdersPooled(tonyReady, bookingNumbers, run) {
 }
 
 /** Parallel prefetch of in-range events' network data. Returns Map<eventId, data>. */
-export async function prefetchAll(events, tonyReady, startDate, endDate, run) {
+export async function prefetchAll(events, tonyReady, startDate, endDate, run, options) {
   const map = new Map();
   let done = 0;
   const total = events.length;
@@ -208,7 +240,7 @@ export async function prefetchAll(events, tonyReady, startDate, endDate, run) {
       const { descHtml, calPayments } = parseDescriptionResponse(descJson);
       if (!descHtml) return;
 
-      const tonyOrders = await resolveTonyOrdersPooled(tonyReady, bookingNumbers, run);
+      const tonyOrders = await resolveTonyOrdersPooled(tonyReady, bookingNumbers, run, options);
       const calParsed = parseDealDescription(descHtml);
 
       map.set(eventId, { bookingNumbers, descHtml, calParsed, calPayments, tonyOrders });
@@ -264,6 +296,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
       }
       const hash = tonyContentHash(order);
       if (existing && existing.content_hash === hash) {
+        persistTonyUpdatedAt(db, existing.id, order.tonyUpdatedAt);
         if (!persistDealPayments(db, existing.id, calPayments, existing, dealsToResync)) {
           counters.skippedDeals++;
         }
@@ -281,7 +314,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
                 contact_name = ?, contact_email = ?, contact_company = ?, contact_phone = ?,
                 address = ?, work_time = ?, arrival_time = ?, dismantle_time = ?,
                 load_date = ?, load_time = ?, budget = ?,
-                content_hash = ?, data_source = 'tony', tony_order_id = ?, crm_lead_id = ?,
+                content_hash = ?, tony_updated_at = ?, data_source = 'tony', tony_order_id = ?, crm_lead_id = ?,
                 payment_amount = ?, payment_status = ?, payment_count = ?, payment_hash = ?,
                 updated_at = datetime('now')
               WHERE id = ?
@@ -291,7 +324,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           calContact.name, calContact.email, calContact.company, calContact.phone,
           fields.address, fields.work_time, fields.arrival_time, fields.dismantle_time,
           fields.load_date, fields.load_time, fields.budget,
-          hash, target.bookingNumber, event.leadid,
+          hash, order.tonyUpdatedAt ?? null, target.bookingNumber, event.leadid,
           paymentAggregate.paymentAmount, paymentAggregate.paymentStatus, paymentAggregate.paymentCount, paymentHash,
           existing.id
         );
@@ -305,14 +338,14 @@ export async function applyEvent(db, event, eventId, data, ctx) {
                 crm_event_id, deal_key, data_source, crm_lead_id, title, company_code, manager_name,
                 start_date, end_date, department, contact_name, contact_email, contact_company, contact_phone,
                 address, work_time, arrival_time, dismantle_time, load_date, load_time, budget,
-                tony_order_id, content_hash, raw_description,
+                tony_order_id, content_hash, tony_updated_at, raw_description,
                 payment_amount, payment_status, payment_count, payment_hash
-              ) VALUES (?, ?, 'tony', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ) VALUES (?, ?, 'tony', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `).run(
           eventId, target.dealKey, event.leadid, event.title, titleInfo.companyCode, titleInfo.managerName,
           fields.start_date, fields.end_date, event.department, calContact.name, calContact.email, calContact.company, calContact.phone,
           fields.address, fields.work_time, fields.arrival_time, fields.dismantle_time, fields.load_date, fields.load_time, fields.budget,
-          target.bookingNumber, hash, descHtml,
+          target.bookingNumber, hash, order.tonyUpdatedAt ?? null, descHtml,
           paymentAggregate.paymentAmount, paymentAggregate.paymentStatus, paymentAggregate.paymentCount, paymentHash
         );
         const dealId = insert.lastInsertRowid;
@@ -458,8 +491,18 @@ export async function runParsing(startDate, endDate) {
         `"inRange":${inRangeEvents.length},"totalFromApi":${events.length}}`
       );
       const t0 = Date.now();
-      prefetched = await prefetchAll(inRangeEvents, tonyReady, startDate, endDate, run);
-      console.log(`[parse] prefetch done {"events":${prefetched.size},"ms":${Date.now() - t0}}`);
+      const tonyStats = { tony_probe: 0, tony_skip: 0, tony_full: 0, tony_probe_fail: 0 };
+      prefetched = await prefetchAll(inRangeEvents, tonyReady, startDate, endDate, run, {
+        stamps: loadTonyUpdatedAtMap(db),
+        probeEnabled: config.tonyUnchangedProbe,
+        stats: tonyStats,
+      });
+      console.log(
+        `[parse] prefetch done {"events":${prefetched.size},"ms":${Date.now() - t0},` +
+        `"tony_probe":${tonyStats.tony_probe},"tony_skip":${tonyStats.tony_skip},` +
+        `"tony_full":${tonyStats.tony_full},"tony_probe_fail":${tonyStats.tony_probe_fail},` +
+        `"concurrency":${config.fetchConcurrency}}`
+      );
     }
 
     for (const event of events) {

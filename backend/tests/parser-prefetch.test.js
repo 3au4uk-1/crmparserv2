@@ -12,7 +12,7 @@ vi.mock('../src/services/tony-auth.js', () => ({
   tonyRequestHeaders: () => ({ Cookie: 'PHPSESSID=abc' }),
 }));
 vi.mock('../src/config.js', () => ({
-  config: { crmBaseUrl: 'https://apihide.com/bitrix/calendar/', fetchConcurrency: 4, parsePipeline: 'parallel' },
+  config: { crmBaseUrl: 'https://apihide.com/bitrix/calendar/', fetchConcurrency: 4, parsePipeline: 'parallel', tonyUnchangedProbe: false },
 }));
 
 import { createPool } from '../src/services/fetch-pool.js';
@@ -25,6 +25,12 @@ const ROW = '<tr data-id="1" data-price="100" data-sum="200"><td><input class="c
 function wireAxios() {
   axios.post.mockImplementation((url) => {
     if (url.includes('cal_description.php')) return Promise.resolve({ status: 200, data: DESC });
+    if (url.includes('order_get_info.php')) {
+      return Promise.resolve({
+        status: 200,
+        data: { success: true, data: { timestamps: { updated_at: '2026-09-15 12:39:09' }, deleted: false } },
+      });
+    }
     if (url.includes('order_products_list.php')) return Promise.resolve({ status: 200, data: { html: ROW } });
     if (url.includes('order_sklad_list.php')) return Promise.resolve({ status: 200, data: { html: '' } });
     return Promise.resolve({ status: 200, data: {} });
@@ -52,5 +58,30 @@ describe('prefetchAll vs fetchEventData equivalence', () => {
     expect([...parallel.tonyOrders.keys()]).toEqual([...legacy.tonyOrders.keys()]);
     expect(parallel.tonyOrders.get('169120').items).toEqual(legacy.tonyOrders.get('169120').items);
     expect(parallel.calParsed.contact).toEqual(legacy.calParsed.contact);
+  });
+});
+
+describe('prefetchAll Tony unchanged skip', () => {
+  it('does not fetch orders_edit or category tables when stamp matches', async () => {
+    const stamps = new Map([
+      ['169120', { stamp: '2026-09-15 12:39:09', dataSource: 'tony' }],
+    ]);
+    const stats = { tony_probe: 0, tony_skip: 0, tony_full: 0, tony_probe_fail: 0 };
+    const run = createPool({ concurrency: 4 });
+    vi.clearAllMocks();
+    wireAxios();
+    const map = await prefetchAll(events, true, start, end, run, {
+      stamps,
+      probeEnabled: true,
+      stats,
+    });
+    expect(map.get('100').tonyOrders.has('169120')).toBe(false);
+    expect(stats.tony_skip).toBe(1);
+    expect(stats.tony_full).toBe(0);
+    expect(axios.get.mock.calls.some((c) => String(c[0]).includes('orders_edit'))).toBe(false);
+    const listPosts = axios.post.mock.calls.filter((c) => String(c[0]).includes('order_products_list.php'));
+    expect(listPosts).toHaveLength(0);
+    const descPosts = axios.post.mock.calls.filter((c) => String(c[0]).includes('cal_description.php'));
+    expect(descPosts.length).toBeGreaterThan(0);
   });
 });
