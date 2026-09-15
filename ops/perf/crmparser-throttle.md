@@ -10,6 +10,10 @@ Protect Twenty prod interactive traffic during scheduled/manual parses by loweri
 - Twenty staging compose: `eMjWv7p-ovnfQ7XnpFKTe` (`twenty-staging`) — compose patched; stack was not running, so container verify is pending next start.
 - Do **not** change `API_RATE_LIMITING_SHORT_*`.
 
+## Superseded for Tony fetch (2026-09-15)
+
+Do **not** keep prod `FETCH_CONCURRENCY=2`. That value was an anti-Twenty throttle. Tony prefetch is now the bottleneck (`order_get_info` probe + HTML only on stamp change). Prod should match repo: `FETCH_CONCURRENCY=8`, `TONY_UNCHANGED_PROBE=true`.
+
 ## Context
 
 - **Prod compose:** `JWIhULvt6slzDxT8AQXyWz` (project `crmparser`)
