@@ -34,7 +34,10 @@ export const config = {
   tonyLogin: process.env.TONY_LOGIN || '',
   tonyPassword: process.env.TONY_PASSWORD || '',
   tonyRequestDelayMs: parseInt(process.env.TONY_REQUEST_DELAY_MS || '350', 10),
-  fetchConcurrency: parseInt(process.env.FETCH_CONCURRENCY || '4', 10),
+  fetchConcurrency: parseInt(process.env.FETCH_CONCURRENCY || '8', 10),
+  tonyUnchangedProbe: !['0', 'false', 'no'].includes(
+    String(process.env.TONY_UNCHANGED_PROBE ?? 'true').trim().toLowerCase()
+  ),
   parsePipeline: process.env.PARSE_PIPELINE || 'parallel',
   llmApiUrl: process.env.LLM_API_URL || '',
   llmApiKey: process.env.LLM_API_KEY || '',
