@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import axios from 'axios';
-import { fetchTonyOrderHtml } from '../src/services/tony-client.js';
+import { fetchTonyOrderHtml, fetchTonyOrderInfo } from '../src/services/tony-client.js';
 
 vi.mock('axios');
 vi.mock('../src/services/tony-auth.js', () => ({
@@ -68,5 +68,51 @@ describe('fetchTonyOrderHtml', () => {
     expect(actionVars).toEqual(
       expect.arrayContaining(['food', 'products', 'tech', 'personnel', 'services', 'assembly', 'transport', 'expense'])
     );
+  });
+});
+
+describe('fetchTonyOrderInfo', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('returns updatedAt from order_get_info JSON', async () => {
+    axios.post.mockResolvedValue({
+      status: 200,
+      data: { success: true, data: { timestamps: { updated_at: '2026-09-15 12:39:09' }, deleted: false } },
+    });
+    const probe = await fetchTonyOrderInfo('158490');
+    expect(probe).toEqual({
+      ok: true,
+      updatedAt: '2026-09-15 12:39:09',
+      deleted: false,
+      notFound: false,
+    });
+    expect(axios.post).toHaveBeenCalledWith(
+      'https://crm.apihide.com/ajax/order_get_info.php',
+      'order_id=158490',
+      expect.any(Object)
+    );
+    expect(axios.get).not.toHaveBeenCalled();
+  });
+
+  it('returns notFound on HTTP 404', async () => {
+    axios.post.mockResolvedValue({ status: 404, data: 'Not Found' });
+    await expect(fetchTonyOrderInfo('999')).resolves.toMatchObject({ ok: false, notFound: true });
+  });
+
+  it('returns deleted when data.deleted is true', async () => {
+    axios.post.mockResolvedValue({
+      status: 200,
+      data: { success: true, data: { deleted: true, timestamps: { updated_at: '2026-01-01 00:00:00' } } },
+    });
+    await expect(fetchTonyOrderInfo('158490')).resolves.toMatchObject({
+      ok: true,
+      deleted: true,
+      notFound: false,
+    });
+  });
+
+  it('throws on login redirect', async () => {
+    axios.post.mockResolvedValue({ status: 302, headers: { location: '/auth/' }, data: '' });
+    await expect(fetchTonyOrderInfo('158490')).rejects.toThrow(/session/i);
   });
 });

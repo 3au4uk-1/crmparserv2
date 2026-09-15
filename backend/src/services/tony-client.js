@@ -95,6 +95,44 @@ async function fetchTonyProductTables(bookingNumber, run) {
   return chunks.filter(Boolean).join('');
 }
 
+export async function fetchTonyOrderInfo(bookingNumber, { run = (fn) => fn() } = {}) {
+  return run(async () => {
+    const { baseUrl } = getTonyConfig();
+    const url = `${baseUrl.replace(/\/$/, '')}/ajax/order_get_info.php`;
+    const resp = await axios.post(
+      url,
+      new URLSearchParams({ order_id: bookingNumber }).toString(),
+      {
+        headers: { ...tonyRequestHeaders(), 'Content-Type': 'application/x-www-form-urlencoded' },
+        timeout: 30000,
+        maxRedirects: 0,
+        validateStatus: () => true,
+      }
+    );
+
+    if (resp.status === 404) return { ok: false, notFound: true, deleted: false };
+    const redirect = handleRedirectStatus(bookingNumber, resp.status, resp.headers?.location);
+    if (redirect === null) return { ok: false, notFound: true, deleted: false };
+    if (resp.status >= 400) {
+      const err = new Error(`Tony order_get_info ${bookingNumber} returned HTTP ${resp.status}`);
+      err.retryable = resp.status === 429 || resp.status >= 500;
+      throw err;
+    }
+
+    const payload = resp.data;
+    if (!payload || typeof payload !== 'object' || payload.success !== true || !payload.data) {
+      return { ok: false, notFound: false, deleted: false };
+    }
+    const updatedAt = payload.data.timestamps?.updated_at;
+    return {
+      ok: true,
+      updatedAt: updatedAt == null ? null : String(updatedAt),
+      deleted: payload.data.deleted === true,
+      notFound: false,
+    };
+  });
+}
+
 /**
  * Fetch a Tony order page by booking number, including AJAX-loaded position tables.
  * Returns HTML string (page shell + category fragments), or null when the order does not exist.
