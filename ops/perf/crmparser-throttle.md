@@ -19,7 +19,7 @@ Do **not** keep prod `FETCH_CONCURRENCY=2`. That value was an anti-Twenty thrott
 - **Prod compose:** `JWIhULvt6slzDxT8AQXyWz` (project `crmparser`)
 - **Staging compose:** `wjfA-wPgjI2FH8wW4ypcx` (project `crmparser-staging-coeaio`)
 - **Host env path:** `/etc/dokploy/compose/<project>/code/.env` on LXC 103
-- **Repo defaults** (`docker-compose.yml`): `FETCH_CONCURRENCY=4`, `TWENTY_API_RATE_LIMIT_MAX=95`, `TONY_REQUEST_DELAY_MS=350`
+- **Repo defaults** (`docker-compose.yml`): `FETCH_CONCURRENCY=8`, `TONY_UNCHANGED_PROBE=true`, `TWENTY_API_RATE_LIMIT_MAX=95`, `TONY_REQUEST_DELAY_MS=350`
 
 Time-aware parse scheduling is already implemented (`backend/src/services/parse-schedule.js`, design `docs/superpowers/specs/2026-06-21-parse-schedule-optimization-design.md`). That reduces *when* and *how far* we parse; this throttle reduces *how hard* each run hits Twenty/Postgres during working hours.
 
@@ -52,10 +52,11 @@ Staging mirrored for parity (`DISABLE_AUTO_PARSE=true` there, but same limits if
 
 ```bash
 ssh proxmox 'pct exec 103 -- docker inspect crmparser --format "{{range .Config.Env}}{{println .}}{{end}}" \
-  | egrep "FETCH_CONCURRENCY|TWENTY_API_RATE_LIMIT_MAX|TONY_REQUEST_DELAY_MS"'
+  | egrep "FETCH_CONCURRENCY|TWENTY_API_RATE_LIMIT_MAX|TONY_REQUEST_DELAY_MS|TONY_UNCHANGED_PROBE"'
 ```
 
-Expected: `FETCH_CONCURRENCY=2`, `TWENTY_API_RATE_LIMIT_MAX=40`, `TONY_REQUEST_DELAY_MS=500`.
+Expected (current, see 2026-09-15 superseded section): `FETCH_CONCURRENCY=8`, `TONY_UNCHANGED_PROBE=true`.
+Do not treat the 2026-07-31 table (`FETCH_CONCURRENCY=2`) as the live desired state.
 
 ## Rollback
 
@@ -67,13 +68,9 @@ TWENTY_API_RATE_LIMIT_MAX=95
 TONY_REQUEST_DELAY_MS=350
 ```
 
-To match repo defaults instead of prod history:
+Repo defaults are now `FETCH_CONCURRENCY=8`, `TONY_UNCHANGED_PROBE=true` (not `FETCH_CONCURRENCY=4`).
 
-```
-FETCH_CONCURRENCY=4
-TWENTY_API_RATE_LIMIT_MAX=95
-TONY_REQUEST_DELAY_MS=350
-```
+Feature rollback (Tony unchanged probe): `TONY_UNCHANGED_PROBE=false` and `FETCH_CONCURRENCY=4`.
 
 Re-run the verify command above after rollback.
 

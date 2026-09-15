@@ -84,4 +84,53 @@ describe('prefetchAll Tony unchanged skip', () => {
     const descPosts = axios.post.mock.calls.filter((c) => String(c[0]).includes('cal_description.php'));
     expect(descPosts.length).toBeGreaterThan(0);
   });
+
+  it('omits booking and counts probe fail when order_get_info is unusable', async () => {
+    const stats = { tony_probe: 0, tony_skip: 0, tony_full: 0, tony_probe_fail: 0 };
+    const run = createPool({ concurrency: 4 });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.clearAllMocks();
+    wireAxios();
+    axios.post.mockImplementation((url) => {
+      if (url.includes('cal_description.php')) return Promise.resolve({ status: 200, data: DESC });
+      if (url.includes('order_get_info.php')) {
+        return Promise.resolve({ status: 200, data: { success: false } });
+      }
+      if (url.includes('order_products_list.php')) return Promise.resolve({ status: 200, data: { html: ROW } });
+      if (url.includes('order_sklad_list.php')) return Promise.resolve({ status: 200, data: { html: '' } });
+      return Promise.resolve({ status: 200, data: {} });
+    });
+    const map = await prefetchAll(events, true, start, end, run, {
+      probeEnabled: true,
+      stats,
+    });
+    expect(map.get('100').tonyOrders.has('169120')).toBe(false);
+    expect(stats.tony_probe_fail).toBe(1);
+    expect(stats.tony_full).toBe(0);
+    expect(axios.get.mock.calls.some((c) => String(c[0]).includes('orders_edit'))).toBe(false);
+    expect(errSpy).toHaveBeenCalledWith('[tony] probe returned no usable data for order 169120');
+    errSpy.mockRestore();
+  });
+
+  it('attaches probe stamp and fetches full Tony when stored stamp differs', async () => {
+    const stamps = new Map([
+      ['169120', { stamp: 'old', dataSource: 'tony' }],
+    ]);
+    const stats = { tony_probe: 0, tony_skip: 0, tony_full: 0, tony_probe_fail: 0 };
+    const run = createPool({ concurrency: 4 });
+    vi.clearAllMocks();
+    wireAxios();
+    const map = await prefetchAll(events, true, start, end, run, {
+      stamps,
+      probeEnabled: true,
+      stats,
+    });
+    expect(map.get('100').tonyOrders.get('169120').tonyUpdatedAt).toBe('2026-09-15 12:39:09');
+    expect(stats.tony_probe).toBe(1);
+    expect(stats.tony_full).toBe(1);
+    expect(stats.tony_skip).toBe(0);
+    expect(axios.get.mock.calls.some((c) => String(c[0]).includes('orders_edit'))).toBe(true);
+    const listPosts = axios.post.mock.calls.filter((c) => String(c[0]).includes('order_products_list.php'));
+    expect(listPosts.length).toBeGreaterThan(0);
+  });
 });

@@ -186,7 +186,13 @@ async function resolveTonyOrdersPooled(tonyReady, bookingNumbers, run, {
           if (stats) stats.tony_probe_fail++;
           return;
         }
-        if (!probe.ok || probe.notFound || probe.deleted) return;
+        if (!probe.ok || probe.notFound || probe.deleted) {
+          if (!probe.ok && !probe.notFound && !probe.deleted) {
+            console.error(`[tony] probe returned no usable data for order ${n}`);
+            if (stats) stats.tony_probe_fail++;
+          }
+          return;
+        }
         const known = stamps.get(String(n));
         if (shouldSkipTonyFullFetch({
           probeEnabled: true,

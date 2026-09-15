@@ -25,4 +25,16 @@ describe('tony parse config defaults', () => {
     const { config } = await import('../src/config.js');
     expect(config.tonyUnchangedProbe).toBe(false);
   });
+
+  it('treats TONY_UNCHANGED_PROBE=0 as off', async () => {
+    process.env.TONY_UNCHANGED_PROBE = '0';
+    const { config } = await import('../src/config.js');
+    expect(config.tonyUnchangedProbe).toBe(false);
+  });
+
+  it('treats TONY_UNCHANGED_PROBE=no as off', async () => {
+    process.env.TONY_UNCHANGED_PROBE = 'no';
+    const { config } = await import('../src/config.js');
+    expect(config.tonyUnchangedProbe).toBe(false);
+  });
 });
