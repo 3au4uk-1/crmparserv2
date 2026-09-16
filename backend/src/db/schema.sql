@@ -237,6 +237,17 @@ CREATE TABLE IF NOT EXISTS telegram_send_log (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS deal_bitrix_links (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+  bitrix_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('payment', 'booking', 'other')),
+  is_canonical INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (deal_id, bitrix_id)
+);
+CREATE INDEX IF NOT EXISTS idx_deal_bitrix_links_bitrix ON deal_bitrix_links(bitrix_id);
+
 CREATE INDEX IF NOT EXISTS idx_telegram_send_log_event_line
   ON telegram_send_log(event, line_item_id);
 

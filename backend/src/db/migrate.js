@@ -528,5 +528,28 @@ export function migrate(db = getDb()) {
     "INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_work_request_slots', '[]')",
   ).run();
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS deal_bitrix_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+      bitrix_id TEXT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('payment', 'booking', 'other')),
+      is_canonical INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (deal_id, bitrix_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_deal_bitrix_links_bitrix ON deal_bitrix_links(bitrix_id);
+  `);
+
+  const dealCols = db.prepare('PRAGMA table_info(deals)').all().map((c) => c.name);
+  if (dealCols.includes('crm_lead_id')) {
+    db.prepare(`
+      INSERT OR IGNORE INTO deal_bitrix_links (deal_id, bitrix_id, role, is_canonical)
+      SELECT id, TRIM(crm_lead_id), 'booking', 1
+      FROM deals
+      WHERE crm_lead_id IS NOT NULL AND TRIM(crm_lead_id) != ''
+    `).run();
+  }
+
   console.log('Database migrated successfully');
 }
