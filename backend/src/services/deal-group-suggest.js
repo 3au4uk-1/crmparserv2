@@ -102,44 +102,60 @@ class UnionFind {
   }
 }
 
-function clusterReason(deals) {
-  for (const bitrixId of new Set(deals.flatMap((d) => d.bitrixIds))) {
-    const withBitrix = deals.filter((d) => d.bitrixIds.includes(bitrixId));
-    if (withBitrix.length < 2) continue;
-    const bookings = new Set(withBitrix.flatMap((d) => d.bookingNumbers));
-    if (bookings.size >= 2) return 'multi_booking_title';
-  }
-  return 'shared_booking';
-}
+const REASON_PRIORITY = { multi_booking_title: 2, shared_booking: 1 };
 
 function buildHardCandidates(deals) {
+  const dealById = new Map(deals.map((d) => [d.id, d]));
+  const raw = [];
+
   const byBooking = new Map();
   for (const deal of deals) {
     for (const bn of deal.bookingNumbers) {
-      if (!byBooking.has(bn)) byBooking.set(bn, []);
-      byBooking.get(bn).push(deal.id);
+      if (!byBooking.has(bn)) byBooking.set(bn, new Set());
+      byBooking.get(bn).add(deal.id);
     }
   }
-
-  const uf = new UnionFind(deals.map((d) => d.id));
   for (const ids of byBooking.values()) {
-    for (let i = 1; i < ids.length; i++) uf.union(ids[0], ids[i]);
+    if (ids.size < 2) continue;
+    raw.push({
+      dealIds: [...ids].sort((a, b) => a - b),
+      reason: 'shared_booking',
+    });
   }
 
-  const dealById = new Map(deals.map((d) => [d.id, d]));
-  const raw = uf
-    .clusters()
-    .filter((ids) => ids.length >= 2)
-    .map((ids) => {
-      const members = ids.map((id) => dealById.get(id));
-      return {
-        dealIds: [...ids].sort((a, b) => a - b),
-        reason: clusterReason(members),
-      };
+  const byBitrix = new Map();
+  for (const deal of deals) {
+    for (const bitrixId of deal.bitrixIds) {
+      if (!byBitrix.has(bitrixId)) byBitrix.set(bitrixId, new Set());
+      byBitrix.get(bitrixId).add(deal.id);
+    }
+  }
+  for (const ids of byBitrix.values()) {
+    if (ids.size < 2) continue;
+    const members = [...ids].map((id) => dealById.get(id));
+    const bookings = new Set(members.flatMap((d) => d.bookingNumbers));
+    if (bookings.size < 2) continue;
+    raw.push({
+      dealIds: [...ids].sort((a, b) => a - b),
+      reason: 'multi_booking_title',
     });
+  }
+
+  const byDealIds = new Map();
+  for (const cand of raw) {
+    const key = cand.dealIds.join(',');
+    const existing = byDealIds.get(key);
+    if (
+      !existing ||
+      REASON_PRIORITY[cand.reason] > REASON_PRIORITY[existing.reason]
+    ) {
+      byDealIds.set(key, cand);
+    }
+  }
+  const deduped = [...byDealIds.values()];
 
   const dealToCandidates = new Map();
-  for (const cand of raw) {
+  for (const cand of deduped) {
     for (const id of cand.dealIds) {
       if (!dealToCandidates.has(id)) dealToCandidates.set(id, []);
       dealToCandidates.get(id).push(cand);
@@ -147,24 +163,18 @@ function buildHardCandidates(deals) {
   }
 
   const conflictIds = new Set(
-    [...dealToCandidates.entries()].filter(([, cands]) => cands.length > 1).map(([id]) => id)
+    [...dealToCandidates.entries()]
+      .filter(([, cands]) => cands.length > 1)
+      .map(([id]) => id)
   );
 
-  if (conflictIds.size === 0) return raw;
+  if (conflictIds.size === 0) return deduped;
 
-  const seen = new Set();
-  const result = [];
-  for (const cand of raw) {
-    const key = cand.dealIds.join(',');
-    if (seen.has(key)) continue;
-    seen.add(key);
-    if (cand.dealIds.some((id) => conflictIds.has(id))) {
-      result.push({ ...cand, conflict: true });
-    } else {
-      result.push(cand);
-    }
-  }
-  return result;
+  return deduped.map((cand) =>
+    cand.dealIds.some((id) => conflictIds.has(id))
+      ? { ...cand, conflict: true }
+      : cand
+  );
 }
 
 function sharedSoftTokens(a, b) {

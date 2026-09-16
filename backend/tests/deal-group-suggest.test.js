@@ -58,4 +58,20 @@ describe('suggestDealGroups', () => {
     ]);
     expect(soft).toEqual([]);
   });
+
+  it('flags conflict when overlapping hard clusters share a deal', () => {
+    const { hard } = suggestDealGroups([
+      { id: 1, bookingNumbers: ['111111', '222222'], bitrixIds: ['X'], title: 'Кейт 111111+222222', manager_name: 'М', load_date: '2026-08-07' },
+      { id: 2, bookingNumbers: ['111111'], bitrixIds: ['B'], title: 'бронь 111111', manager_name: 'М', load_date: '2026-08-07' },
+      { id: 3, bookingNumbers: ['222222'], bitrixIds: ['X'], title: 'Кейт 111111+222222', manager_name: 'М', load_date: '2026-08-07' },
+    ]);
+    expect(hard).toHaveLength(2);
+    const shared = hard.find((c) => c.reason === 'shared_booking');
+    const multi = hard.find((c) => c.reason === 'multi_booking_title');
+    expect(shared.dealIds.sort()).toEqual([1, 2]);
+    expect(multi.dealIds.sort()).toEqual([1, 3]);
+    expect(shared.conflict).toBe(true);
+    expect(multi.conflict).toBe(true);
+    expect(shared.dealIds.filter((id) => multi.dealIds.includes(id))).toEqual([1]);
+  });
 });
