@@ -46,6 +46,16 @@ function createDb() {
       deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
       UNIQUE (deal_id)
     );
+    CREATE TABLE deal_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      price REAL,
+      quantity TEXT,
+      sum REAL,
+      quantity_num REAL,
+      classification TEXT NOT NULL DEFAULT 'unclassified'
+    );
   `);
 
   db.prepare(
@@ -103,6 +113,18 @@ describe('deal-groups', () => {
       { dealId: 2, bitrixId: '2050903', amounts: { printing: 9179 } },
     ], 1);
     expect(plan.amounts.printing).toBe(34870 + 9179);
+  });
+
+  it('auto-picks max-revenue deal when no payments and no canonicalDealId', () => {
+    db.prepare('UPDATE deals SET payment_amount = 0 WHERE id IN (1, 2)').run();
+    db.prepare(
+      `INSERT INTO deal_items (deal_id, name, price, sum, classification) VALUES (1, 'small', 1000, 1000, 'banner')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO deal_items (deal_id, name, price, sum, classification) VALUES (2, 'large', 50000, 50000, 'banner')`,
+    ).run();
+    const group = confirmDealGroup(db, { dealIds: [1, 2] });
+    expect(group.canonical_deal_id).toBe(2);
   });
 
   it('confirm then unlink dissolves a singleton group', () => {

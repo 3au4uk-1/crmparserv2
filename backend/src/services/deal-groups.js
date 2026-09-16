@@ -1,3 +1,10 @@
+import { computeDealItemsTotal } from './twenty-opportunity.js';
+
+function loadDealAmountRub(db, dealRow) {
+  const items = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(dealRow.id);
+  return computeDealItemsTotal(dealRow, items);
+}
+
 function paymentAmount(member) {
   return Number(member?.payment_amount) || 0;
 }
@@ -129,9 +136,7 @@ export function confirmDealGroup(db, opts = {}) {
   }
 
   const deals = dealIds.map((id) => {
-    const row = db.prepare(
-      `SELECT id, title, payment_amount, twenty_id FROM deals WHERE id = ?`,
-    ).get(id);
+    const row = db.prepare('SELECT * FROM deals WHERE id = ?').get(id);
     if (!row) {
       const err = new Error(`Deal ${id} not found`);
       err.code = 'DEAL_NOT_FOUND';
@@ -147,7 +152,7 @@ export function confirmDealGroup(db, opts = {}) {
       title: row.title,
       payment_amount: row.payment_amount,
       twenty_id: row.twenty_id,
-      amountRub: 0,
+      amountRub: loadDealAmountRub(db, row),
       bitrixIds: links.map((l) => l.bitrix_id),
     };
   });

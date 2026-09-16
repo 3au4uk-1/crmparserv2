@@ -1,65 +1,43 @@
-# Task 5 Report: Twenty create/update client and file helpers
+# Task 5 Report: Groups table, confirm/unlink, money, expense rollup
 
-**Date:** 2026-09-05  
-**Branch:** `feat/telegram-bot-work-requests`  
-**Commit:** `3af3d5e` — feat: create telegramRequest records and classify oversized files
+## Status
+**Complete** — `deal_groups` / `deal_group_members` schema + pure money/membership layer; no Twenty GraphQL.
 
-## Status: DONE
+## Commits
+- `34bb833` — `feat: persist confirmed deal groups and parent money rules`
 
-## Summary
+## Tests
+| Command | Result |
+|---------|--------|
+| RED: `npm test -- tests/deal-groups.test.js` | **FAIL** — module not found |
+| GREEN: same | **PASS** — 9/9 |
+| Related: bitrix + suggest + migrate | **PASS** — 20/20 |
 
-Parser-side Twenty GraphQL helpers and Telegram file pipeline for work requests:
+## Path
+- `backend/src/db/schema.sql`, `backend/src/db/migrate.js`
+- `backend/src/services/deal-groups.js`
+- `backend/tests/deal-groups.test.js`
 
-- `twenty.js`: `telegramMessageUrl`, `createTelegramRequest` (returns id string), `updateTelegramRequest` using `assertHttpSuccess` + `assertGqlSuccess`.
-- `files.js`: `MAX_FILE_BYTES` (20 MiB), `classifyTelegramFile`, `downloadTelegramFile` (getFile → bot file URL), `uploadRequestFile` wrapper, and `uploadFilesFieldFileForWorkRequest` with multipart upload logic copied from `twenty-tasks.js` (not importing non-exported binding).
-
-## TDD Evidence
-
-### RED
-
-```
-Error: Cannot find module '../src/telegram/work-requests/twenty.js'
-Error: Cannot find module '../src/telegram/work-requests/files.js'
- Test Files  2 failed (2)
-```
-
-### GREEN
-
-```
-Test Files  2 passed (2)
-     Tests  7 passed (7)
-```
-
-Command: `cd backend && npm test -- tests/telegram-work-request-twenty.test.js tests/telegram-work-request-files.test.js`
-
-## Files Created
-
-| File | Purpose |
-|------|---------|
-| `backend/src/telegram/work-requests/twenty.js` | GQL create/update + t.me URL builder |
-| `backend/src/telegram/work-requests/files.js` | Size classify, Telegram download, Twenty upload |
-| `backend/tests/telegram-work-request-twenty.test.js` | 3 tests: URL, create, update |
-| `backend/tests/telegram-work-request-files.test.js` | 4 tests: MAX, classify, download, upload wrapper |
+## Self-review
+1. No silent merge: only `confirmDealGroup` inserts groups; suggest remains read-only.
+2. `ALREADY_GROUPED` (409) when `deal_id` already a member; `canonical_bitrix_id` must exist on canonical deal links.
+3. Money: Σ `amountRub`; payments/`rashodItogo` from canonical only; expense rollup unique by `bitrixId`.
+4. Locked canonical never auto-switched; two payments → no auto-pick / no auto-switch.
+5. Unlink removes membership only; empty group dissolved; smeta `twenty_id` / links untouched.
 
 ## Concerns
+- Singleton groups allowed until last member unlinked (empty → dissolve); no auto-dissolve at size 1.
+- Positive auto-switch covered; two-payment auto-switch false path covered via locked + pickCanonical unit tests, not a separate unlocked two-pay DB case.
 
-- `createTelegramRequest` / `updateTelegramRequest` mutations not live until BrandingTwentyView Task 4 is applied; tests mock `gql`.
-- `uploadFilesFieldFileForWorkRequest` duplicates multipart logic from `twenty-tasks.js`; consider exporting shared helper later to avoid drift.
-- `classifyTelegramFile` ignores `mime` today; only size threshold is specified.
+## Task 5 review fix — confirmDealGroup amountRub
 
-## Review Fix (2026-09-05)
+**Fix:** `confirmDealGroup` now loads `amountRub` via `loadDealAmountRub` → `computeDealItemsTotal(deal, deal_items)` instead of hardcoded `0`.
 
-**Issue:** `createTelegramRequest` / `updateTelegramRequest` could return `undefined` when GraphQL had no errors but omitted `id`.
+**Regression test:** `auto-picks max-revenue deal when no payments and no canonicalDealId` — two deals, zero payments, item totals 1000 vs 50000 → canonical is deal 2.
 
-**Fix:** Added `assertRecordId` — throws `Error: <context>: Twenty response missing record id` after `assertGqlSuccess`. Two new unit tests mock successful responses without `id` and expect rejection.
-
-**Tests after fix:**
-
+**Tests:**
 ```
-Test Files  2 passed (2)
-     Tests  9 passed (9)
+npm test -- tests/deal-groups.test.js
+Test Files  1 passed (1)
+Tests  10 passed (10)
 ```
-
-Command: `cd backend && npm test -- tests/telegram-work-request-twenty.test.js tests/telegram-work-request-files.test.js`
-
-**Commit:** `077394e` — fix: reject Twenty create/update responses missing record id
