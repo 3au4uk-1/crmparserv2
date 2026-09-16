@@ -248,6 +248,24 @@ CREATE TABLE IF NOT EXISTS deal_bitrix_links (
 );
 CREATE INDEX IF NOT EXISTS idx_deal_bitrix_links_bitrix ON deal_bitrix_links(bitrix_id);
 
+CREATE TABLE IF NOT EXISTS deal_groups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  twenty_parent_id TEXT,
+  name TEXT NOT NULL,
+  name_locked INTEGER NOT NULL DEFAULT 0,
+  canonical_deal_id INTEGER NOT NULL REFERENCES deals(id),
+  canonical_bitrix_id TEXT NOT NULL,
+  canonical_locked INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS deal_group_members (
+  group_id INTEGER NOT NULL REFERENCES deal_groups(id) ON DELETE CASCADE,
+  deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+  UNIQUE (deal_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_telegram_send_log_event_line
   ON telegram_send_log(event, line_item_id);
 
