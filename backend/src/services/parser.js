@@ -25,8 +25,38 @@ import { parseTonyOrder } from './tony-parser.js';
 import { shouldSkipTonyFullFetch, loadTonyUpdatedAtMap, persistTonyUpdatedAt } from './tony-unchanged.js';
 import { buildTonyDealFields, buildTonyItems, tonyContentHash } from './tony-mapping.js';
 import { planEventReconciliation } from './tony-reconcile.js';
+import {
+  inferBitrixLinkRole,
+  upsertDealBitrixLink,
+  listDealBitrixLinks,
+  mirrorCanonicalCrmLeadId,
+} from './deal-bitrix-links.js';
 import { createPool, withRetry } from './fetch-pool.js';
 import { parseCalendarPayments, paymentContentHash, applyPaymentAggregateToDb } from './payment-parser.js';
+
+/** Empty/missing Tony order should not skip the booking — fall back to calendar write. */
+export function useCalendarFallbackForTonyOrder(order) {
+  return !order || !Array.isArray(order.items) || order.items.length === 0;
+}
+
+export function attachEventBitrixLink(db, dealId, { leadId, title, paymentAmount }) {
+  if (!leadId || !String(leadId).trim()) return;
+  const deal = db.prepare('SELECT payment_amount FROM deals WHERE id = ?').get(dealId);
+  upsertDealBitrixLink(db, {
+    dealId,
+    bitrixId: String(leadId).trim(),
+    role: inferBitrixLinkRole({
+      eventTitle: title,
+      paymentAmount: paymentAmount ?? deal?.payment_amount ?? 0,
+    }),
+  });
+  const links = listDealBitrixLinks(db, dealId);
+  const locked = links.some((l) => l.isCanonical);
+  if (!locked) {
+    // first link already canonical via upsert; nothing else
+  }
+  mirrorCanonicalCrmLeadId(db, dealId);
+}
 
 function buildUrl(path) {
   const base = config.crmBaseUrl.replace(/\/$/, '');
@@ -291,18 +321,23 @@ export async function applyEvent(db, event, eventId, data, ctx) {
 
   for (const target of plan.desired) {
     const existing = db.prepare('SELECT * FROM deals WHERE deal_key = ?').get(target.dealKey);
-    const order = target.bookingNumber ? tonyOrders.get(target.bookingNumber) : undefined;
+    let order = target.bookingNumber ? tonyOrders.get(target.bookingNumber) : undefined;
+    const emptyTonyItems = Boolean(order && Array.isArray(order.items) && order.items.length === 0);
+    if (emptyTonyItems) {
+      console.warn(`[tony] order ${target.bookingNumber} has no parsed items, using calendar fallback`);
+      order = undefined;
+    }
 
     if (order) {
       // Tony is the source of truth for this booking.
-      if (order.items.length === 0) {
-        console.warn(`[tony] order ${target.bookingNumber} has no parsed items, skipping update`);
-        counters.skippedDeals++;
-        continue;
-      }
       const hash = tonyContentHash(order);
       if (existing && existing.content_hash === hash) {
         persistTonyUpdatedAt(db, existing.id, order.tonyUpdatedAt);
+        attachEventBitrixLink(db, existing.id, {
+          leadId: event.leadid,
+          title: event.title,
+          paymentAmount: paymentAggregate.paymentAmount,
+        });
         if (!persistDealPayments(db, existing.id, calPayments, existing, dealsToResync)) {
           counters.skippedDeals++;
         }
@@ -313,6 +348,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
       const classifiedItems = await classifyItems(buildTonyItems(order), keywords, llmPrompt);
 
       if (existing) {
+        const hasCanonical = listDealBitrixLinks(db, existing.id).some((l) => l.isCanonical);
         db.prepare(`
               UPDATE deals SET
                 title = ?, company_code = ?, manager_name = ?,
@@ -330,12 +366,18 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           calContact.name, calContact.email, calContact.company, calContact.phone,
           fields.address, fields.work_time, fields.arrival_time, fields.dismantle_time,
           fields.load_date, fields.load_time, fields.budget,
-          hash, order.tonyUpdatedAt ?? null, target.bookingNumber, event.leadid,
+          hash, order.tonyUpdatedAt ?? null, target.bookingNumber,
+          hasCanonical ? existing.crm_lead_id : event.leadid,
           paymentAggregate.paymentAmount, paymentAggregate.paymentStatus, paymentAggregate.paymentCount, paymentHash,
           existing.id
         );
         const existingItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(existing.id);
         replaceDealItemsPreservingOverrides(db, existing.id, classifiedItems, buildOverrideMap(existingItems));
+        attachEventBitrixLink(db, existing.id, {
+          leadId: event.leadid,
+          title: event.title,
+          paymentAmount: paymentAggregate.paymentAmount,
+        });
         if (existing.twenty_id) dealsToResync.push(existing.id);
         counters.updatedDeals++;
       } else {
@@ -348,7 +390,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
                 payment_amount, payment_status, payment_count, payment_hash
               ) VALUES (?, ?, 'tony', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `).run(
-          eventId, target.dealKey, event.leadid, event.title, titleInfo.companyCode, titleInfo.managerName,
+          eventId, target.dealKey, null, event.title, titleInfo.companyCode, titleInfo.managerName,
           fields.start_date, fields.end_date, event.department, calContact.name, calContact.email, calContact.company, calContact.phone,
           fields.address, fields.work_time, fields.arrival_time, fields.dismantle_time, fields.load_date, fields.load_time, fields.budget,
           target.bookingNumber, hash, order.tonyUpdatedAt ?? null, descHtml,
@@ -359,12 +401,23 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           db.prepare(`INSERT INTO deal_items (deal_id, name, price, quantity, discount, classification, classification_confidence, comment, sum, quantity_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
             .run(dealId, item.name, item.price, item.quantity, item.discount, item.classification, item.classification_confidence, item.comment ?? null, item.sum ?? null, item.quantity_num ?? null);
         }
+        attachEventBitrixLink(db, dealId, {
+          leadId: event.leadid,
+          title: event.title,
+          paymentAmount: paymentAggregate.paymentAmount,
+        });
         counters.newDeals++;
       }
     } else {
-      // No Tony order for this target: title has no booking, or Tony unreachable/404.
-      // Keep existing Tony-sourced data untouched during an outage (do not clobber with calendar).
-      if (existing && existing.data_source === 'tony') {
+      // No Tony order for this target: title has no booking, Tony unreachable/404, or empty items.
+      // Keep existing Tony-sourced data untouched during an outage (do not clobber with calendar),
+      // but empty Tony items intentionally fall through to calendar write.
+      if (existing && existing.data_source === 'tony' && !emptyTonyItems) {
+        attachEventBitrixLink(db, existing.id, {
+          leadId: event.leadid,
+          title: event.title,
+          paymentAmount: paymentAggregate.paymentAmount,
+        });
         if (!persistDealPayments(db, existing.id, calPayments, existing, dealsToResync)) {
           counters.skippedDeals++;
         }
@@ -374,6 +427,11 @@ export async function applyEvent(db, event, eventId, data, ctx) {
       const calTonyOrderId = target.bookingNumber || titleInfo.tonyOrderId || null;
       const hash = contentHash(descHtml);
       if (existing && existing.content_hash === hash) {
+        attachEventBitrixLink(db, existing.id, {
+          leadId: event.leadid,
+          title: event.title,
+          paymentAmount: paymentAggregate.paymentAmount,
+        });
         if (!persistDealPayments(db, existing.id, calPayments, existing, dealsToResync)) {
           counters.skippedDeals++;
         }
@@ -384,6 +442,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
       const classifiedItems = await classifyItems(parsed.items, keywords, llmPrompt);
 
       if (existing) {
+        const hasCanonical = listDealBitrixLinks(db, existing.id).some((l) => l.isCanonical);
         db.prepare(`
               UPDATE deals SET
                 title = ?, company_code = ?, manager_name = ?, start_date = ?, end_date = ?, department = ?,
@@ -400,12 +459,17 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           parsed.contact.name, parsed.contact.email, parsed.contact.company, parsed.contact.phone,
           parsed.event.address, parsed.event.venueType, parsed.event.arrivalTime || null, parsed.event.readyTime || null,
           parsed.event.workTime || null, parsed.event.dismantleTime || null,
-          hash, descHtml, event.leadid, calTonyOrderId,
+          hash, descHtml, hasCanonical ? existing.crm_lead_id : event.leadid, calTonyOrderId,
           paymentAggregate.paymentAmount, paymentAggregate.paymentStatus, paymentAggregate.paymentCount, paymentHash,
           existing.id
         );
         const existingItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(existing.id);
         replaceDealItemsPreservingOverrides(db, existing.id, classifiedItems, buildOverrideMap(existingItems));
+        attachEventBitrixLink(db, existing.id, {
+          leadId: event.leadid,
+          title: event.title,
+          paymentAmount: paymentAggregate.paymentAmount,
+        });
         if (existing.twenty_id) dealsToResync.push(existing.id);
         counters.updatedDeals++;
       } else {
@@ -418,7 +482,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
                 payment_amount, payment_status, payment_count, payment_hash
               ) VALUES (?, ?, 'calendar', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `).run(
-          eventId, target.dealKey, event.leadid, event.title, titleInfo.companyCode, titleInfo.managerName,
+          eventId, target.dealKey, null, event.title, titleInfo.companyCode, titleInfo.managerName,
           event.start, event.end, event.department, parsed.meta.status, parsed.meta.legalEntity, parsed.meta.invoiceNumber,
           parsed.meta.budget, parsed.meta.discount, parsed.contact.name, parsed.contact.email, parsed.contact.company, parsed.contact.phone,
           parsed.event.address, parsed.event.venueType, parsed.event.arrivalTime || null, parsed.event.readyTime || null,
@@ -430,6 +494,11 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           db.prepare(`INSERT INTO deal_items (deal_id, name, price, quantity, discount, classification, classification_confidence) VALUES (?, ?, ?, ?, ?, ?, ?)`)
             .run(dealId, item.name, item.price, item.quantity, item.discount, item.classification, item.classification_confidence);
         }
+        attachEventBitrixLink(db, dealId, {
+          leadId: event.leadid,
+          title: event.title,
+          paymentAmount: paymentAggregate.paymentAmount,
+        });
         counters.newDeals++;
       }
     }
