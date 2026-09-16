@@ -62,10 +62,29 @@ describe('planEventReconciliation', () => {
     expect(plan.removeDealIds).toEqual([]);
   });
 
-  it('does NOT relink when the title gains multiple bookings (the cal deal is removed instead)', () => {
+  it('relinks a synced calendar deal to the first booking instead of cancelling', () => {
     const id = db.prepare(
-      "INSERT INTO deals (crm_event_id, deal_key, data_source, twenty_id) VALUES ('evt1', 'evt1#cal', 'calendar', 'opp-1') RETURNING id"
+      "INSERT INTO deals (crm_event_id, deal_key, data_source, twenty_id) VALUES ('evt1', 'evt1#cal', 'calendar', 'opp-1') RETURNING id",
     ).get().id;
+    const plan = planEventReconciliation(db, 'evt1', ['169120', '168973']);
+    expect(plan.relink).toEqual({
+      dealId: id,
+      newDealKey: bookingDealKey('169120'),
+      bookingNumber: '169120',
+    });
+    expect(plan.removeDealIds).toEqual([]);
+    expect(plan.desired).toHaveLength(2);
+  });
+
+  it('removes an unsynced calendar deal when the title gains multiple bookings', () => {
+    const id = db.prepare(
+      "INSERT INTO deals (crm_event_id, deal_key, data_source, twenty_id) VALUES ('evt1', 'evt1#cal', 'calendar', NULL) RETURNING id",
+    ).get().id;
+    // First booking already taken globally → no relink; unsynced #cal is removed.
+    db.prepare(`
+      INSERT INTO deals (crm_event_id, deal_key, data_source, tony_order_id)
+      VALUES ('evt2', ?, 'tony', '169120')
+    `).run(bookingDealKey('169120'));
     const plan = planEventReconciliation(db, 'evt1', ['169120', '168973']);
     expect(plan.relink).toBeNull();
     expect(plan.removeDealIds).toEqual([id]);
@@ -90,17 +109,31 @@ describe('planEventReconciliation', () => {
     expect(plan.removeDealIds).toEqual([]);
   });
 
-  it('removes a cal deal when a global booking deal already exists', () => {
+  it('removes an unsynced cal deal when a global booking deal already exists', () => {
     db.prepare(`
       INSERT INTO deals (crm_event_id, deal_key, data_source, tony_order_id, twenty_id)
       VALUES ('evt2', ?, 'tony', '173982', 'opp-global')
     `).run(bookingDealKey('173982'));
     const calId = db.prepare(
-      "INSERT INTO deals (crm_event_id, deal_key, data_source, twenty_id) VALUES ('evt1', 'evt1#cal', 'calendar', 'opp-cal') RETURNING id"
+      "INSERT INTO deals (crm_event_id, deal_key, data_source, twenty_id) VALUES ('evt1', 'evt1#cal', 'calendar', NULL) RETURNING id"
     ).get().id;
 
     const plan = planEventReconciliation(db, 'evt1', ['173982']);
     expect(plan.relink).toBeNull();
     expect(plan.removeDealIds).toEqual([calId]);
+  });
+
+  it('keeps a synced cal deal when a global booking already exists', () => {
+    db.prepare(`
+      INSERT INTO deals (crm_event_id, deal_key, data_source, tony_order_id, twenty_id)
+      VALUES ('evt2', ?, 'tony', '173982', 'opp-global')
+    `).run(bookingDealKey('173982'));
+    db.prepare(
+      "INSERT INTO deals (crm_event_id, deal_key, data_source, twenty_id) VALUES ('evt1', 'evt1#cal', 'calendar', 'opp-cal')",
+    ).run();
+
+    const plan = planEventReconciliation(db, 'evt1', ['173982']);
+    expect(plan.relink).toBeNull();
+    expect(plan.removeDealIds).toEqual([]);
   });
 });

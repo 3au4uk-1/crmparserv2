@@ -102,4 +102,44 @@ describe('opportunityFieldsEqual', () => {
       loadDate: undefined,
     })).toBe(true);
   });
+
+  it('detects secondary Bitrix link changes', () => {
+    const base = {
+      ...next,
+      bitrixLink: {
+        primaryLinkUrl: 'https://prointeractive.bitrix24.ru/crm/deal/details/111/?any',
+        secondaryLinks: [{ url: 'https://prointeractive.bitrix24.ru/crm/deal/details/222/?any' }],
+      },
+    };
+    expect(opportunityFieldsEqual(base, {
+      ...next,
+      bitrixLink: {
+        primaryLinkUrl: 'https://prointeractive.bitrix24.ru/crm/deal/details/111/?any',
+        secondaryLinks: [{ url: 'https://prointeractive.bitrix24.ru/crm/deal/details/333/?any' }],
+      },
+    })).toBe(false);
+  });
+
+  it('treats secondary Bitrix links as equal regardless of order', () => {
+    const base = {
+      ...next,
+      bitrixLink: {
+        primaryLinkUrl: 'https://prointeractive.bitrix24.ru/crm/deal/details/111/?any',
+        secondaryLinks: [
+          { url: 'https://prointeractive.bitrix24.ru/crm/deal/details/222/?any' },
+          { url: 'https://prointeractive.bitrix24.ru/crm/deal/details/333/?any' },
+        ],
+      },
+    };
+    expect(opportunityFieldsEqual(base, {
+      ...next,
+      bitrixLink: {
+        primaryLinkUrl: 'https://prointeractive.bitrix24.ru/crm/deal/details/111/?any',
+        secondaryLinks: [
+          { url: 'https://prointeractive.bitrix24.ru/crm/deal/details/333/?any' },
+          { url: 'https://prointeractive.bitrix24.ru/crm/deal/details/222/?any' },
+        ],
+      },
+    })).toBe(true);
+  });
 });

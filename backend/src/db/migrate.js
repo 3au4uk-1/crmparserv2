@@ -528,5 +528,47 @@ export function migrate(db = getDb()) {
     "INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_work_request_slots', '[]')",
   ).run();
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS deal_bitrix_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+      bitrix_id TEXT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('payment', 'booking', 'other')),
+      is_canonical INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (deal_id, bitrix_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_deal_bitrix_links_bitrix ON deal_bitrix_links(bitrix_id);
+  `);
+
+  const dealCols = db.prepare('PRAGMA table_info(deals)').all().map((c) => c.name);
+  if (dealCols.includes('crm_lead_id')) {
+    db.prepare(`
+      INSERT OR IGNORE INTO deal_bitrix_links (deal_id, bitrix_id, role, is_canonical)
+      SELECT id, TRIM(crm_lead_id), 'booking', 1
+      FROM deals
+      WHERE crm_lead_id IS NOT NULL AND TRIM(crm_lead_id) != ''
+    `).run();
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS deal_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      twenty_parent_id TEXT,
+      name TEXT NOT NULL,
+      name_locked INTEGER NOT NULL DEFAULT 0,
+      canonical_deal_id INTEGER NOT NULL REFERENCES deals(id),
+      canonical_bitrix_id TEXT NOT NULL,
+      canonical_locked INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS deal_group_members (
+      group_id INTEGER NOT NULL REFERENCES deal_groups(id) ON DELETE CASCADE,
+      deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+      UNIQUE (deal_id)
+    );
+  `);
+
   console.log('Database migrated successfully');
 }

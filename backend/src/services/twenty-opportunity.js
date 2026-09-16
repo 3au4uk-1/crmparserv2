@@ -1,9 +1,11 @@
 /** Twenty GraphQL enum values for Opportunity.stage (UI labels are localized separately). */
 import { buildCloseDate } from '../utils/crm-dates.js';
+import { getDb } from '../db/connection.js';
 import { isRestorationItem } from './restoration.js';
 import { isNeNasheBrandingItem } from './ne-nashe-branding.js';
 import { isNeNasheDecorMkItem } from './ne-nashe-decor-mk.js';
 import { PAYMENT_FIELDS, PAYMENT_STATUS } from './payment-field-names.js';
+import { listDealBitrixLinks, buildBitrixLinkInput } from './deal-bitrix-links.js';
 
 export function buildPaymentFieldsInput(deal) {
   const input = {
@@ -124,6 +126,7 @@ export function buildOpportunityInput(deal, items, options = {}) {
     restorationList = [],
     neNasheBrandingList = [],
     neNasheDecorMkList = [],
+    bitrixLinks,
   } = options;
 
   const neNasheLists = { neNasheBrandingList, neNasheDecorMkList };
@@ -149,13 +152,11 @@ export function buildOpportunityInput(deal, items, options = {}) {
     };
   }
 
-  if (deal.crm_lead_id) {
-    const leadId = deal.crm_lead_id.trim();
-    input.bitrixLink = {
-      primaryLinkUrl: `https://prointeractive.bitrix24.ru/crm/deal/details/${leadId}/?any`,
-      primaryLinkLabel: `Bitrix #${leadId}`,
-    };
-  }
+  const links = bitrixLinks ?? (deal.id ? listDealBitrixLinks(getDb(), deal.id) : []);
+  const bitrixInput = buildBitrixLinkInput(
+    links.length ? links : (deal.crm_lead_id ? [{ bitrixId: deal.crm_lead_id.trim(), isCanonical: true }] : []),
+  );
+  if (bitrixInput) input.bitrixLink = bitrixInput;
 
   if (deal.arrival_time) input.arrivalTime = deal.arrival_time;
   if (deal.ready_time) input.readyTime = deal.ready_time;
@@ -184,6 +185,14 @@ function linkUrl(value) {
   return value?.primaryLinkUrl || value || null;
 }
 
+function secondaryLinkUrls(value) {
+  return (value?.secondaryLinks || [])
+    .map((l) => l.url)
+    .filter(Boolean)
+    .sort()
+    .join('\0');
+}
+
 function isMissingInstant(value) {
   return value == null || value === '';
 }
@@ -210,6 +219,7 @@ export function opportunityFieldsEqual(existing, next) {
   if (!instantsEqual(existing.loadDate, next.loadDate)) return false;
   if (linkUrl(existing.tonyLink) !== linkUrl(next.tonyLink)) return false;
   if (linkUrl(existing.bitrixLink) !== linkUrl(next.bitrixLink)) return false;
+  if (secondaryLinkUrls(existing.bitrixLink) !== secondaryLinkUrls(next.bitrixLink)) return false;
   if (Object.prototype.hasOwnProperty.call(next, PAYMENT_FIELDS.amount)) {
     const existingMicros = existing[PAYMENT_FIELDS.amount]?.amountMicros ?? 0;
     const nextMicros = next[PAYMENT_FIELDS.amount]?.amountMicros ?? 0;

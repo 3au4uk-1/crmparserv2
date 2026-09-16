@@ -154,6 +154,17 @@ describe('buildOpportunityInput', () => {
     expect(input.summaPostupleniy).toBeUndefined();
     expect(input.statusOplaty).toBe('NE_OPLACHENO');
   });
+
+  it('puts extra Bitrix ids on secondaryLinks', () => {
+    const input = buildOpportunityInput(deal, items, {
+      bitrixLinks: [
+        { bitrixId: '111', isCanonical: true },
+        { bitrixId: '222', isCanonical: false },
+      ],
+    });
+    expect(input.bitrixLink.primaryLinkUrl).toContain('/111/');
+    expect(input.bitrixLink.secondaryLinks[0].url).toContain('/222/');
+  });
 });
 
 describe('parseQuantity', () => {

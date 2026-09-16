@@ -119,4 +119,32 @@ describe('payment-sync', () => {
     expect(deal.payment_amount).toBe(100000);
     expect(deal.payment_status).toBe(PAYMENT_STATUS.PREPAYMENT);
   });
+
+  it('runPaymentSync pushes grouped event deals to canonical and parent only', async () => {
+    const { gql } = await import('../src/services/twenty-gql.js');
+
+    testDb.prepare(`
+      INSERT INTO deals (crm_event_id, deal_key, title, start_date, twenty_id, crm_lead_id)
+      VALUES ('evt-1', 'evt-1#1', 'Canonical', '2026-07-05', 'tw-canon', '2049067'),
+             ('evt-1', 'evt-1#2', 'Child', '2026-07-05', 'tw-child', '2050903')
+    `).run();
+    testDb.prepare(`
+      INSERT INTO deal_bitrix_links (deal_id, bitrix_id, role, is_canonical)
+      VALUES (1, '2049067', 'payment', 1),
+             (2, '2050903', 'booking', 1)
+    `).run();
+    testDb.prepare(`
+      INSERT INTO deal_groups (name, twenty_parent_id, canonical_deal_id, canonical_bitrix_id)
+      VALUES ('А7', 'tw-parent', 1, '2049067')
+    `).run();
+    testDb.prepare('INSERT INTO deal_group_members (group_id, deal_id) VALUES (1, 1), (1, 2)').run();
+
+    const result = await runPaymentSync({ from: '2026-07-01', to: '2026-07-31' });
+
+    expect(result.dealsUpdatedLocal).toBe(2);
+    expect(gql).toHaveBeenCalledTimes(2);
+    const pushedIds = gql.mock.calls.map((c) => c[3].id).sort();
+    expect(pushedIds).toEqual(['tw-canon', 'tw-parent']);
+    expect(result.dealsUpdatedTwenty).toBe(2);
+  });
 });

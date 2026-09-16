@@ -1,4 +1,4 @@
-import { buildPrintSheetRowValues } from './print-sheet-row-builder.js';
+import { getDb } from '../db/connection.js';
 import { writePrintSheetRow } from './print-sheet-append.js';
 import { fetchPrintSheetRow, extractReadbackFromRow } from './print-sheet-readback.js';
 import { buildCurrentMonthTabName } from './print-sheet-tabs.js';
@@ -13,6 +13,7 @@ import {
   buildRowMetaPatch,
   buildSessionClearPatch,
   buildReadbackUpdateInput,
+  buildPrintSheetExportRowValues,
   newPrintSheetSessionId,
 } from './print-sheet-export-twenty.js';
 
@@ -24,13 +25,19 @@ export async function runPrintSheetCycle(gql) {
   const pending = await listPendingPrintSheetExport(gql);
   const tabName = buildCurrentMonthTabName();
   const workspaceMemberById = await loadWorkspaceMemberMap(gql);
+  const db = getDb();
+  const labelCache = new Map();
 
   for (const lineItem of pending) {
     const sessionId = newPrintSheetSessionId();
     let writeSucceeded = false;
     try {
       await updateDealLineItemPrintSheet(gql, lineItem.id, buildClaimPatch(sessionId));
-      const rowValues = buildPrintSheetRowValues(lineItem, { workspaceMemberById });
+      const rowValues = buildPrintSheetExportRowValues(lineItem, {
+        db,
+        workspaceMemberById,
+        labelCache,
+      });
       const { rowNumber } = await writePrintSheetRow(tabName, rowValues);
       writeSucceeded = true;
       await updateDealLineItemPrintSheet(gql, lineItem.id, buildRowMetaPatch(tabName, rowNumber));

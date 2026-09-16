@@ -63,6 +63,20 @@ function createDb() {
       twenty_id TEXT,
       crm_lead_id TEXT
     );
+    CREATE TABLE deal_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      twenty_parent_id TEXT,
+      name TEXT NOT NULL,
+      name_locked INTEGER NOT NULL DEFAULT 0,
+      canonical_deal_id INTEGER NOT NULL REFERENCES deals(id),
+      canonical_bitrix_id TEXT NOT NULL,
+      canonical_locked INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE deal_group_members (
+      group_id INTEGER NOT NULL REFERENCES deal_groups(id) ON DELETE CASCADE,
+      deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+      UNIQUE (deal_id)
+    );
     CREATE TABLE settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
