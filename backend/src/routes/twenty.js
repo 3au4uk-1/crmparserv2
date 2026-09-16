@@ -280,7 +280,21 @@ router.get('/deal-groups/suggestions', (req, res, next) => {
   try {
     const db = getDb();
     const deals = loadSyncedDealsForSuggest(db);
-    res.json(suggestDealGroups(deals));
+    const raw = suggestDealGroups(deals);
+    const twentyByDealId = new Map(
+      deals.map((deal) => [deal.id, deal.twenty_id]).filter(([, twentyId]) => twentyId),
+    );
+    const withTwentyOppIds = (candidates) =>
+      candidates.map((candidate) => ({
+        ...candidate,
+        twentyOppIds: candidate.dealIds
+          .map((dealId) => twentyByDealId.get(dealId))
+          .filter(Boolean),
+      }));
+    res.json({
+      hard: withTwentyOppIds(raw.hard),
+      soft: withTwentyOppIds(raw.soft),
+    });
   } catch (err) {
     dealGroupHttpError(err, res, next);
   }
