@@ -10,6 +10,8 @@ import { assertGqlSuccess, assertHttpSuccess, gql } from './twenty-gql.js';
 import { requireTwentyConfig } from './twenty-config.js';
 import { getExportJob, setExportJobFile, updateExportJob } from './export-jobs.js';
 import { EXPENSE_FIELDS } from './expense-field-names.js';
+import { isRestorationItem, loadRestorationList } from './restoration.js';
+import { getDb } from '../db/connection.js';
 
 const STAGE_LABEL_BY_VALUE = Object.fromEntries(
   OPPORTUNITY_STAGE_OPTIONS.map((o) => [o.value, o.label])
@@ -80,7 +82,13 @@ const DEAL_ONCE_ROW_KEYS = [...DEAL_EXPENSE_ROW_KEYS, 'amountDeal'];
 /**
  * @returns {object|null} Excel row or null if filtered out
  */
-export function mapLineItemToRow(lineItem, { from, to, includeCancelled = false }) {
+export function mapLineItemToRow(lineItem, {
+  from,
+  to,
+  includeCancelled = false,
+  includeRestoration = false,
+  restorationList = [],
+}) {
   const opportunity = lineItem?.opportunity ?? {};
   const date = resolveEffectiveDate(opportunity);
   if (!date) return null;
@@ -88,6 +96,10 @@ export function mapLineItemToRow(lineItem, { from, to, includeCancelled = false 
 
   const stage = resolveEffectiveStage(lineItem, opportunity);
   if (!includeCancelled && stage === CANCELLED_OPPORTUNITY_STAGE) return null;
+
+  if (!includeRestoration && isRestorationItem(lineItem?.name, restorationList)) {
+    return null;
+  }
 
   const unitPrice = amountMicrosToNumber(lineItem.amount);
   const quantity = parseQuantity(lineItem.kolichestvo);
@@ -333,8 +345,13 @@ export function buildRowsFromLineItems(lineItems, options) {
 
 export async function runTwentyExport(
   jobId,
-  { from, to, includeCancelled = false, columns, includeDealsSheet = false },
-  { gqlFn = gql, requireTwentyConfigFn = requireTwentyConfig } = {}
+  { from, to, includeCancelled = false, includeRestoration = false, columns, includeDealsSheet = false },
+  {
+    gqlFn = gql,
+    requireTwentyConfigFn = requireTwentyConfig,
+    getDbFn = getDb,
+    loadRestorationListFn = loadRestorationList,
+  } = {},
 ) {
   updateExportJob(jobId, { status: 'running' });
 
@@ -348,7 +365,14 @@ export async function runTwentyExport(
         });
       },
     });
-    const rows = buildRowsFromLineItems(lineItems, { from, to, includeCancelled });
+    const restorationList = includeRestoration ? [] : loadRestorationListFn(getDbFn());
+    const rows = buildRowsFromLineItems(lineItems, {
+      from,
+      to,
+      includeCancelled,
+      includeRestoration,
+      restorationList,
+    });
     const resolvedColumns = resolveExportColumns(columns);
     const buffer = await buildTwentyExportWorkbook(rows, {
       columns: resolvedColumns,

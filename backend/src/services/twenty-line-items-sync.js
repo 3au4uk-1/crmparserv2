@@ -1,6 +1,7 @@
 import {
   buildLineItemCreateInput,
   buildLineItemUpdateInput,
+  lineItemFieldsEqual,
 } from './twenty-line-item.js';
 import { normalizePattern } from './blacklist.js';
 import { shouldZeroLineItemAmount } from './twenty-opportunity.js';
@@ -8,6 +9,14 @@ import { findTipRuleMatch } from './tip-rules.js';
 import { logTwentyStep } from './twenty-sync-log.js';
 import { CANCELLED_OPPORTUNITY_STAGE, DEFAULT_OPPORTUNITY_STAGE, ZERO_RUB_AMOUNT } from './twenty-opportunity.js';
 import { MANUAL_TWENTY_CLASSIFICATION } from './manual-twenty-line-item.js';
+import { publishDealLineItemEvent } from './twenty-events/publish-record-event.js';
+import {
+  createDealLineItemsBatch,
+  deleteDealLineItemsBatch,
+  upsertDealLineItemsBatch,
+  updateDealLineItemsSameDataBatch,
+  isSchemaBatchError,
+} from './twenty-batch.js';
 
 /** Line items at this stage (or null) may be deleted/updated on re-sync. */
 export const DELETABLE_LINE_ITEM_STAGE = DEFAULT_OPPORTUNITY_STAGE;
@@ -37,7 +46,7 @@ function getManualParserTwentyIds(db) {
 export function computeLineItemDiff(
   existingLineItems,
   eligibleItems,
-  { ignoreStageProtection = false, manualParserTwentyIds = new Set() } = {},
+  { ignoreStageProtection = false, manualParserTwentyIds = new Set(), scoped = false } = {},
 ) {
   const isProtected = (stage) => !ignoreStageProtection && isProtectedLineItemStage(stage);
   const manualItems = eligibleItems.filter(isManualTwentyItem);
@@ -116,10 +125,24 @@ export function computeLineItemDiff(
       continue;
     }
     if (isUnsyncedManualTwenty(li, manualParserTwentyIds)) continue;
+    if (scoped) {
+      preserved.push({ id: li.id, name: li.name, stage: li.stage });
+      continue;
+    }
     toDelete.push(li.id);
   }
 
   return { toUpdate, toCreate, toDelete, preserved };
+}
+
+export function applyFieldSkip(diff, existingLineItems, lineItemOptions = {}) {
+  const byId = new Map((existingLineItems || []).map((li) => [li.id, li]));
+  const toUpdate = (diff.toUpdate || []).filter(({ twentyId, item }) => {
+    const current = byId.get(twentyId);
+    const desired = buildLineItemUpdateInput(item, lineItemOptions);
+    return !lineItemFieldsEqual(current, desired);
+  });
+  return { ...diff, toUpdate };
 }
 
 export async function listLineItemsForOpportunity(
@@ -135,7 +158,7 @@ export async function listLineItemsForOpportunity(
     apiToken,
     `query ListLineItems($oppId: ID!) {
       dealLineItems(filter: { opportunityId: { eq: $oppId } }) {
-        edges { node { id name stage istochnik productStream amount { amountMicros currencyCode } } }
+        edges { node { id name stage istochnik productStream kolichestvo kommentariy tip tipDetail amount { amountMicros currencyCode } } }
       }
     }`,
     { oppId }
@@ -145,6 +168,45 @@ export async function listLineItemsForOpportunity(
     assertGqlSuccess(resp, 'Failed to list line items for opportunity in Twenty');
   }
   return resp.data?.data?.dealLineItems?.edges?.map((e) => e.node) || [];
+}
+
+export async function fetchOpportunityAndLineItems(
+  gql, apiUrl, apiToken, oppId, assertHttpSuccess, assertGqlSuccess,
+) {
+  const resp = await gql(
+    apiUrl,
+    apiToken,
+    `query OpportunityAndLineItems($oppId: ID!) {
+      opportunities(filter: { id: { eq: $oppId } }, first: 1) {
+        edges {
+          node {
+            id name companyId pointOfContactId closeDate
+            arrivalTime readyTime workTime dismantleTime loadDate
+            amount { amountMicros currencyCode }
+            summaPostupleniy { amountMicros currencyCode }
+            statusOplaty
+            tonyLink { primaryLinkUrl }
+            bitrixLink { primaryLinkUrl }
+          }
+        }
+      }
+      dealLineItems(filter: { opportunityId: { eq: $oppId } }) {
+        edges {
+          node {
+            id name stage istochnik productStream kolichestvo kommentariy tip tipDetail
+            amount { amountMicros currencyCode }
+          }
+        }
+      }
+    }`,
+    { oppId },
+  );
+  assertHttpSuccess(resp, apiUrl);
+  assertGqlSuccess(resp, 'Failed to load opportunity and line items');
+  return {
+    opportunity: resp.data?.data?.opportunities?.edges?.[0]?.node || null,
+    lineItems: resp.data?.data?.dealLineItems?.edges?.map((e) => e.node) || [],
+  };
 }
 
 export async function updateDealLineItemProductStreams(
@@ -233,31 +295,38 @@ export async function cancelLineItemsForOpportunity(
   } = {},
 ) {
   const existingLineItems = await listLineItemsForOpportunity(gql, apiUrl, apiToken, oppId);
-  let cancelled = 0;
+  const ids = existingLineItems
+    .filter((li) => li.stage !== cancelledStage)
+    .map((li) => li.id);
+  const data = { stage: cancelledStage, amount: ZERO_RUB_AMOUNT };
 
-  for (const li of existingLineItems) {
-    if (li.stage === cancelledStage) continue;
-
-    logTwentyStep('line_items.cancel', { lineItemId: li.id, name: li.name, fromStage: li.stage });
-
-    const resp = await gql(
-      apiUrl,
-      apiToken,
-      `mutation UpdateDealLineItem($id: ID!, $input: DealLineItemUpdateInput!) {
-        updateDealLineItem(id: $id, data: $input) { id }
-      }`,
-      { id: li.id, input: { stage: cancelledStage, amount: ZERO_RUB_AMOUNT } }
-    );
-
-    if (assertHttpSuccess) assertHttpSuccess(resp, apiUrl);
-    if (assertGqlSuccess) {
-      assertGqlSuccess(resp, `Failed to cancel line item "${li.name}" in Twenty`);
+  if (ids.length) {
+    logTwentyStep('line_items.cancel', { count: ids.length });
+    try {
+      await updateDealLineItemsSameDataBatch({
+        gql,
+        apiUrl,
+        apiToken,
+        ids,
+        data,
+        assertHttpSuccess: assertHttpSuccess || (() => {}),
+        assertGqlSuccess: assertGqlSuccess || (() => {}),
+      });
+    } catch (err) {
+      if (!isSchemaBatchError(err)) throw err;
+      await upsertDealLineItemsBatch({
+        gql,
+        apiUrl,
+        apiToken,
+        rows: ids.map((id) => ({ id, data })),
+        assertHttpSuccess: assertHttpSuccess || (() => {}),
+        assertGqlSuccess: assertGqlSuccess || (() => {}),
+        allowAliasFallback: true,
+      });
     }
-
-    cancelled += 1;
   }
 
-  return { cancelled, total: existingLineItems.length };
+  return { cancelled: ids.length, total: existingLineItems.length };
 }
 
 export async function syncLineItemsDiff({
@@ -277,16 +346,17 @@ export async function syncLineItemsDiff({
   neNasheDecorMkList = [],
   tipRules = [],
   ignoreStageProtection = false,
+  scoped = false,
 }) {
-  const { toUpdate, toCreate, toDelete, preserved } = computeLineItemDiff(
+  const identity = computeLineItemDiff(
     existingLineItems,
     eligibleItems,
     {
       ignoreStageProtection,
       manualParserTwentyIds: getManualParserTwentyIds(db),
+      scoped,
     },
   );
-
   const lineItemOptions = {
     deal,
     restorationList,
@@ -294,6 +364,15 @@ export async function syncLineItemsDiff({
     neNasheDecorMkList,
     tipRules,
   };
+  const { toUpdate, toCreate, toDelete, preserved } = applyFieldSkip(
+    identity,
+    existingLineItems,
+    lineItemOptions,
+  );
+
+  for (const { twentyId, item } of identity.toUpdate) {
+    db.prepare('UPDATE deal_items SET twenty_id = ? WHERE id = ?').run(twentyId, item.id);
+  }
 
   logTwentyStep('line_items.diff', {
     toUpdate: toUpdate.length,
@@ -330,55 +409,99 @@ export async function syncLineItemsDiff({
     logTwentyStep('line_items.banner_tip', { names: bannerItems.map((i) => i.name) });
   }
 
-  for (const lineItemId of toDelete) {
-    logTwentyStep('line_items.delete', { lineItemId });
-    const resp = await deleteLineItem(gql, apiUrl, apiToken, lineItemId);
-    assertHttpSuccess(resp, apiUrl);
-    assertGqlSuccess(resp, 'Failed to delete line item in Twenty');
-  }
-
-  for (const { twentyId, item } of toUpdate) {
-    logTwentyStep('line_items.update', { lineItemId: twentyId, name: item.name, price: item.price });
-    const resp = await gql(
+  if (toDelete.length) {
+    logTwentyStep('line_items.delete', { count: toDelete.length });
+    await deleteDealLineItemsBatch({
+      gql,
       apiUrl,
       apiToken,
-      `mutation UpdateDealLineItem($id: ID!, $input: DealLineItemUpdateInput!) {
-        updateDealLineItem(id: $id, data: $input) { id }
-      }`,
-      { id: twentyId, input: buildLineItemUpdateInput(item, lineItemOptions) }
-    );
-    assertHttpSuccess(resp, apiUrl);
-    assertGqlSuccess(resp, `Failed to update line item "${item.name}" in Twenty`);
-    db.prepare('UPDATE deal_items SET twenty_id = ? WHERE id = ?').run(twentyId, item.id);
+      ids: toDelete,
+      assertHttpSuccess,
+      assertGqlSuccess,
+    });
+    for (const lineItemId of toDelete) {
+      publishDealLineItemEvent('DELETED', lineItemId, { before: { id: lineItemId } });
+    }
   }
 
-  let position = 0;
-  for (const item of toCreate) {
-    logTwentyStep('line_items.create', { name: item.name, price: item.price });
-    const warehouseItemId = await findOrCreateWarehouseItem(apiUrl, apiToken, item.name);
-    const resp = await gql(
+  const toUpdateWithData = toUpdate.map(({ twentyId, item }) => ({
+    twentyId,
+    item,
+    data: buildLineItemUpdateInput(item, lineItemOptions),
+  }));
+  const createdNodes = [];
+
+  if (toUpdateWithData.length) {
+    logTwentyStep('line_items.update', { count: toUpdateWithData.length });
+    await upsertDealLineItemsBatch({
+      gql,
       apiUrl,
       apiToken,
-      `mutation CreateDealLineItem($input: DealLineItemCreateInput!) {
-        createDealLineItem(data: $input) { id }
-      }`,
-      {
-        input: buildLineItemCreateInput(
-          item,
-          warehouseItemId,
-          oppId,
-          position === 0 ? 'first' : position,
-          lineItemOptions
-        ),
+      rows: toUpdateWithData.map(({ twentyId, data }) => ({
+        id: twentyId,
+        data,
+      })),
+      assertHttpSuccess,
+      assertGqlSuccess,
+    });
+    for (const { twentyId, item } of toUpdateWithData) {
+      db.prepare('UPDATE deal_items SET twenty_id = ? WHERE id = ?').run(twentyId, item.id);
+      publishDealLineItemEvent('UPDATED', twentyId, {
+        after: { id: twentyId, opportunityId: oppId, name: item.name },
+      });
+    }
+  }
+
+  if (toCreate.length) {
+    logTwentyStep('line_items.create', { count: toCreate.length });
+    const warehouseIdsByName = new Map();
+    for (const item of toCreate) {
+      if (!warehouseIdsByName.has(item.name)) {
+        warehouseIdsByName.set(
+          item.name,
+          await findOrCreateWarehouseItem(apiUrl, apiToken, item.name),
+        );
       }
-    );
-    assertHttpSuccess(resp, apiUrl);
-    assertGqlSuccess(resp, `Failed to create line item "${item.name}" in Twenty`);
-    const lineItemId = resp.data?.data?.createDealLineItem?.id;
-    if (!lineItemId) throw new Error(`Failed to create line item "${item.name}" in Twenty`);
-    db.prepare('UPDATE deal_items SET twenty_id = ? WHERE id = ?').run(lineItemId, item.id);
-    position += 1;
+    }
+    const inputs = toCreate.map((item, index) => buildLineItemCreateInput(
+      item,
+      warehouseIdsByName.get(item.name),
+      oppId,
+      index === 0 ? 'first' : index,
+      lineItemOptions,
+    ));
+    const created = await createDealLineItemsBatch({
+      gql,
+      apiUrl,
+      apiToken,
+      inputs,
+      assertHttpSuccess,
+      assertGqlSuccess,
+    });
+    for (let i = 0; i < toCreate.length; i += 1) {
+      const item = toCreate[i];
+      const lineItemId = created[i].id;
+      const input = inputs[i];
+      createdNodes.push({
+        id: lineItemId,
+        amount: input.amount,
+        kolichestvo: input.kolichestvo,
+        stage: DEFAULT_OPPORTUNITY_STAGE,
+      });
+      db.prepare('UPDATE deal_items SET twenty_id = ? WHERE id = ?').run(lineItemId, item.id);
+      publishDealLineItemEvent('CREATED', lineItemId, {
+        after: { id: lineItemId, opportunityId: oppId, name: item.name },
+      });
+    }
   }
 
-  return { updated: toUpdate.length, created: toCreate.length, deleted: toDelete.length };
+  return {
+    updated: toUpdateWithData.length,
+    created: toCreate.length,
+    deleted: toDelete.length,
+    toUpdate: toUpdateWithData,
+    toCreate,
+    toDelete,
+    createdNodes,
+  };
 }

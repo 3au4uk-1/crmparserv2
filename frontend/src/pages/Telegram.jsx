@@ -15,6 +15,12 @@ import {
   useTeardownTelegramWebhook,
   useTelegramMentionForward,
   useSaveTelegramMentionForward,
+  useTelegramWorkRequestSlots,
+  useSaveTelegramWorkRequestSlots,
+  useTelegramBotChats,
+  useTelegramBotTopics,
+  useAddTelegramBotChat,
+  useAddTelegramBotTopic,
   useTelegramAutoInviteStatus,
   useTelegramAutoInviteMembers,
   useAddTelegramAutoInviteMember,
@@ -74,6 +80,150 @@ function formatUserbotUserLabel(user) {
   if (user.firstName) return user.firstName;
   if (user.id) return `id ${user.id}`;
   return null;
+}
+
+function emptyWorkRequestSlot() {
+  return { chatId: '', threadId: '', companyLabel: '', topicRole: 'QUOTE' };
+}
+
+function WorkRequestSlotRow({ index, slot, chats, allKnownChats, onChange }) {
+  const { data: topicsData } = useTelegramBotTopics(slot.chatId || '');
+  const addTopic = useAddTelegramBotTopic();
+  const [manualThreadId, setManualThreadId] = useState('');
+  const [manualTopicName, setManualTopicName] = useState('');
+  const topics = topicsData?.topics ?? [];
+  const chatOptions = useMemo(() => {
+    const activeChats = chats.filter((chat) => chat.active);
+    const options = activeChats.map((chat) => ({ chat, showInactive: false }));
+    if (slot.chatId && !activeChats.some((chat) => chat.chatId === slot.chatId)) {
+      const savedChat = allKnownChats.find((chat) => chat.chatId === slot.chatId);
+      if (savedChat) {
+        options.push({ chat: savedChat, showInactive: true });
+      }
+    }
+    return options;
+  }, [chats, allKnownChats, slot.chatId]);
+  const topicOptions = useMemo(() => {
+    const options = [];
+    for (const topic of topics) {
+      const threadId = String(topic.threadId);
+      if (!options.some((option) => option.threadId === threadId)) {
+        options.push({ threadId, name: formatTopicLabel(topic) });
+      }
+    }
+    if (
+      slot.threadId &&
+      !options.some((option) => option.threadId === String(slot.threadId))
+    ) {
+      options.push({ threadId: String(slot.threadId), name: `#${slot.threadId}` });
+    }
+    return options;
+  }, [topics, slot.threadId]);
+
+  return (
+    <div className="grid gap-3 md:grid-cols-[2fr_1.5fr_1.5fr_1fr] items-end">
+      <div>
+        <FieldLabel>Чат {index + 1}</FieldLabel>
+        <select
+          value={slot.chatId}
+          onChange={(e) => {
+            const chatId = e.target.value;
+            onChange({ ...slot, chatId, threadId: '' });
+          }}
+          className="select-field w-full"
+        >
+          <option value="">— не используется —</option>
+          {slot.chatId && !allKnownChats.some((chat) => chat.chatId === slot.chatId) && (
+            <option value={slot.chatId}>{slot.chatId} · неактивен</option>
+          )}
+          {chatOptions.map(({ chat, showInactive }) => (
+            <option key={chat.chatId} value={chat.chatId}>
+              {formatChatLabel(chat, { showInactive })}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {slot.chatId ? (
+        <div>
+          <FieldLabel>Топик</FieldLabel>
+          <select
+            value={slot.threadId}
+            onChange={(e) => onChange({ ...slot, threadId: e.target.value })}
+            className="select-field w-full"
+          >
+            <option value="">— выберите топик —</option>
+            {topicOptions.map((topic) => (
+              <option key={topic.threadId} value={topic.threadId}>
+                {topic.name}
+              </option>
+            ))}
+          </select>
+          <div className="mt-2 flex gap-2">
+            <input
+              type="text"
+              value={manualThreadId}
+              onChange={(e) => setManualThreadId(e.target.value)}
+              className="input-field w-24"
+              placeholder="ID"
+            />
+            <input
+              type="text"
+              value={manualTopicName}
+              onChange={(e) => setManualTopicName(e.target.value)}
+              className="input-field flex-1"
+              placeholder="Имя топика"
+            />
+            <button
+              type="button"
+              className="btn-secondary btn-sm"
+              disabled={!slot.chatId || addTopic.isPending}
+              onClick={async () => {
+                const threadId = Number(manualThreadId);
+                if (!Number.isInteger(threadId) || threadId <= 0) return;
+                await addTopic.mutateAsync({
+                  chatId: slot.chatId,
+                  threadId,
+                  name: manualTopicName.trim(),
+                });
+                onChange({ ...slot, threadId: String(threadId) });
+                setManualThreadId('');
+                setManualTopicName('');
+              }}
+            >
+              +
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div />
+      )}
+
+      <div>
+        <FieldLabel>Компания</FieldLabel>
+        <input
+          type="text"
+          value={slot.companyLabel}
+          onChange={(e) => onChange({ ...slot, companyLabel: e.target.value })}
+          className="input-field w-full"
+          placeholder="Название"
+        />
+      </div>
+
+      <div>
+        <FieldLabel>Роль</FieldLabel>
+        <select
+          value={slot.topicRole}
+          onChange={(e) => onChange({ ...slot, topicRole: e.target.value })}
+          className="select-field w-full"
+        >
+          <option value="QUOTE">Просчёт</option>
+          <option value="DESIGN">Разработка</option>
+          <option value="REVIEW">Проверка</option>
+        </select>
+      </div>
+    </div>
+  );
 }
 
 export default function Telegram() {
@@ -145,6 +295,19 @@ export default function Telegram() {
   const saveMentionForward = useSaveTelegramMentionForward();
   const [mentionChatId, setMentionChatId] = useState('');
   const [mentionTopicId, setMentionTopicId] = useState('');
+  const { data: workRequestSlotsData } = useTelegramWorkRequestSlots();
+  const saveWorkRequestSlots = useSaveTelegramWorkRequestSlots();
+  const [workRequestSlots, setWorkRequestSlots] = useState(() =>
+    Array.from({ length: 9 }, emptyWorkRequestSlot),
+  );
+  const {
+    data: botChatsData,
+    isLoading: botChatsLoading,
+    refetch: refetchBotChats,
+  } = useTelegramBotChats(true);
+  const addBotChat = useAddTelegramBotChat();
+  const [botChatIdInput, setBotChatIdInput] = useState('');
+  const botChats = botChatsData?.chats ?? [];
 
   const autoInviteConfigured = Boolean(autoInviteStatus?.configured);
   const autoInviteMembers = autoInviteMembersData?.members ?? [];
@@ -331,6 +494,18 @@ export default function Telegram() {
     setMentionChatId(s.chatId || '');
     setMentionTopicId(s.topicId != null ? String(s.topicId) : '');
   }, [mentionForwardData?.settings]);
+
+  useEffect(() => {
+    if (!workRequestSlotsData?.slots) return;
+    const savedSlots = workRequestSlotsData.slots.slice(0, 9).map((slot) => ({
+      ...slot,
+      threadId: String(slot.threadId),
+    }));
+    setWorkRequestSlots([
+      ...savedSlots,
+      ...Array.from({ length: 9 - savedSlots.length }, emptyWorkRequestSlot),
+    ]);
+  }, [workRequestSlotsData?.slots]);
 
   const mentionForumChats = useMemo(
     () => chats.filter((c) => c.isForum && c.active),
@@ -682,6 +857,28 @@ export default function Telegram() {
     } catch (err) {
       setSaveError(
         err.response?.data?.error || err.message || 'Не удалось сохранить настройки',
+      );
+    }
+  }
+
+  async function onSaveWorkRequestSlots() {
+    setSaveError('');
+    setActionError('');
+    setActionSuccess('');
+    const slots = workRequestSlots
+      .filter((slot) => slot.chatId)
+      .map((slot) => ({
+        chatId: slot.chatId,
+        threadId: Number(slot.threadId),
+        companyLabel: slot.companyLabel.trim(),
+        topicRole: slot.topicRole,
+      }));
+    try {
+      await saveWorkRequestSlots.mutateAsync(slots);
+      setActionSuccess('Слоты рабочих запросов сохранены');
+    } catch (err) {
+      setSaveError(
+        err.response?.data?.error || err.message || 'Не удалось сохранить слоты',
       );
     }
   }
@@ -1691,6 +1888,80 @@ export default function Telegram() {
             className="btn-primary btn-sm"
           >
             {saveMentionForward.isPending ? 'Сохранение…' : 'Сохранить'}
+          </button>
+        </div>
+      </Section>
+
+      <Section
+        title="Рабочие запросы"
+        description="Обычный бот (@brandingxbot), не userbot. Тег без формы — отказ с списком полей. Просчёт: «Что посчитать: …». Чат id: -100… или ссылка t.me/c/…"
+      >
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-2 items-end">
+            <div className="min-w-[16rem] flex-1">
+              <FieldLabel>Добавить чат бота</FieldLabel>
+              <input
+                type="text"
+                value={botChatIdInput}
+                onChange={(e) => setBotChatIdInput(e.target.value)}
+                className="input-field w-full"
+                placeholder="-100…"
+              />
+            </div>
+            <button
+              type="button"
+              className="btn-secondary btn-sm"
+              disabled={addBotChat.isPending || !botChatIdInput.trim()}
+              onClick={async () => {
+                setActionError('');
+                try {
+                  await addBotChat.mutateAsync({ chatId: botChatIdInput.trim() });
+                  setBotChatIdInput('');
+                  setActionSuccess('Чат обычного бота добавлен');
+                } catch (err) {
+                  setActionError(err.response?.data?.error || err.message || 'Не удалось добавить чат бота');
+                }
+              }}
+            >
+              {addBotChat.isPending ? 'Добавление…' : 'Добавить'}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary btn-sm"
+              disabled={botChatsLoading}
+              onClick={() => refetchBotChats()}
+            >
+              Обновить список
+            </button>
+          </div>
+          {botChats.length === 0 && (
+            <p className="text-xs text-ink-faint leading-relaxed">
+              Пока нет чатов обычного бота. Добавьте бота в форум и вставьте chat id, либо напишите в топик с тегом бота.
+            </p>
+          )}
+          {workRequestSlots.map((slot, index) => (
+            <WorkRequestSlotRow
+              key={index}
+              index={index}
+              slot={slot}
+              chats={botChats}
+              allKnownChats={botChats}
+              onChange={(nextSlot) =>
+                setWorkRequestSlots((current) =>
+                  current.map((item, itemIndex) =>
+                    itemIndex === index ? nextSlot : item,
+                  ),
+                )
+              }
+            />
+          ))}
+          <button
+            type="button"
+            onClick={onSaveWorkRequestSlots}
+            disabled={saveWorkRequestSlots.isPending}
+            className="btn-primary btn-sm"
+          >
+            {saveWorkRequestSlots.isPending ? 'Сохранение…' : 'Сохранить'}
           </button>
         </div>
       </Section>

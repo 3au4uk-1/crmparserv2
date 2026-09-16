@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import express from 'express';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -88,6 +91,21 @@ function createDb() {
       deals_done INTEGER DEFAULT 0,
       deals_restored INTEGER DEFAULT 0,
       deals_skipped INTEGER DEFAULT 0,
+      deals_failed INTEGER DEFAULT 0,
+      errors_json TEXT,
+      error TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE decor_mk_scan_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      status TEXT NOT NULL DEFAULT 'queued',
+      from_date TEXT NOT NULL,
+      to_date TEXT NOT NULL,
+      started_at TEXT,
+      finished_at TEXT,
+      deals_total INTEGER DEFAULT 0,
+      deals_done INTEGER DEFAULT 0,
+      deals_updated INTEGER DEFAULT 0,
       deals_failed INTEGER DEFAULT 0,
       errors_json TEXT,
       error TEXT,
@@ -259,6 +277,27 @@ describe('product-stream-backfill-jobs', () => {
     expect(finished.dealsFailed).toBe(1);
     expect(finished.status).toBe('completed_with_errors');
     expect(finished.errors).toEqual([{ dealId: 2, error: 'Twenty timeout' }]);
+  });
+
+  it('does not delay 1s between deals', async () => {
+    testDb.prepare("INSERT INTO deals (id, twenty_id, approval_status) VALUES (1, 'opp-1', 'synced')").run();
+    testDb.prepare("INSERT INTO deals (id, twenty_id, approval_status) VALUES (2, 'opp-2', 'synced')").run();
+    listLineItemsForOpportunityMock.mockResolvedValue([]);
+    planProductStreamBackfillMock.mockReturnValue({ toUpdate: [], skipped: 0 });
+
+    const started = Date.now();
+    const job = createProductStreamBackfillJob({ trigger: 'manual' });
+    const promise = executeProductStreamBackfillJob(job.jobId);
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(
+      readFileSync(
+        path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/services/product-stream-backfill-jobs.js'),
+        'utf8',
+      ),
+    ).not.toMatch(/DELAY_MS/);
   });
 
   it('marks job failed when Twenty is not configured', async () => {

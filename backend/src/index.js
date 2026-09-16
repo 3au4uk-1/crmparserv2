@@ -36,6 +36,9 @@ import { initUserbotReconcile } from './telegram/userbot/reconcile.js';
 import { initMentionForwarding } from './telegram/userbot/mention-forward.js';
 import { initTeamAppMirror } from './telegram/userbot/team-app-mirror.js';
 import { initDigestCommands } from './telegram/userbot/digest-commands.js';
+import { recoverStaleOkleykaSending } from './telegram/okleyka-outbox.js';
+import { kickOkleykaDrain, initOkleykaDrainTicker } from './telegram/okleyka-drain.js';
+import { initUserbotWatchdog } from './telegram/userbot/reconnect.js';
 import { recoverStaleParseRuns } from './services/parser.js';
 import { recoverStaleRestoreMissingTwentyJobs } from './services/restore-missing-twenty-jobs.js';
 import {
@@ -109,6 +112,7 @@ async function start() {
   registerDefaultTelegramHooks();
   recoverStaleParseRuns(getDb());
   recoverStaleRestoreMissingTwentyJobs(getDb());
+  recoverStaleOkleykaSending(getDb());
   const recoveredExpenseRuns = recoverStaleExpenseRuns();
   initScheduler();
   initTwentyEvents();
@@ -122,6 +126,9 @@ async function start() {
   initMentionForwarding();
   initTeamAppMirror();
   initDigestCommands();
+  initUserbotWatchdog(getDb());
+  initOkleykaDrainTicker(getDb());
+  void kickOkleykaDrain(getDb()).catch((err) => console.error('[telegram] okleyka drain kick:', err.message));
   app.listen(config.port, () => {
     console.log(`CRM Parser running on port ${config.port}`);
     setImmediate(async () => {

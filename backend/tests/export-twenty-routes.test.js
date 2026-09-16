@@ -85,4 +85,29 @@ describe('export-twenty routes', () => {
       })
     );
   });
+
+  it('POST stores includeRestoration default false', async () => {
+    const res = await request(createApp())
+      .post('/api/export/twenty')
+      .send({ from: '2026-06-01', to: '2026-06-30' });
+    expect(res.status).toBe(201);
+    const job = getExportJob(res.body.jobId);
+    expect(job.includeRestoration).toBe(false);
+  });
+
+  it('POST stores includeRestoration true', async () => {
+    const res = await request(createApp())
+      .post('/api/export/twenty')
+      .send({
+        from: '2026-06-01',
+        to: '2026-06-30',
+        includeRestoration: true,
+      });
+    expect(res.status).toBe(201);
+    expect(getExportJob(res.body.jobId).includeRestoration).toBe(true);
+    expect(runTwentyExportMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ includeRestoration: true }),
+    );
+  });
 });

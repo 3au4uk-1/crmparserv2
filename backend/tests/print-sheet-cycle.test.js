@@ -34,6 +34,10 @@ vi.mock('../src/services/print-sheet-export-twenty.js', () => ({
     readback.plenkaText !== lineItem.plenka?.markdown
       ? { plenka: { markdown: readback.plenkaText } }
       : {},
+  buildPrintSheetExportRowValues: () => [
+    'Про', 'Order', '', 'Item', '', '', 'User', '27.06.2026', '10:00',
+    '', '', '', '', '', 'print comment',
+  ],
   newPrintSheetSessionId: () => 'sess-test',
 }));
 
@@ -50,11 +54,8 @@ vi.mock('../src/services/print-sheet-readback.js', () => ({
   }),
 }));
 
-vi.mock('../src/services/print-sheet-row-builder.js', () => ({
-  buildPrintSheetRowValues: () => [
-    'Про', 'Order', '', 'Item', '', '', 'User', '27.06.2026', '10:00',
-    '', '', '', '', '', 'print comment',
-  ],
+vi.mock('../src/db/connection.js', () => ({
+  getDb: () => ({}),
 }));
 
 vi.mock('../src/services/print-sheet-tabs.js', () => ({

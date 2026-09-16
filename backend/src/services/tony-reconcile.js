@@ -22,6 +22,7 @@ function isLegacyEventBookingKey(dealKey, crmEventId) {
  *   should be converted in place to a single new booking (preserves approval/overrides/twenty_id).
  * - removeDealIds: obsolete event-scoped rows for this event (calendar fallback or legacy keys).
  *   Booking-centric deals (`booking#N`) are never removed here — they may be shared across events.
+ *   Synced `#cal` rows (`twenty_id` set) are not cancelled when bookings appear.
  *
  * Identity is title-driven (NOT dependent on Tony reachability), so a Tony outage neither
  * duplicates nor removes deals.
@@ -32,7 +33,7 @@ export function planEventReconciliation(db, crmEventId, bookingNumbers) {
   const bookingSet = new Set(bookingNumbers || []);
 
   const existing = db
-    .prepare('SELECT id, deal_key FROM deals WHERE crm_event_id = ?')
+    .prepare('SELECT id, deal_key, twenty_id FROM deals WHERE crm_event_id = ?')
     .all(crmEventId);
 
   let relink = null;
@@ -41,7 +42,7 @@ export function planEventReconciliation(db, crmEventId, bookingNumbers) {
   if (
     existingCal.length === 1 &&
     existing.length === 1 &&
-    desired.length === 1 &&
+    desired.length >= 1 &&
     desired[0].bookingNumber !== null
   ) {
     const globalBooking = db
@@ -63,7 +64,9 @@ export function planEventReconciliation(db, crmEventId, bookingNumbers) {
     if (d.id === relinkedId) continue;
 
     if (d.deal_key === calKey) {
-      if (!desiredKeys.has(calKey)) removeDealIds.push(d.id);
+      if (!desiredKeys.has(calKey) && !d.twenty_id) {
+        removeDealIds.push(d.id);
+      }
       continue;
     }
 
@@ -77,9 +80,10 @@ export function planEventReconciliation(db, crmEventId, bookingNumbers) {
 
   if (
     existingCal.length === 1 &&
-    desired.length === 1 &&
+    desired.length >= 1 &&
     desired[0].bookingNumber !== null &&
-    !relink
+    !relink &&
+    !existingCal[0].twenty_id
   ) {
     const globalBooking = db
       .prepare('SELECT id FROM deals WHERE deal_key = ?')

@@ -1,7 +1,7 @@
-import { computeLineItemTotal, parseQuantityNum, DEFAULT_OPPORTUNITY_STAGE } from './twenty-opportunity.js';
+import { computeLineItemTotal, parseQuantityNum, DEFAULT_OPPORTUNITY_STAGE, shouldZeroLineItemAmount } from './twenty-opportunity.js';
 import { findTipRuleMatch } from './tip-rules.js';
 import { resolveTipDetail } from './tip-taxonomy.js';
-import { sortProductStreams, coerceProductStreams } from './product-stream.js';
+import { productStreamsEqual, sortProductStreams, coerceProductStreams } from './product-stream.js';
 
 export function buildWarehouseItemCreateInput(name, position = 'first') {
   return { name, position };
@@ -17,8 +17,21 @@ function buildLineItemFields(item, options = {}) {
   } = options;
   const qty = item.quantity_num ?? parseQuantityNum(item.quantity);
   const neNasheLists = { neNasheBrandingList, neNasheDecorMkList };
-  const lineTotal = computeLineItemTotal(item, deal, restorationList, neNasheLists);
-  const unitPrice = qty > 0 ? lineTotal / qty : 0;
+  let unitPrice;
+  if (item.amount_locked) {
+    const unit = Number(item.price);
+    unitPrice = Number.isFinite(unit) && unit >= 0 ? unit : 0;
+  } else {
+    const lineTotal = computeLineItemTotal(item, deal, restorationList, neNasheLists);
+    unitPrice = qty > 0 ? lineTotal / qty : 0;
+  }
+  if (shouldZeroLineItemAmount(item.name, {
+    restorationList,
+    neNasheBrandingList,
+    neNasheDecorMkList,
+  })) {
+    unitPrice = 0;
+  }
 
   const fields = {
     kolichestvo: qty,
@@ -28,6 +41,10 @@ function buildLineItemFields(item, options = {}) {
       currencyCode: 'RUB',
     },
   };
+
+  if (item.productStream === 'BRANDING' || item.productStream === 'DECOR' || item.productStream === 'MK') {
+    fields.productStream = item.productStream;
+  }
 
   const comment = (item.comment || '').trim();
   if (comment) fields.kommentariy = comment;
@@ -61,4 +78,25 @@ export function buildLineItemCreateInput(item, warehouseItemId, opportunityId, p
 
 export function buildLineItemUpdateInput(item, options = {}) {
   return buildLineItemFields(item, options);
+}
+
+export function lineItemFieldsEqual(existing, desired) {
+  if (!existing) return false;
+  if ((existing.kolichestvo ?? 1) !== (desired.kolichestvo ?? 1)) return false;
+  if ((existing.amount?.amountMicros ?? 0) !== (desired.amount?.amountMicros ?? 0)) return false;
+  if ((existing.istochnik || 'PARSER') !== (desired.istochnik || 'PARSER')) return false;
+  if (!productStreamsEqual(
+    coerceProductStreams(existing.productStream),
+    coerceProductStreams(desired.productStream),
+  )) return false;
+  if (Object.prototype.hasOwnProperty.call(desired, 'kommentariy')) {
+    if ((existing.kommentariy || '') !== (desired.kommentariy || '')) return false;
+  }
+  if (Object.prototype.hasOwnProperty.call(desired, 'tip')) {
+    if ((existing.tip || null) !== (desired.tip || null)) return false;
+  }
+  if (Object.prototype.hasOwnProperty.call(desired, 'tipDetail')) {
+    if ((existing.tipDetail || null) !== (desired.tipDetail || null)) return false;
+  }
+  return true;
 }

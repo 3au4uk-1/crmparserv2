@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS deals (
   work_time TEXT,
   dismantle_time TEXT,
   tony_order_id TEXT,
+  tony_updated_at TEXT,
   content_hash TEXT,
   approval_status TEXT NOT NULL DEFAULT 'pending',
   twenty_id TEXT,
@@ -207,6 +208,22 @@ CREATE TABLE IF NOT EXISTS restore_missing_twenty_runs (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS decor_mk_scan_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  status TEXT NOT NULL DEFAULT 'queued',
+  from_date TEXT NOT NULL,
+  to_date TEXT NOT NULL,
+  started_at TEXT,
+  finished_at TEXT,
+  deals_total INTEGER DEFAULT 0,
+  deals_done INTEGER DEFAULT 0,
+  deals_updated INTEGER DEFAULT 0,
+  deals_failed INTEGER DEFAULT 0,
+  errors_json TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS telegram_send_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   event TEXT NOT NULL,
@@ -220,8 +237,57 @@ CREATE TABLE IF NOT EXISTS telegram_send_log (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS deal_bitrix_links (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+  bitrix_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('payment', 'booking', 'other')),
+  is_canonical INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (deal_id, bitrix_id)
+);
+CREATE INDEX IF NOT EXISTS idx_deal_bitrix_links_bitrix ON deal_bitrix_links(bitrix_id);
+
+CREATE TABLE IF NOT EXISTS deal_groups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  twenty_parent_id TEXT,
+  name TEXT NOT NULL,
+  name_locked INTEGER NOT NULL DEFAULT 0,
+  canonical_deal_id INTEGER NOT NULL REFERENCES deals(id),
+  canonical_bitrix_id TEXT NOT NULL,
+  canonical_locked INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS deal_group_members (
+  group_id INTEGER NOT NULL REFERENCES deal_groups(id) ON DELETE CASCADE,
+  deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+  UNIQUE (deal_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_telegram_send_log_event_line
   ON telegram_send_log(event, line_item_id);
+
+CREATE TABLE IF NOT EXISTS telegram_okleyka_outbox (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  line_item_id TEXT NOT NULL,
+  opportunity_id TEXT,
+  text TEXT NOT NULL,
+  file_urls_json TEXT NOT NULL DEFAULT '[]',
+  sent_by TEXT,
+  force INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL,
+  error TEXT,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at TEXT,
+  sending_started_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_telegram_okleyka_outbox_open
+  ON telegram_okleyka_outbox(line_item_id)
+  WHERE status IN ('pending', 'sending');
 
 CREATE TABLE IF NOT EXISTS telegram_chats (
   chat_id TEXT PRIMARY KEY,

@@ -14,8 +14,12 @@ import {
   setBannerPodryadHour,
 } from '../telegram/settings.js';
 import {
+  listBotChats,
+  listBotTopics,
   listTelegramChats,
   listTelegramTopics,
+  upsertBotChat,
+  upsertBotTopic,
   upsertTelegramChat,
   upsertTelegramTopic,
 } from '../telegram/chat-store.js';
@@ -43,6 +47,11 @@ import {
   getTeamAppMirrorSettings,
   setTeamAppMirrorSettings,
 } from '../telegram/team-app-mirror-settings.js';
+import { chatIdCandidates } from '../telegram/chat-id.js';
+import {
+  getWorkRequestSlots,
+  setWorkRequestSlots,
+} from '../telegram/work-requests/slots.js';
 
 const router = Router();
 
@@ -264,6 +273,90 @@ router.put('/mention-forward', (req, res, next) => {
   }
 });
 
+router.get('/bot-chats', (req, res) => {
+  const db = getDb();
+  const activeOnly = req.query.active !== '0';
+  const chats = listBotChats(db, { activeOnly }).map(mapChatRow);
+  res.json({ chats });
+});
+
+router.post('/bot-chats', async (req, res, next) => {
+  try {
+    const db = getDb();
+    const token = getTelegramBotToken(db);
+    if (!token) {
+      return res.status(400).json({ error: 'Telegram bot token is not set' });
+    }
+    const candidates = chatIdCandidates(req.body?.chatId);
+    if (candidates.length === 0) {
+      return res.status(400).json({ error: 'chatId required' });
+    }
+    let chat;
+    let lastError;
+    for (const chatId of candidates) {
+      try {
+        chat = await callTelegram(token, 'getChat', { chat_id: chatId });
+        break;
+      } catch (err) {
+        lastError = err;
+        console.warn('[telegram] getChat failed', { chatId, error: err.message });
+      }
+    }
+    if (!chat) {
+      throw lastError || Object.assign(new Error('chat not found'), { status: 400 });
+    }
+    upsertBotChat(db, {
+      chatId: String(chat.id),
+      title: chat.title || chat.username || '',
+      type: chat.type || '',
+      isForum: Boolean(chat.is_forum),
+      username: chat.username || null,
+      active: true,
+      source: 'bot',
+    });
+    const row = db.prepare(`SELECT * FROM telegram_bot_chats WHERE chat_id = ?`).get(String(chat.id));
+    res.json({ chat: mapChatRow(row) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/bot-chats/:chatId/topics', (req, res) => {
+  const topics = listBotTopics(getDb(), req.params.chatId).map(mapTopicRow);
+  res.json({ topics });
+});
+
+router.post('/bot-chats/:chatId/topics', (req, res) => {
+  const db = getDb();
+  const chatId = req.params.chatId;
+  const threadId = Number(req.body?.threadId);
+  if (!Number.isInteger(threadId) || threadId <= 0) {
+    return res.status(400).json({ error: 'threadId must be a positive integer' });
+  }
+  const name = req.body?.name != null ? String(req.body.name) : null;
+  upsertBotTopic(db, { chatId, threadId, name, source: 'manual' });
+  const row = db
+    .prepare(`SELECT * FROM telegram_bot_topics WHERE chat_id = ? AND thread_id = ?`)
+    .get(chatId, threadId);
+  res.json({ topic: mapTopicRow(row) });
+});
+
+router.get('/work-request-slots', (req, res) => {
+  res.json({ slots: getWorkRequestSlots(getDb()) });
+});
+
+router.put('/work-request-slots', (req, res, next) => {
+  try {
+    const slots = setWorkRequestSlots(getDb(), req.body?.slots);
+    res.json({ slots });
+  } catch (err) {
+    if (err?.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    next(err);
+  }
+});
+
 router.get('/team-app-mirror', (req, res) => {
   res.json({ settings: getTeamAppMirrorSettings(getDb()) });
 });
@@ -365,6 +458,7 @@ router.get('/webhook/status', async (req, res, next) => {
       deprecated: true,
       note: 'Webhook discovery is deprecated; use user-bot reconcile (/chats/refresh).',
       publicBaseUrlConfigured: Boolean(config.publicBaseUrl),
+      pollingEnabled: Boolean(config.telegramPolling),
       webhookUrl,
       secretSet,
     };

@@ -119,8 +119,7 @@ export function migrateBookingCentricDealKeys(db) {
   tx();
 }
 
-export function migrate() {
-  const db = getDb();
+export function migrate(db = getDb()) {
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8');
   db.exec(schema);
 
@@ -243,6 +242,7 @@ export function migrate() {
   ensureColumn(db, 'deal_items', 'amount_locked', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'deals', 'twenty_error', 'TEXT');
   ensureColumn(db, 'deals', 'tony_order_id', 'TEXT');
+  ensureColumn(db, 'deals', 'tony_updated_at', 'TEXT');
   ensureColumn(db, 'deals', 'arrival_time', 'TEXT');
   ensureColumn(db, 'deals', 'ready_time', 'TEXT');
   ensureColumn(db, 'deals', 'work_time', 'TEXT');
@@ -347,6 +347,24 @@ export function migrate() {
     );
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS decor_mk_scan_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      status TEXT NOT NULL DEFAULT 'queued',
+      from_date TEXT NOT NULL,
+      to_date TEXT NOT NULL,
+      started_at TEXT,
+      finished_at TEXT,
+      deals_total INTEGER DEFAULT 0,
+      deals_done INTEGER DEFAULT 0,
+      deals_updated INTEGER DEFAULT 0,
+      deals_failed INTEGER DEFAULT 0,
+      errors_json TEXT,
+      error TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
   migratePodryadBannerToTipRules(db);
   seedDefaultTipRules(db);
 
@@ -397,6 +415,28 @@ export function migrate() {
   );
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS telegram_okleyka_outbox (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      line_item_id TEXT NOT NULL,
+      opportunity_id TEXT,
+      text TEXT NOT NULL,
+      file_urls_json TEXT NOT NULL DEFAULT '[]',
+      sent_by TEXT,
+      force INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL,
+      error TEXT,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TEXT,
+      sending_started_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_telegram_okleyka_outbox_open
+      ON telegram_okleyka_outbox(line_item_id)
+      WHERE status IN ('pending', 'sending');
+  `);
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS telegram_chats (
       chat_id TEXT PRIMARY KEY,
       title TEXT NOT NULL DEFAULT '',
@@ -441,6 +481,94 @@ export function migrate() {
     `INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`,
   );
   for (const [key, value] of telegramDefaults) upsertSetting.run(key, value);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS telegram_work_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_number INTEGER NOT NULL UNIQUE,
+      twenty_id TEXT UNIQUE,
+      chat_id TEXT NOT NULL,
+      thread_id INTEGER NOT NULL,
+      source_message_id INTEGER NOT NULL,
+      bot_message_id INTEGER,
+      media_group_id TEXT,
+      requester_user_id TEXT,
+      requester_username TEXT,
+      requester_name TEXT,
+      last_published_text TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (chat_id, source_message_id)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_twr_album
+      ON telegram_work_requests(chat_id, media_group_id)
+      WHERE media_group_id IS NOT NULL AND media_group_id != '';
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS telegram_bot_chats (
+      chat_id TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      type TEXT NOT NULL DEFAULT '',
+      is_forum INTEGER NOT NULL DEFAULT 0,
+      username TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      source TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS telegram_bot_topics (
+      chat_id TEXT NOT NULL,
+      thread_id INTEGER NOT NULL,
+      name TEXT,
+      source TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (chat_id, thread_id)
+    );
+  `);
+
+  db.prepare(
+    "INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_work_request_slots', '[]')",
+  ).run();
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS deal_bitrix_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+      bitrix_id TEXT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('payment', 'booking', 'other')),
+      is_canonical INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (deal_id, bitrix_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_deal_bitrix_links_bitrix ON deal_bitrix_links(bitrix_id);
+  `);
+
+  const dealCols = db.prepare('PRAGMA table_info(deals)').all().map((c) => c.name);
+  if (dealCols.includes('crm_lead_id')) {
+    db.prepare(`
+      INSERT OR IGNORE INTO deal_bitrix_links (deal_id, bitrix_id, role, is_canonical)
+      SELECT id, TRIM(crm_lead_id), 'booking', 1
+      FROM deals
+      WHERE crm_lead_id IS NOT NULL AND TRIM(crm_lead_id) != ''
+    `).run();
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS deal_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      twenty_parent_id TEXT,
+      name TEXT NOT NULL,
+      name_locked INTEGER NOT NULL DEFAULT 0,
+      canonical_deal_id INTEGER NOT NULL REFERENCES deals(id),
+      canonical_bitrix_id TEXT NOT NULL,
+      canonical_locked INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS deal_group_members (
+      group_id INTEGER NOT NULL REFERENCES deal_groups(id) ON DELETE CASCADE,
+      deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+      UNIQUE (deal_id)
+    );
+  `);
 
   console.log('Database migrated successfully');
 }

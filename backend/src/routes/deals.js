@@ -26,6 +26,14 @@ import {
   getRestoreMissingTwentyJob,
 } from '../services/restore-missing-twenty-jobs.js';
 import {
+  countDecorMkScanDeals,
+  createDecorMkScanJob,
+  executeDecorMkScanJob,
+  getActiveDecorMkScanJob,
+  getDecorMkScanJob,
+  parseDecorMkScanRange,
+} from '../services/decor-mk-scan-jobs.js';
+import {
   countProductStreamBackfillDeals,
   createProductStreamBackfillJob,
   executeProductStreamBackfillJob,
@@ -157,6 +165,9 @@ router.post('/bulk-resync', (req, res) => {
   if (getActiveRestoreMissingTwentyJob()) {
     return res.status(409).json({ error: 'Восстановление отсутствующих сделок уже выполняется' });
   }
+  if (getActiveDecorMkScanJob()) {
+    return res.status(409).json({ error: 'Проверка ключевых слов декора и МК уже выполняется' });
+  }
   if (getActiveProductStreamBackfillJob()) {
     return res.status(409).json({ error: 'Обновление потоков продуктов уже выполняется' });
   }
@@ -199,6 +210,9 @@ router.post('/product-stream-backfill', (req, res) => {
   if (getActiveRestoreMissingTwentyJob()) {
     return res.status(409).json({ error: 'Восстановление отсутствующих сделок уже выполняется' });
   }
+  if (getActiveDecorMkScanJob()) {
+    return res.status(409).json({ error: 'Проверка ключевых слов декора и МК уже выполняется' });
+  }
 
   const requestedTrigger = req.body?.trigger;
   const trigger =
@@ -235,6 +249,9 @@ router.post('/restore-missing-twenty', (req, res) => {
   if (getActiveBulkResyncJob()) {
     return res.status(409).json({ error: 'Массовая пересинхронизация уже выполняется' });
   }
+  if (getActiveDecorMkScanJob()) {
+    return res.status(409).json({ error: 'Проверка ключевых слов декора и МК уже выполняется' });
+  }
   if (getActiveProductStreamBackfillJob()) {
     return res.status(409).json({ error: 'Обновление потоков продуктов уже выполняется' });
   }
@@ -259,6 +276,55 @@ router.get('/restore-missing-twenty/jobs/active', (req, res) => {
 
 router.get('/restore-missing-twenty/jobs/:id', (req, res) => {
   const job = getRestoreMissingTwentyJob(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Задача не найдена' });
+  res.json(job);
+});
+
+router.get('/decor-mk-scan/preview', (req, res) => {
+  try {
+    const { from, to } = parseDecorMkScanRange(req.query.from, req.query.to);
+    res.json({ count: countDecorMkScanDeals(from, to), from, to });
+  } catch (err) {
+    return res.status(err.statusCode || 400).json({ error: err.message });
+  }
+});
+
+router.post('/decor-mk-scan', (req, res) => {
+  let from;
+  let to;
+  try {
+    ({ from, to } = parseDecorMkScanRange(req.body?.from, req.body?.to));
+  } catch (err) {
+    return res.status(err.statusCode || 400).json({ error: err.message });
+  }
+
+  if (getActiveDecorMkScanJob()) {
+    return res.status(409).json({ error: 'Проверка ключевых слов декора и МК уже выполняется' });
+  }
+  if (getActiveBulkResyncJob()) {
+    return res.status(409).json({ error: 'Массовая пересинхронизация уже выполняется' });
+  }
+  if (getActiveRestoreMissingTwentyJob()) {
+    return res.status(409).json({ error: 'Восстановление отсутствующих сделок уже выполняется' });
+  }
+  if (getActiveProductStreamBackfillJob()) {
+    return res.status(409).json({ error: 'Обновление потоков продуктов уже выполняется' });
+  }
+
+  const job = createDecorMkScanJob({ from, to });
+  executeDecorMkScanJob(job.jobId).catch((err) => {
+    console.error(`[decor-mk-scan] job ${job.jobId} failed:`, err.message);
+  });
+
+  res.status(201).json({ jobId: job.jobId });
+});
+
+router.get('/decor-mk-scan/jobs/active', (req, res) => {
+  res.json(getActiveDecorMkScanJob() ?? null);
+});
+
+router.get('/decor-mk-scan/jobs/:id', (req, res) => {
+  const job = getDecorMkScanJob(req.params.id);
   if (!job) return res.status(404).json({ error: 'Задача не найдена' });
   res.json(job);
 });

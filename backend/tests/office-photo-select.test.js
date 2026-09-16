@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isBannerStaffTitle,
   isOfficePhotoTip,
   needsOfficePhotoTask,
   shouldSkipCancelled,
@@ -33,6 +34,21 @@ describe('shouldSkipCancelled', () => {
     expect(
       shouldSkipCancelled({ opportunityStage: 'NOVYY', lineItemStage: 'NOVYY' }),
     ).toBe(false);
+  });
+});
+
+describe('isBannerStaffTitle', () => {
+  it('skips banner-staff calendar titles', () => {
+    expect(isBannerStaffTitle('Баннерщик')).toBe(true);
+    expect(isBannerStaffTitle('Баннерщики Иванов')).toBe(true);
+    expect(isBannerStaffTitle('  БАННЕРЩИК  ')).toBe(true);
+  });
+
+  it('does not skip ordinary banner product names', () => {
+    expect(isBannerStaffTitle('Баннер 3x6')).toBe(false);
+    expect(isBannerStaffTitle('Позиция')).toBe(false);
+    expect(isBannerStaffTitle('')).toBe(false);
+    expect(isBannerStaffTitle(null)).toBe(false);
   });
 });
 

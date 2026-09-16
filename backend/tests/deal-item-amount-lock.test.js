@@ -50,22 +50,18 @@ describe('lockDealItemAmount', () => {
     `).run(dealId);
   });
 
-  it('sets amount_locked and sum, returns opportunity total', () => {
+  it('sets amount_locked, unit price, and line sum', () => {
     const db = getDb();
     const result = lockDealItemAmount(db, 'li-1', 15000);
 
-    expect(result).toEqual({
-      dealId,
-      itemId: expect.any(Number),
-      amountRub: 15000,
-      opportunityAmountRub: 20000,
-    });
-
-    const row = db.prepare('SELECT amount_locked, sum, price, quantity FROM deal_items WHERE twenty_id = ?').get('li-1');
+    const row = db.prepare(
+      'SELECT amount_locked, sum, price, quantity, quantity_num FROM deal_items WHERE twenty_id = ?',
+    ).get('li-1');
     expect(row.amount_locked).toBe(1);
-    expect(row.sum).toBe(15000);
-    expect(row.price).toBe(10000);
-    expect(row.quantity).toBe('2');
+    expect(row.price).toBe(15000);
+    expect(row.sum).toBe(30000);
+    expect(result.amountRub).toBe(15000);
+    expect(result.opportunityAmountRub).toBe(35000); // 30000 + li-2 5000
   });
 
   it('throws 404 when twenty_id is unknown', () => {
@@ -144,14 +140,14 @@ describe('lockDealItemAmount', () => {
     `).run();
 
     const result = lockDealItemAmount(db, 'li-1', 15000);
-    expect(result.opportunityAmountRub).toBe(15000);
+    expect(result.opportunityAmountRub).toBe(30000);
   });
 });
 
 describe('computeLineItemTotal amount_locked', () => {
   const deal = { data_source: 'tony' };
 
-  it('returns locked sum instead of tony price × qty', () => {
+  it('locked computeLineItemTotal uses price × qty', () => {
     const item = {
       name: 'Баннер',
       price: 10000,
@@ -159,10 +155,10 @@ describe('computeLineItemTotal amount_locked', () => {
       sum: 18000,
       amount_locked: 1,
     };
-    expect(computeLineItemTotal(item, deal)).toBe(18000);
+    expect(computeLineItemTotal(item, deal)).toBe(20000);
   });
 
-  it('returns 0 when locked sum is not finite', () => {
+  it('returns 0 when locked price is not finite', () => {
     const item = { name: 'Баннер', sum: null, amount_locked: 1 };
     expect(computeLineItemTotal(item, deal)).toBe(0);
   });
@@ -182,7 +178,7 @@ describe('computeLineItemTotal amount_locked', () => {
       { name: 'A', price: 10000, sum: 12000, amount_locked: 1 },
       { name: 'B', price: 5000, sum: 5000 },
     ];
-    expect(computeDealItemsTotal(deal, items)).toBe(17000);
+    expect(computeDealItemsTotal(deal, items)).toBe(15000);
   });
 
   it('locked total used in opportunity calc with pattern lists', () => {
@@ -204,6 +200,6 @@ describe('computeLineItemTotal amount_locked', () => {
       restorationList,
       { neNasheBrandingList, neNasheDecorMkList },
     );
-    expect(total).toBe(10500);
+    expect(total).toBe(13000);
   });
 });

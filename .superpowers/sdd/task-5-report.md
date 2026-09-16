@@ -1,83 +1,43 @@
-# Task 5 Report: Repair job runner + startup wire
+# Task 5 Report: Groups table, confirm/unlink, money, expense rollup
 
-**Date:** 2026-08-04  
-**Branch:** `staging`  
-**Commit:** `294be88` — Run one-shot free-entry duplicate repair after parser startup.
+## Status
+**Complete** — `deal_groups` / `deal_group_members` schema + pure money/membership layer; no Twenty GraphQL.
 
-## Status: DONE
+## Commits
+- `34bb833` — `feat: persist confirmed deal groups and parent money rules`
 
-## Summary
+## Tests
+| Command | Result |
+|---------|--------|
+| RED: `npm test -- tests/deal-groups.test.js` | **FAIL** — module not found |
+| GREEN: same | **PASS** — 9/9 |
+| Related: bitrix + suggest + migrate | **PASS** — 20/20 |
 
-Added `runFreeEntryDuplicateRepairIfNeeded` async runner with settings flag machine (`running`/`done`/`failed`, 6h stale `running` retry), per-deal repair orchestration (Twenty rename/disambiguate, local `twenty_id` untangle, opportunity amount update), `listLineItemsForRepair` GraphQL helper, and background `setImmediate` kick in `index.js` after listen.
+## Path
+- `backend/src/db/schema.sql`, `backend/src/db/migrate.js`
+- `backend/src/services/deal-groups.js`
+- `backend/tests/deal-groups.test.js`
 
-## Files Changed
-
-| File | Change |
-|------|--------|
-| `backend/src/services/free-entry-duplicate-repair.js` | Flag machine + `repairOneDeal` + `runFreeEntryDuplicateRepairIfNeeded` |
-| `backend/src/services/twenty-line-items-sync.js` | `listLineItemsForRepair` (kommentariy, createdAt, amount) |
-| `backend/src/index.js` | Background repair kick after `app.listen` |
-| `backend/tests/free-entry-duplicate-repair.test.js` | 4 flag-machine tests + existing 11 planner tests |
-
-## TDD Evidence
-
-### RED — flag-machine tests before runner (Step 1)
-
-Added 4 tests for `runFreeEntryDuplicateRepairIfNeeded`; runner not yet exported → import/symbol failures expected before implementation.
-
-### GREEN — Step 4
-
-```bash
-cd backend && npm test -- tests/free-entry-duplicate-repair.test.js tests/tony-mapping.test.js tests/deal-items-update.test.js tests/twenty-line-items-sync.test.js
-```
-
-```
- Test Files  4 passed (4)
-      Tests  51 passed (51)
-   Duration  541ms
-```
-
-Flag-machine cases covered:
-- skips when `free_entry_duplicate_repair_v1 = done`
-- sets `failed` (not `done`) on hard Twenty auth error
-- sets `done` after full pass with soft per-deal errors logged
-- retries when `running` + `started_at` older than 6 hours
-
-## Commit
-
-```
-Run one-shot free-entry duplicate repair after parser startup.
-```
+## Self-review
+1. No silent merge: only `confirmDealGroup` inserts groups; suggest remains read-only.
+2. `ALREADY_GROUPED` (409) when `deal_id` already a member; `canonical_bitrix_id` must exist on canonical deal links.
+3. Money: Σ `amountRub`; payments/`rashodItogo` from canonical only; expense rollup unique by `bitrixId`.
+4. Locked canonical never auto-switched; two payments → no auto-pick / no auto-switch.
+5. Unlink removes membership only; empty group dissolved; smeta `twenty_id` / links untouched.
 
 ## Concerns
+- Singleton groups allowed until last member unlinked (empty → dissolve); no auto-dissolve at size 1.
+- Positive auto-switch covered; two-payment auto-switch false path covered via locked + pickCanonical unit tests, not a separate unlocked two-pay DB case.
 
-1. **`createdAt` on Twenty line items** — repair query requests `createdAt`; if workspace schema differs, list call may hard-fail until field name is confirmed.
-2. **Concurrent startup** — two processes could both see non-`done` flag; `running` guard reduces but does not fully eliminate double-run on simultaneous boots.
-3. **Soft failures silent to operators** — per-deal errors only hit console unless log aggregation is wired.
+## Task 5 review fix — confirmDealGroup amountRub
 
----
+**Fix:** `confirmDealGroup` now loads `amountRub` via `loadDealAmountRub` → `computeDealItemsTotal(deal, deal_items)` instead of hardcoded `0`.
 
-## Task 5 Review Fixes (2026-08-04)
+**Regression test:** `auto-picks max-revenue deal when no payments and no canonicalDealId` — two deals, zero payments, item totals 1000 vs 50000 → canonical is deal 2.
 
-### Critical: listLineItemsForRepair assert guards
-
-`listLineItemsForRepair` now calls `assertHttpSuccess` + `assertGqlSuccess` (passed from `repairOneDeal`) before parsing edges. HTTP 401/5xx and GraphQL errors throw instead of silently returning `[]`.
-
-### Important: isHardTwentyError coverage
-
-Expanded regex to match assert throw patterns: HTTP 404/5xx, `ECONNABORTED`, and `Failed to … in Twenty` fallback messages.
-
-### Tests added
-
-- `running` + `started_at` 1h ago → skip, gql not called
-- gql resolves `{ status: 401, data: {} }` on list → `status: failed`, flag `failed`
-- flag `failed` → retry succeeds → `done`
-
-```bash
-cd backend && npm test -- tests/free-entry-duplicate-repair.test.js
+**Tests:**
 ```
-
-```
- Test Files  1 passed (1)
-      Tests  18 passed (18)
+npm test -- tests/deal-groups.test.js
+Test Files  1 passed (1)
+Tests  10 passed (10)
 ```

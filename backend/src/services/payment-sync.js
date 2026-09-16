@@ -64,6 +64,38 @@ export function groupDealsByEvent(deals) {
   return byEvent;
 }
 
+/**
+ * Twenty payment push targets for an event's deals:
+ * grouped → canonical + parent only; ungrouped → each deal.twenty_id.
+ */
+export function resolvePaymentTwentyTargets(db, eventDeals) {
+  const targets = new Set();
+  const groupStmt = db.prepare(`
+    SELECT g.twenty_parent_id, canon.twenty_id AS canonical_twenty_id
+    FROM deal_group_members m
+    JOIN deal_groups g ON g.id = m.group_id
+    JOIN deals canon ON canon.id = g.canonical_deal_id
+    WHERE m.deal_id = ?
+  `);
+
+  for (const deal of eventDeals) {
+    const group = groupStmt.get(deal.id);
+    if (group) {
+      if (group.canonical_twenty_id && String(group.canonical_twenty_id).trim() !== '') {
+        targets.add(String(group.canonical_twenty_id));
+      }
+      if (group.twenty_parent_id && String(group.twenty_parent_id).trim() !== '') {
+        targets.add(String(group.twenty_parent_id));
+      }
+      continue;
+    }
+    if (deal.twenty_id && String(deal.twenty_id).trim() !== '') {
+      targets.add(String(deal.twenty_id));
+    }
+  }
+  return [...targets];
+}
+
 export async function pushPaymentToTwenty(twenty, twentyId, aggregate) {
   const resp = await gql(
     twenty.apiUrl,
@@ -136,16 +168,22 @@ export async function runPaymentSync({ from, to, onProgress } = {}) {
       try {
         applyPaymentAggregateToDb(db, deal.id, aggregate);
         dealsUpdatedLocal += 1;
-
-        if (deal.twenty_id) {
-          await pushPaymentToTwenty(twenty, deal.twenty_id, aggregate);
-          dealsUpdatedTwenty += 1;
-        }
       } catch (err) {
         dealsFailed += 1;
         errors.push(`Сделка ${deal.id} (${deal.title || eventId}): ${err.message}`);
       }
       dealsProcessed += 1;
+    }
+
+    const twentyTargets = resolvePaymentTwentyTargets(db, eventDeals);
+    for (const twentyId of twentyTargets) {
+      try {
+        await pushPaymentToTwenty(twenty, twentyId, aggregate);
+        dealsUpdatedTwenty += 1;
+      } catch (err) {
+        dealsFailed += 1;
+        errors.push(`Twenty ${twentyId} (${eventId}): ${err.message}`);
+      }
     }
 
     reportProgress(onProgress, {

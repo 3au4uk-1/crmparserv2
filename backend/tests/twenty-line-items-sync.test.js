@@ -1,8 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   computeLineItemDiff,
+  applyFieldSkip,
   isProtectedLineItemStage,
   listLineItemsForOpportunity,
+  fetchOpportunityAndLineItems,
+  syncLineItemsDiff,
   updateDealLineItemProductStreams,
 } from '../src/services/twenty-line-items-sync.js';
 import { assertHttpSuccess, assertGqlSuccess } from '../src/services/twenty-gql.js';
@@ -201,6 +204,134 @@ describe('computeLineItemDiff', () => {
     expect(diff.toUpdate).toEqual([{ twentyId: 'li-only', item: eligible[0] }]);
     expect(diff.toCreate).toEqual([eligible[1]]);
   });
+
+  it('preserves unclaimed existing items when scoped is true', () => {
+    const existing = [
+      { id: 'li-brand', name: 'Баннер', stage: 'NOVYY' },
+      { id: 'li-decor', name: 'Гирлянда', stage: 'NOVYY' },
+    ];
+    const eligible = [{ id: 20, name: 'Гирлянда', price: 50, productStream: 'DECOR' }];
+
+    const unscoped = computeLineItemDiff(existing, eligible, { ignoreStageProtection: true });
+    expect(unscoped.toDelete).toEqual(['li-brand']);
+
+    const scoped = computeLineItemDiff(existing, eligible, {
+      ignoreStageProtection: true,
+      scoped: true,
+    });
+    expect(scoped.toDelete).toEqual([]);
+    expect(scoped.toUpdate).toEqual([{ twentyId: 'li-decor', item: eligible[0] }]);
+    expect(scoped.toCreate).toEqual([]);
+    expect(scoped.preserved).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'li-brand', name: 'Баннер' })]),
+    );
+  });
+});
+
+describe('applyFieldSkip', () => {
+  it('drops identity updates whose payload fields already match', () => {
+    const existing = [{
+      id: 'li-1',
+      name: 'Баннер',
+      stage: 'NOVYY',
+      istochnik: 'PARSER',
+      productStream: ['BRANDING'],
+      kolichestvo: 1,
+      amount: { amountMicros: 100_000_000, currencyCode: 'RUB' },
+      kommentariy: '',
+    }];
+    const item = {
+      id: 10,
+      name: 'Баннер',
+      quantity_num: 1,
+      price: 100,
+      comment: '',
+      productStreams: ['BRANDING'],
+    };
+    const identity = {
+      toUpdate: [{ twentyId: 'li-1', item }],
+      toCreate: [],
+      toDelete: [],
+      preserved: [],
+    };
+    const skipped = applyFieldSkip(identity, existing, {});
+    expect(skipped.toUpdate).toEqual([]);
+  });
+});
+
+describe('fetchOpportunityAndLineItems', () => {
+  it('selects payment fields on the combo query', async () => {
+    const gql = vi.fn().mockResolvedValue({
+      status: 200,
+      data: { data: { opportunities: { edges: [] }, dealLineItems: { edges: [] } } },
+    });
+    await fetchOpportunityAndLineItems(
+      gql,
+      'https://twenty.test/graphql',
+      'token',
+      'opp-1',
+      () => {},
+      () => {},
+    );
+    const query = gql.mock.calls[0][2];
+    expect(query).toContain('summaPostupleniy');
+    expect(query).toContain('statusOplaty');
+  });
+});
+
+describe('syncLineItemsDiff', () => {
+  it('persists twenty_id for identity matches even when GraphQL update is skipped', async () => {
+    const existing = [{
+      id: 'li-1',
+      name: 'Баннер',
+      stage: 'NOVYY',
+      istochnik: 'PARSER',
+      productStream: ['BRANDING'],
+      kolichestvo: 1,
+      amount: { amountMicros: 100_000_000, currencyCode: 'RUB' },
+      kommentariy: '',
+    }];
+    const item = {
+      id: 10,
+      name: 'Баннер',
+      quantity_num: 1,
+      price: 100,
+      comment: '',
+      productStreams: ['BRANDING'],
+    };
+    const runs = [];
+    const db = {
+      prepare(sql) {
+        return {
+          all: () => [],
+          run: (...params) => {
+            runs.push({ sql, params });
+            return { changes: 1 };
+          },
+        };
+      },
+    };
+    const gql = vi.fn();
+
+    const result = await syncLineItemsDiff({
+      gql,
+      assertHttpSuccess: () => {},
+      assertGqlSuccess: () => {},
+      apiUrl: 'https://twenty.test/graphql',
+      apiToken: 'token',
+      oppId: 'opp-1',
+      eligibleItems: [item],
+      existingLineItems: existing,
+      findOrCreateWarehouseItem: vi.fn(),
+      db,
+    });
+
+    expect(gql).not.toHaveBeenCalled();
+    expect(result.updated).toBe(0);
+    const idWrite = runs.find((r) => r.sql.includes('UPDATE deal_items SET twenty_id'));
+    expect(idWrite).toBeTruthy();
+    expect(idWrite.params).toEqual(['li-1', 10]);
+  });
 });
 
 describe('listLineItemsForOpportunity', () => {
@@ -256,6 +387,25 @@ describe('listLineItemsForOpportunity', () => {
     );
 
     expect(result).toEqual([]);
+  });
+
+  it('includes kolichestvo in the GraphQL node selection', async () => {
+    const gql = vi.fn().mockResolvedValue({
+      status: 200,
+      data: { data: { dealLineItems: { edges: [] } } },
+    });
+
+    await listLineItemsForOpportunity(
+      gql,
+      'https://twenty.test/graphql',
+      'token',
+      'opp-1',
+      assertHttpSuccess,
+      assertGqlSuccess,
+    );
+
+    const query = gql.mock.calls[0][2];
+    expect(query).toContain('kolichestvo');
   });
 });
 

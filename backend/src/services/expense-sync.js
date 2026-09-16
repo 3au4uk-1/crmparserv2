@@ -58,12 +58,31 @@ export function buildExpenseUpdateInput({ amounts }) {
 }
 
 export function loadTargetDeals(db) {
+  // Grouped deals: only the canonical member, using group canonical Bitrix.
+  // Ungrouped: every synced deal that still has crm_lead_id.
   return db.prepare(`
-    SELECT id, twenty_id, crm_lead_id
-    FROM deals
-    WHERE twenty_id IS NOT NULL
-      AND crm_lead_id IS NOT NULL
-      AND TRIM(crm_lead_id) != ''
+    SELECT
+      d.id,
+      d.twenty_id,
+      CASE
+        WHEN g.id IS NOT NULL THEN g.canonical_bitrix_id
+        ELSE d.crm_lead_id
+      END AS crm_lead_id
+    FROM deals d
+    LEFT JOIN deal_group_members m ON m.deal_id = d.id
+    LEFT JOIN deal_groups g ON g.id = m.group_id
+    WHERE d.twenty_id IS NOT NULL
+      AND TRIM(d.twenty_id) != ''
+      AND (
+        (g.id IS NULL
+          AND d.crm_lead_id IS NOT NULL
+          AND TRIM(d.crm_lead_id) != '')
+        OR
+        (g.id IS NOT NULL
+          AND d.id = g.canonical_deal_id
+          AND g.canonical_bitrix_id IS NOT NULL
+          AND TRIM(g.canonical_bitrix_id) != '')
+      )
   `).all();
 }
 

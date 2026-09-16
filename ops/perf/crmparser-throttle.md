@@ -2,12 +2,24 @@
 
 Protect Twenty prod interactive traffic during scheduled/manual parses by lowering crmparser concurrency and API pressure.
 
+## Superseded for API-key limit (2026-09-14)
+
+**Do not follow the old “leave ~55 req/min for CRM UI” advice.** The Twenty API-key long limit is now **800** tokens / 60s (`API_RATE_LIMITING_LONG_LIMIT=800` on `twenty-server`; TTL stays 60000). Parser client should stay at `TWENTY_API_RATE_LIMIT_MAX=720` with `TWENTY_SYNC_CONCURRENCY=6`. The 2026-07-31 `TWENTY_API_RATE_LIMIT_MAX=40` throttle below is historical only.
+
+- Twenty prod compose: `oI7-NCBTpfyrxJBitrJrd0` (`twenty`) — live `printenv` on `twenty-server` is `800`.
+- Twenty staging compose: `eMjWv7p-ovnfQ7XnpFKTe` (`twenty-staging`) — compose patched; stack was not running, so container verify is pending next start.
+- Do **not** change `API_RATE_LIMITING_SHORT_*`.
+
+## Superseded for Tony fetch (2026-09-15)
+
+Do **not** keep prod `FETCH_CONCURRENCY=2`. That value was an anti-Twenty throttle. Tony prefetch is now the bottleneck (`order_get_info` probe + HTML only on stamp change). Prod should match repo: `FETCH_CONCURRENCY=8`, `TONY_UNCHANGED_PROBE=true`.
+
 ## Context
 
 - **Prod compose:** `JWIhULvt6slzDxT8AQXyWz` (project `crmparser`)
 - **Staging compose:** `wjfA-wPgjI2FH8wW4ypcx` (project `crmparser-staging-coeaio`)
 - **Host env path:** `/etc/dokploy/compose/<project>/code/.env` on LXC 103
-- **Repo defaults** (`docker-compose.yml`): `FETCH_CONCURRENCY=4`, `TWENTY_API_RATE_LIMIT_MAX=95`, `TONY_REQUEST_DELAY_MS=350`
+- **Repo defaults** (`docker-compose.yml`): `FETCH_CONCURRENCY=8`, `TONY_UNCHANGED_PROBE=true`, `TWENTY_API_RATE_LIMIT_MAX=95`, `TONY_REQUEST_DELAY_MS=350`
 
 Time-aware parse scheduling is already implemented (`backend/src/services/parse-schedule.js`, design `docs/superpowers/specs/2026-06-21-parse-schedule-optimization-design.md`). That reduces *when* and *how far* we parse; this throttle reduces *how hard* each run hits Twenty/Postgres during working hours.
 
@@ -40,10 +52,11 @@ Staging mirrored for parity (`DISABLE_AUTO_PARSE=true` there, but same limits if
 
 ```bash
 ssh proxmox 'pct exec 103 -- docker inspect crmparser --format "{{range .Config.Env}}{{println .}}{{end}}" \
-  | egrep "FETCH_CONCURRENCY|TWENTY_API_RATE_LIMIT_MAX|TONY_REQUEST_DELAY_MS"'
+  | egrep "FETCH_CONCURRENCY|TWENTY_API_RATE_LIMIT_MAX|TONY_REQUEST_DELAY_MS|TONY_UNCHANGED_PROBE"'
 ```
 
-Expected: `FETCH_CONCURRENCY=2`, `TWENTY_API_RATE_LIMIT_MAX=40`, `TONY_REQUEST_DELAY_MS=500`.
+Expected (current, see 2026-09-15 superseded section): `FETCH_CONCURRENCY=8`, `TONY_UNCHANGED_PROBE=true`.
+Do not treat the 2026-07-31 table (`FETCH_CONCURRENCY=2`) as the live desired state.
 
 ## Rollback
 
@@ -55,13 +68,9 @@ TWENTY_API_RATE_LIMIT_MAX=95
 TONY_REQUEST_DELAY_MS=350
 ```
 
-To match repo defaults instead of prod history:
+Repo defaults are now `FETCH_CONCURRENCY=8`, `TONY_UNCHANGED_PROBE=true` (not `FETCH_CONCURRENCY=4`).
 
-```
-FETCH_CONCURRENCY=4
-TWENTY_API_RATE_LIMIT_MAX=95
-TONY_REQUEST_DELAY_MS=350
-```
+Feature rollback (Tony unchanged probe): `TONY_UNCHANGED_PROBE=false` and `FETCH_CONCURRENCY=4`.
 
 Re-run the verify command above after rollback.
 

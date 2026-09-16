@@ -8,8 +8,9 @@ import { parseDealTitle } from './title-parser.js';
 import { loadCompanyCodes } from './companies.js';
 import { classifyItems } from './classifier.js';
 import { formatCrmDateTime, isEventInRange, parseEventDate } from '../utils/crm-dates.js';
-import { syncDealToTwenty, cancelDealInTwenty, restoreDealInTwenty } from './twenty-sync.js';
-import { processAutoApprovals } from './auto-approve.js';
+import { cancelDealInTwenty } from './twenty-sync.js';
+import { collectAutoApproveDealIds } from './auto-approve.js';
+import { runPostParseTwentySync } from './post-parse-twenty-sync.js';
 import { buildOverrideMap, replaceDealItemsPreservingOverrides } from './deal-items-update.js';
 import {
   collectCalendarEventIds,
@@ -19,12 +20,43 @@ import {
 } from './calendar-missing.js';
 import { extractBookingNumbers } from './booking-numbers.js';
 import { tonyLogin, getTonyConfig } from './tony-auth.js';
-import { fetchTonyOrderHtml } from './tony-client.js';
+import { fetchTonyOrderHtml, fetchTonyOrderInfo } from './tony-client.js';
 import { parseTonyOrder } from './tony-parser.js';
+import { shouldSkipTonyFullFetch, loadTonyUpdatedAtMap, persistTonyUpdatedAt } from './tony-unchanged.js';
 import { buildTonyDealFields, buildTonyItems, tonyContentHash } from './tony-mapping.js';
 import { planEventReconciliation } from './tony-reconcile.js';
+import {
+  inferBitrixLinkRole,
+  upsertDealBitrixLink,
+  listDealBitrixLinks,
+  mirrorCanonicalCrmLeadId,
+} from './deal-bitrix-links.js';
 import { createPool, withRetry } from './fetch-pool.js';
 import { parseCalendarPayments, paymentContentHash, applyPaymentAggregateToDb } from './payment-parser.js';
+
+/** Empty/missing Tony order should not skip the booking — fall back to calendar write. */
+export function useCalendarFallbackForTonyOrder(order) {
+  return !order || !Array.isArray(order.items) || order.items.length === 0;
+}
+
+export function attachEventBitrixLink(db, dealId, { leadId, title, paymentAmount }) {
+  if (!leadId || !String(leadId).trim()) return;
+  const deal = db.prepare('SELECT payment_amount FROM deals WHERE id = ?').get(dealId);
+  upsertDealBitrixLink(db, {
+    dealId,
+    bitrixId: String(leadId).trim(),
+    role: inferBitrixLinkRole({
+      eventTitle: title,
+      paymentAmount: paymentAmount ?? deal?.payment_amount ?? 0,
+    }),
+  });
+  const links = listDealBitrixLinks(db, dealId);
+  const locked = links.some((l) => l.isCanonical);
+  if (!locked) {
+    // first link already canonical via upsert; nothing else
+  }
+  mirrorCanonicalCrmLeadId(db, dealId);
+}
 
 function buildUrl(path) {
   const base = config.crmBaseUrl.replace(/\/$/, '');
@@ -162,7 +194,11 @@ export async function fetchEventData(event, eventId, tonyReady) {
 }
 
 /** Pooled, delay-free variant of resolveTonyOrders for the parallel pipeline. */
-async function resolveTonyOrdersPooled(tonyReady, bookingNumbers, run) {
+async function resolveTonyOrdersPooled(tonyReady, bookingNumbers, run, {
+  stamps = new Map(),
+  probeEnabled = false,
+  stats = null,
+} = {}) {
   const orders = new Map();
   if (!tonyReady) return orders;
   const retryRun = (fn) => run(() => withRetry(fn, {
@@ -170,9 +206,42 @@ async function resolveTonyOrdersPooled(tonyReady, bookingNumbers, run) {
   }));
   await Promise.all(
     bookingNumbers.map(async (n) => {
+      let probe = null;
+      if (probeEnabled) {
+        try {
+          probe = await fetchTonyOrderInfo(n, { run: retryRun });
+          if (stats && probe.ok) stats.tony_probe++;
+        } catch (err) {
+          console.error(`[tony] probe failed for order ${n}: ${err.message}`);
+          if (stats) stats.tony_probe_fail++;
+          return;
+        }
+        if (!probe.ok || probe.notFound || probe.deleted) {
+          if (!probe.ok && !probe.notFound && !probe.deleted) {
+            console.error(`[tony] probe returned no usable data for order ${n}`);
+            if (stats) stats.tony_probe_fail++;
+          }
+          return;
+        }
+        const known = stamps.get(String(n));
+        if (shouldSkipTonyFullFetch({
+          probeEnabled: true,
+          probe,
+          existingStamp: known?.stamp ?? null,
+          dataSource: known?.dataSource ?? null,
+        })) {
+          if (stats) stats.tony_skip++;
+          return;
+        }
+      }
       try {
         const html = await fetchTonyOrderHtml(n, { run: retryRun });
-        if (html) orders.set(n, parseTonyOrder(html));
+        if (html) {
+          const parsed = parseTonyOrder(html);
+          if (probe?.updatedAt) parsed.tonyUpdatedAt = probe.updatedAt;
+          orders.set(n, parsed);
+          if (stats) stats.tony_full++;
+        }
       } catch (err) {
         console.error(`[tony] failed to fetch order ${n}: ${err.message}`);
       }
@@ -182,7 +251,7 @@ async function resolveTonyOrdersPooled(tonyReady, bookingNumbers, run) {
 }
 
 /** Parallel prefetch of in-range events' network data. Returns Map<eventId, data>. */
-export async function prefetchAll(events, tonyReady, startDate, endDate, run) {
+export async function prefetchAll(events, tonyReady, startDate, endDate, run, options) {
   const map = new Map();
   let done = 0;
   const total = events.length;
@@ -207,7 +276,7 @@ export async function prefetchAll(events, tonyReady, startDate, endDate, run) {
       const { descHtml, calPayments } = parseDescriptionResponse(descJson);
       if (!descHtml) return;
 
-      const tonyOrders = await resolveTonyOrdersPooled(tonyReady, bookingNumbers, run);
+      const tonyOrders = await resolveTonyOrdersPooled(tonyReady, bookingNumbers, run, options);
       const calParsed = parseDealDescription(descHtml);
 
       map.set(eventId, { bookingNumbers, descHtml, calParsed, calPayments, tonyOrders });
@@ -252,17 +321,23 @@ export async function applyEvent(db, event, eventId, data, ctx) {
 
   for (const target of plan.desired) {
     const existing = db.prepare('SELECT * FROM deals WHERE deal_key = ?').get(target.dealKey);
-    const order = target.bookingNumber ? tonyOrders.get(target.bookingNumber) : undefined;
+    let order = target.bookingNumber ? tonyOrders.get(target.bookingNumber) : undefined;
+    const emptyTonyItems = Boolean(order && Array.isArray(order.items) && order.items.length === 0);
+    if (emptyTonyItems) {
+      console.warn(`[tony] order ${target.bookingNumber} has no parsed items, using calendar fallback`);
+      order = undefined;
+    }
 
     if (order) {
       // Tony is the source of truth for this booking.
-      if (order.items.length === 0) {
-        console.warn(`[tony] order ${target.bookingNumber} has no parsed items, skipping update`);
-        counters.skippedDeals++;
-        continue;
-      }
       const hash = tonyContentHash(order);
       if (existing && existing.content_hash === hash) {
+        persistTonyUpdatedAt(db, existing.id, order.tonyUpdatedAt);
+        attachEventBitrixLink(db, existing.id, {
+          leadId: event.leadid,
+          title: event.title,
+          paymentAmount: paymentAggregate.paymentAmount,
+        });
         if (!persistDealPayments(db, existing.id, calPayments, existing, dealsToResync)) {
           counters.skippedDeals++;
         }
@@ -273,6 +348,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
       const classifiedItems = await classifyItems(buildTonyItems(order), keywords, llmPrompt);
 
       if (existing) {
+        const hasCanonical = listDealBitrixLinks(db, existing.id).some((l) => l.isCanonical);
         db.prepare(`
               UPDATE deals SET
                 title = ?, company_code = ?, manager_name = ?,
@@ -280,7 +356,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
                 contact_name = ?, contact_email = ?, contact_company = ?, contact_phone = ?,
                 address = ?, work_time = ?, arrival_time = ?, dismantle_time = ?,
                 load_date = ?, load_time = ?, budget = ?,
-                content_hash = ?, data_source = 'tony', tony_order_id = ?, crm_lead_id = ?,
+                content_hash = ?, tony_updated_at = ?, data_source = 'tony', tony_order_id = ?, crm_lead_id = ?,
                 payment_amount = ?, payment_status = ?, payment_count = ?, payment_hash = ?,
                 updated_at = datetime('now')
               WHERE id = ?
@@ -290,12 +366,18 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           calContact.name, calContact.email, calContact.company, calContact.phone,
           fields.address, fields.work_time, fields.arrival_time, fields.dismantle_time,
           fields.load_date, fields.load_time, fields.budget,
-          hash, target.bookingNumber, event.leadid,
+          hash, order.tonyUpdatedAt ?? null, target.bookingNumber,
+          hasCanonical ? existing.crm_lead_id : event.leadid,
           paymentAggregate.paymentAmount, paymentAggregate.paymentStatus, paymentAggregate.paymentCount, paymentHash,
           existing.id
         );
         const existingItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(existing.id);
         replaceDealItemsPreservingOverrides(db, existing.id, classifiedItems, buildOverrideMap(existingItems));
+        attachEventBitrixLink(db, existing.id, {
+          leadId: event.leadid,
+          title: event.title,
+          paymentAmount: paymentAggregate.paymentAmount,
+        });
         if (existing.twenty_id) dealsToResync.push(existing.id);
         counters.updatedDeals++;
       } else {
@@ -304,14 +386,14 @@ export async function applyEvent(db, event, eventId, data, ctx) {
                 crm_event_id, deal_key, data_source, crm_lead_id, title, company_code, manager_name,
                 start_date, end_date, department, contact_name, contact_email, contact_company, contact_phone,
                 address, work_time, arrival_time, dismantle_time, load_date, load_time, budget,
-                tony_order_id, content_hash, raw_description,
+                tony_order_id, content_hash, tony_updated_at, raw_description,
                 payment_amount, payment_status, payment_count, payment_hash
-              ) VALUES (?, ?, 'tony', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ) VALUES (?, ?, 'tony', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `).run(
-          eventId, target.dealKey, event.leadid, event.title, titleInfo.companyCode, titleInfo.managerName,
+          eventId, target.dealKey, null, event.title, titleInfo.companyCode, titleInfo.managerName,
           fields.start_date, fields.end_date, event.department, calContact.name, calContact.email, calContact.company, calContact.phone,
           fields.address, fields.work_time, fields.arrival_time, fields.dismantle_time, fields.load_date, fields.load_time, fields.budget,
-          target.bookingNumber, hash, descHtml,
+          target.bookingNumber, hash, order.tonyUpdatedAt ?? null, descHtml,
           paymentAggregate.paymentAmount, paymentAggregate.paymentStatus, paymentAggregate.paymentCount, paymentHash
         );
         const dealId = insert.lastInsertRowid;
@@ -319,12 +401,23 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           db.prepare(`INSERT INTO deal_items (deal_id, name, price, quantity, discount, classification, classification_confidence, comment, sum, quantity_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
             .run(dealId, item.name, item.price, item.quantity, item.discount, item.classification, item.classification_confidence, item.comment ?? null, item.sum ?? null, item.quantity_num ?? null);
         }
+        attachEventBitrixLink(db, dealId, {
+          leadId: event.leadid,
+          title: event.title,
+          paymentAmount: paymentAggregate.paymentAmount,
+        });
         counters.newDeals++;
       }
     } else {
-      // No Tony order for this target: title has no booking, or Tony unreachable/404.
-      // Keep existing Tony-sourced data untouched during an outage (do not clobber with calendar).
-      if (existing && existing.data_source === 'tony') {
+      // No Tony order for this target: title has no booking, Tony unreachable/404, or empty items.
+      // Keep existing Tony-sourced data untouched during an outage (do not clobber with calendar),
+      // but empty Tony items intentionally fall through to calendar write.
+      if (existing && existing.data_source === 'tony' && !emptyTonyItems) {
+        attachEventBitrixLink(db, existing.id, {
+          leadId: event.leadid,
+          title: event.title,
+          paymentAmount: paymentAggregate.paymentAmount,
+        });
         if (!persistDealPayments(db, existing.id, calPayments, existing, dealsToResync)) {
           counters.skippedDeals++;
         }
@@ -334,6 +427,11 @@ export async function applyEvent(db, event, eventId, data, ctx) {
       const calTonyOrderId = target.bookingNumber || titleInfo.tonyOrderId || null;
       const hash = contentHash(descHtml);
       if (existing && existing.content_hash === hash) {
+        attachEventBitrixLink(db, existing.id, {
+          leadId: event.leadid,
+          title: event.title,
+          paymentAmount: paymentAggregate.paymentAmount,
+        });
         if (!persistDealPayments(db, existing.id, calPayments, existing, dealsToResync)) {
           counters.skippedDeals++;
         }
@@ -344,6 +442,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
       const classifiedItems = await classifyItems(parsed.items, keywords, llmPrompt);
 
       if (existing) {
+        const hasCanonical = listDealBitrixLinks(db, existing.id).some((l) => l.isCanonical);
         db.prepare(`
               UPDATE deals SET
                 title = ?, company_code = ?, manager_name = ?, start_date = ?, end_date = ?, department = ?,
@@ -360,12 +459,17 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           parsed.contact.name, parsed.contact.email, parsed.contact.company, parsed.contact.phone,
           parsed.event.address, parsed.event.venueType, parsed.event.arrivalTime || null, parsed.event.readyTime || null,
           parsed.event.workTime || null, parsed.event.dismantleTime || null,
-          hash, descHtml, event.leadid, calTonyOrderId,
+          hash, descHtml, hasCanonical ? existing.crm_lead_id : event.leadid, calTonyOrderId,
           paymentAggregate.paymentAmount, paymentAggregate.paymentStatus, paymentAggregate.paymentCount, paymentHash,
           existing.id
         );
         const existingItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(existing.id);
         replaceDealItemsPreservingOverrides(db, existing.id, classifiedItems, buildOverrideMap(existingItems));
+        attachEventBitrixLink(db, existing.id, {
+          leadId: event.leadid,
+          title: event.title,
+          paymentAmount: paymentAggregate.paymentAmount,
+        });
         if (existing.twenty_id) dealsToResync.push(existing.id);
         counters.updatedDeals++;
       } else {
@@ -378,7 +482,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
                 payment_amount, payment_status, payment_count, payment_hash
               ) VALUES (?, ?, 'calendar', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `).run(
-          eventId, target.dealKey, event.leadid, event.title, titleInfo.companyCode, titleInfo.managerName,
+          eventId, target.dealKey, null, event.title, titleInfo.companyCode, titleInfo.managerName,
           event.start, event.end, event.department, parsed.meta.status, parsed.meta.legalEntity, parsed.meta.invoiceNumber,
           parsed.meta.budget, parsed.meta.discount, parsed.contact.name, parsed.contact.email, parsed.contact.company, parsed.contact.phone,
           parsed.event.address, parsed.event.venueType, parsed.event.arrivalTime || null, parsed.event.readyTime || null,
@@ -390,6 +494,11 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           db.prepare(`INSERT INTO deal_items (deal_id, name, price, quantity, discount, classification, classification_confidence) VALUES (?, ?, ?, ?, ?, ?, ?)`)
             .run(dealId, item.name, item.price, item.quantity, item.discount, item.classification, item.classification_confidence);
         }
+        attachEventBitrixLink(db, dealId, {
+          leadId: event.leadid,
+          title: event.title,
+          paymentAmount: paymentAggregate.paymentAmount,
+        });
         counters.newDeals++;
       }
     }
@@ -457,8 +566,18 @@ export async function runParsing(startDate, endDate) {
         `"inRange":${inRangeEvents.length},"totalFromApi":${events.length}}`
       );
       const t0 = Date.now();
-      prefetched = await prefetchAll(inRangeEvents, tonyReady, startDate, endDate, run);
-      console.log(`[parse] prefetch done {"events":${prefetched.size},"ms":${Date.now() - t0}}`);
+      const tonyStats = { tony_probe: 0, tony_skip: 0, tony_full: 0, tony_probe_fail: 0 };
+      prefetched = await prefetchAll(inRangeEvents, tonyReady, startDate, endDate, run, {
+        stamps: loadTonyUpdatedAtMap(db),
+        probeEnabled: config.tonyUnchangedProbe,
+        stats: tonyStats,
+      });
+      console.log(
+        `[parse] prefetch done {"events":${prefetched.size},"ms":${Date.now() - t0},` +
+        `"tony_probe":${tonyStats.tony_probe},"tony_skip":${tonyStats.tony_skip},` +
+        `"tony_full":${tonyStats.tony_full},"tony_probe_fail":${tonyStats.tony_probe_fail},` +
+        `"concurrency":${config.fetchConcurrency}}`
+      );
     }
 
     for (const event of events) {
@@ -499,18 +618,8 @@ export async function runParsing(startDate, endDate) {
       console.log(`[twenty-sync] ${new Date().toISOString()} parse.resync_queue {"count":${dealsToResync.length},"dealIds":${JSON.stringify(dealsToResync)}}`);
     }
 
-    for (let i = 0; i < dealsToResync.length; i++) {
-      const dealId = dealsToResync[i];
-      if (i > 0) await delay(1000);
-      console.log(`[twenty-sync] ${new Date().toISOString()} parse.resync_start {"dealId":${dealId},"index":${i + 1},"total":${dealsToResync.length}}`);
-      try {
-        await syncDealToTwenty(dealId);
-        console.log(`[twenty-sync] ${new Date().toISOString()} parse.resync_done {"dealId":${dealId}}`);
-      } catch (err) {
-        console.error(`[twenty-sync] ${new Date().toISOString()} parse.resync_failed {"dealId":${dealId},"error":${JSON.stringify(err.message)}}`);
-      }
-    }
-
+    let missingDeals = [];
+    let restoredDeals = [];
     if (inRangeCount === 0) {
       console.log(
         `[twenty-sync] ${new Date().toISOString()} parse.skip_calendar_cancel_restore {"reason":"empty_in_range_calendar"}`
@@ -518,7 +627,7 @@ export async function runParsing(startDate, endDate) {
     } else {
       const calendarEventIds = collectCalendarEventIds(events, startDate, endDate);
       const calendarBookingNumbers = collectCalendarBookingNumbers(events, startDate, endDate);
-      const missingDeals = collectDealsReadyToCancelFromCalendar(
+      missingDeals = collectDealsReadyToCancelFromCalendar(
         db,
         calendarEventIds,
         startDate,
@@ -532,24 +641,7 @@ export async function runParsing(startDate, endDate) {
         );
       }
 
-      for (let i = 0; i < missingDeals.length; i++) {
-        const deal = missingDeals[i];
-        if (i > 0) await delay(1000);
-        console.log(
-          `[twenty-sync] ${new Date().toISOString()} parse.cancel_start {"dealId":${deal.id},"crmEventId":${JSON.stringify(deal.crm_event_id)},"index":${i + 1},"total":${missingDeals.length}}`
-        );
-        try {
-          const result = await cancelDealInTwenty(deal.id);
-          if (result && !result.skipped) counters.cancelledDeals++;
-          console.log(`[twenty-sync] ${new Date().toISOString()} parse.cancel_done {"dealId":${deal.id}}`);
-        } catch (err) {
-          console.error(
-            `[twenty-sync] ${new Date().toISOString()} parse.cancel_failed {"dealId":${deal.id},"error":${JSON.stringify(err.message)}}`
-          );
-        }
-      }
-
-      const restoredDeals = findCancelledDealsBackInCalendar(
+      restoredDeals = findCancelledDealsBackInCalendar(
         db,
         calendarEventIds,
         startDate,
@@ -562,26 +654,20 @@ export async function runParsing(startDate, endDate) {
           `[twenty-sync] ${new Date().toISOString()} parse.restore_queue {"count":${restoredDeals.length},"dealIds":${JSON.stringify(restoredDeals.map((d) => d.id))}}`
         );
       }
-
-      for (let i = 0; i < restoredDeals.length; i++) {
-        const deal = restoredDeals[i];
-        if (i > 0) await delay(1000);
-        console.log(
-          `[twenty-sync] ${new Date().toISOString()} parse.restore_start {"dealId":${deal.id},"crmEventId":${JSON.stringify(deal.crm_event_id)},"index":${i + 1},"total":${restoredDeals.length}}`
-        );
-        try {
-          const result = await restoreDealInTwenty(deal.id);
-          if (result && !result.skipped) counters.restoredDeals++;
-          console.log(`[twenty-sync] ${new Date().toISOString()} parse.restore_done {"dealId":${deal.id}}`);
-        } catch (err) {
-          console.error(
-            `[twenty-sync] ${new Date().toISOString()} parse.restore_failed {"dealId":${deal.id},"error":${JSON.stringify(err.message)}}`
-          );
-        }
-      }
     }
 
-    const autoApprove = await processAutoApprovals();
+    const autoApproveDealIds = collectAutoApproveDealIds();
+    const postParse = await runPostParseTwentySync({
+      resyncDealIds: dealsToResync,
+      cancelDealIds: inRangeCount === 0 ? [] : missingDeals.map((d) => d.id),
+      restoreDealIds: inRangeCount === 0 ? [] : restoredDeals.map((d) => d.id),
+      autoApproveDealIds,
+    });
+    const autoApprove = {
+      mode: getSetting('approval_mode'),
+      dealIds: autoApproveDealIds,
+      postParse,
+    };
 
     return {
       runId,
@@ -589,8 +675,8 @@ export async function runParsing(startDate, endDate) {
       newDeals: counters.newDeals,
       updatedDeals: counters.updatedDeals,
       skippedDeals: counters.skippedDeals,
-      cancelledDeals: counters.cancelledDeals,
-      restoredDeals: counters.restoredDeals,
+      cancelledDeals: counters.cancelledDeals + (postParse.cancelled_ok || 0),
+      restoredDeals: counters.restoredDeals + (postParse.restored_ok || 0),
       outOfRange,
       autoApprove,
     };

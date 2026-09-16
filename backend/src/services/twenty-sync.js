@@ -6,7 +6,7 @@ import { loadRestorationList, isRestorationItem } from './restoration.js';
 import { loadNeNasheBrandingList, isNeNasheBrandingItem } from './ne-nashe-branding.js';
 import { loadNeNasheDecorMkList, isNeNasheDecorMkItem } from './ne-nashe-decor-mk.js';
 import { loadTipRules, findTipRuleMatch } from './tip-rules.js';
-import { buildOpportunityAmountInputFromLineItems, buildOpportunityInput, computeDealItemsTotal, computeLineItemTotal, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE, ZERO_RUB_AMOUNT } from './twenty-opportunity.js';
+import { buildOpportunityAmountInputFromLineItems, buildOpportunityInput, computeDealItemsTotal, computeLineItemTotal, DEFAULT_OPPORTUNITY_STAGE, CANCELLED_OPPORTUNITY_STAGE, ZERO_RUB_AMOUNT, opportunityFieldsEqual, applyLineItemMutationsInMemory } from './twenty-opportunity.js';
 import {
   getItemsForTwenty,
   getItemEligibleReason,
@@ -14,17 +14,37 @@ import {
 import { buildWarehouseItemCreateInput } from './twenty-line-item.js';
 import {
   cancelLineItemsForOpportunity,
+  fetchOpportunityAndLineItems,
   listLineItemsForOpportunity,
   syncLineItemsDiff,
 } from './twenty-line-items-sync.js';
+import { upsertDealLineItemsBatch } from './twenty-batch.js';
 import {
   beginTwentySyncContext,
   endTwentySyncContext,
+  runTwentySyncContext,
   logTwenty,
   logTwentyStep,
 } from './twenty-sync-log.js';
 import { createTwentyGqlClient, gql } from './twenty-gql.js';
 import { runPrintSheetRefresh as runPrintSheetRefreshLocked } from './print-sheet-runner.js';
+import { createInFlightCache } from './twenty-inflight-cache.js';
+
+let warehouseCacheRef = createInFlightCache();
+let companyCacheRef = createInFlightCache();
+let personCacheRef = createInFlightCache();
+
+export function setTwentySyncInFlightCaches({ warehouse, company, person } = {}) {
+  if (warehouse) warehouseCacheRef = warehouse;
+  if (company) companyCacheRef = company;
+  if (person) personCacheRef = person;
+}
+
+export function resetTwentySyncInFlightCaches() {
+  warehouseCacheRef = createInFlightCache();
+  companyCacheRef = createInFlightCache();
+  personCacheRef = createInFlightCache();
+}
 
 function assertHttpSuccess(resp, apiUrl) {
   if (resp.status === 404) {
@@ -95,134 +115,141 @@ async function findOrCreateWarehouseItem(apiUrl, apiToken, name, warehouseCache)
     return warehouseCache.get(name);
   }
 
-  const searchResp = await gql(
-    apiUrl,
-    apiToken,
-    `query FindWarehouseItem($name: String!) {
-      products(filter: { name: { eq: $name } }) { edges { node { id } } }
-    }`,
-    { name }
-  );
-  assertHttpSuccess(searchResp, apiUrl);
-  assertGqlSuccess(searchResp, 'Failed to search warehouse item in Twenty');
+  const id = await warehouseCacheRef.getOrStart(name, async () => {
+    const searchResp = await gql(
+      apiUrl,
+      apiToken,
+      `query FindWarehouseItem($name: String!) {
+        products(filter: { name: { eq: $name } }) { edges { node { id } } }
+      }`,
+      { name }
+    );
+    assertHttpSuccess(searchResp, apiUrl);
+    assertGqlSuccess(searchResp, 'Failed to search warehouse item in Twenty');
 
-  const existing = searchResp.data?.data?.products?.edges?.[0]?.node;
-  if (existing) {
-    warehouseCache?.set(name, existing.id);
-    return existing.id;
-  }
+    const existing = searchResp.data?.data?.products?.edges?.[0]?.node;
+    if (existing) {
+      return existing.id;
+    }
 
-  const createResp = await gql(
-    apiUrl,
-    apiToken,
-    `mutation CreateWarehouseItem($input: ProductCreateInput!) {
-      createProduct(data: $input) { id }
-    }`,
-    { input: buildWarehouseItemCreateInput(name) }
-  );
-  assertHttpSuccess(createResp, apiUrl);
-  assertGqlSuccess(createResp, `Failed to create warehouse item "${name}" in Twenty`);
+    const createResp = await gql(
+      apiUrl,
+      apiToken,
+      `mutation CreateWarehouseItem($input: ProductCreateInput!) {
+        createProduct(data: $input) { id }
+      }`,
+      { input: buildWarehouseItemCreateInput(name) }
+    );
+    assertHttpSuccess(createResp, apiUrl);
+    assertGqlSuccess(createResp, `Failed to create warehouse item "${name}" in Twenty`);
 
-  const newId = createResp.data?.data?.createProduct?.id;
-  if (!newId) throw new Error(`Failed to create warehouse item "${name}" in Twenty`);
-  warehouseCache?.set(name, newId);
-  return newId;
+    const newId = createResp.data?.data?.createProduct?.id;
+    if (!newId) throw new Error(`Failed to create warehouse item "${name}" in Twenty`);
+    return newId;
+  });
+
+  warehouseCache?.set(name, id);
+  return id;
 }
 
 async function findOrCreateCompany(apiUrl, apiToken, code) {
-  const db = getDb();
-  const company = db.prepare('SELECT * FROM companies WHERE code = ?').get(code);
-  if (!company) return null;
+  return companyCacheRef.getOrStart(code, async () => {
+    const db = getDb();
+    const company = db.prepare('SELECT * FROM companies WHERE code = ?').get(code);
+    if (!company) return null;
 
-  if (company.twenty_id) return company.twenty_id;
+    if (company.twenty_id) return company.twenty_id;
 
-  const searchResp = await gql(
-    apiUrl,
-    apiToken,
-    `query FindCompany($name: String!) {
-      companies(filter: { name: { eq: $name } }) { edges { node { id } } }
-    }`,
-    { name: company.full_name }
-  );
-  assertHttpSuccess(searchResp, apiUrl);
-  assertGqlSuccess(searchResp, 'Failed to search company in Twenty');
+    const searchResp = await gql(
+      apiUrl,
+      apiToken,
+      `query FindCompany($name: String!) {
+        companies(filter: { name: { eq: $name } }) { edges { node { id } } }
+      }`,
+      { name: company.full_name }
+    );
+    assertHttpSuccess(searchResp, apiUrl);
+    assertGqlSuccess(searchResp, 'Failed to search company in Twenty');
 
-  const existing = searchResp.data?.data?.companies?.edges?.[0]?.node;
-  if (existing) {
-    db.prepare('UPDATE companies SET twenty_id = ? WHERE id = ?').run(existing.id, company.id);
-    return existing.id;
-  }
+    const existing = searchResp.data?.data?.companies?.edges?.[0]?.node;
+    if (existing) {
+      db.prepare('UPDATE companies SET twenty_id = ? WHERE id = ?').run(existing.id, company.id);
+      return existing.id;
+    }
 
-  const createResp = await gql(
-    apiUrl,
-    apiToken,
-    `mutation CreateCompany($input: CompanyCreateInput!) {
-      createCompany(data: $input) { id }
-    }`,
-    { input: { name: company.full_name } }
-  );
-  assertHttpSuccess(createResp, apiUrl);
-  assertGqlSuccess(createResp, 'Failed to create company in Twenty');
+    const createResp = await gql(
+      apiUrl,
+      apiToken,
+      `mutation CreateCompany($input: CompanyCreateInput!) {
+        createCompany(data: $input) { id }
+      }`,
+      { input: { name: company.full_name } }
+    );
+    assertHttpSuccess(createResp, apiUrl);
+    assertGqlSuccess(createResp, 'Failed to create company in Twenty');
 
-  const newId = createResp.data?.data?.createCompany?.id;
-  if (newId) {
-    db.prepare('UPDATE companies SET twenty_id = ? WHERE id = ?').run(newId, company.id);
-  }
-  return newId;
+    const newId = createResp.data?.data?.createCompany?.id;
+    if (newId) {
+      db.prepare('UPDATE companies SET twenty_id = ? WHERE id = ?').run(newId, company.id);
+    }
+    return newId;
+  });
 }
 
 async function findOrCreatePerson(apiUrl, apiToken, managerName, companyTwentyId) {
-  const db = getDb();
+  return personCacheRef.getOrStart(`${managerName}|${companyTwentyId || ''}`, async () => {
+    const db = getDb();
 
-  const manager = db.prepare('SELECT * FROM managers WHERE name = ?').get(managerName);
-  if (manager?.twenty_id) return manager.twenty_id;
+    const manager = db.prepare('SELECT * FROM managers WHERE name = ?').get(managerName);
+    if (manager?.twenty_id) return manager.twenty_id;
 
-  const searchResp = await gql(
-    apiUrl,
-    apiToken,
-    `query FindPerson($lastName: String!) {
-      people(filter: { name: { lastName: { eq: $lastName } } }) { edges { node { id } } }
-    }`,
-    { lastName: managerName }
-  );
-  assertHttpSuccess(searchResp, apiUrl);
-  assertGqlSuccess(searchResp, 'Failed to search person in Twenty');
+    const searchResp = await gql(
+      apiUrl,
+      apiToken,
+      `query FindPerson($lastName: String!) {
+        people(filter: { name: { lastName: { eq: $lastName } } }) { edges { node { id } } }
+      }`,
+      { lastName: managerName }
+    );
+    assertHttpSuccess(searchResp, apiUrl);
+    assertGqlSuccess(searchResp, 'Failed to search person in Twenty');
 
-  const existing = searchResp.data?.data?.people?.edges?.[0]?.node;
-  if (existing) {
-    if (manager) {
-      db.prepare('UPDATE managers SET twenty_id = ? WHERE id = ?').run(existing.id, manager.id);
-    } else {
-      db.prepare('INSERT INTO managers (name, twenty_id) VALUES (?, ?)').run(managerName, existing.id);
+    const existing = searchResp.data?.data?.people?.edges?.[0]?.node;
+    if (existing) {
+      if (manager) {
+        db.prepare('UPDATE managers SET twenty_id = ? WHERE id = ?').run(existing.id, manager.id);
+      } else {
+        db.prepare('INSERT INTO managers (name, twenty_id) VALUES (?, ?)').run(managerName, existing.id);
+      }
+      return existing.id;
     }
-    return existing.id;
-  }
 
-  const input = {
-    name: { lastName: managerName, firstName: '' },
-  };
-  if (companyTwentyId) input.companyId = companyTwentyId;
+    const input = {
+      name: { lastName: managerName, firstName: '' },
+    };
+    if (companyTwentyId) input.companyId = companyTwentyId;
 
-  const createResp = await gql(
-    apiUrl,
-    apiToken,
-    `mutation CreatePerson($input: PersonCreateInput!) {
-      createPerson(data: $input) { id }
-    }`,
-    { input }
-  );
-  assertHttpSuccess(createResp, apiUrl);
-  assertGqlSuccess(createResp, 'Failed to create person in Twenty');
+    const createResp = await gql(
+      apiUrl,
+      apiToken,
+      `mutation CreatePerson($input: PersonCreateInput!) {
+        createPerson(data: $input) { id }
+      }`,
+      { input }
+    );
+    assertHttpSuccess(createResp, apiUrl);
+    assertGqlSuccess(createResp, 'Failed to create person in Twenty');
 
-  const newId = createResp.data?.data?.createPerson?.id;
-  if (newId) {
-    if (manager) {
-      db.prepare('UPDATE managers SET twenty_id = ? WHERE id = ?').run(newId, manager.id);
-    } else {
-      db.prepare('INSERT INTO managers (name, twenty_id) VALUES (?, ?)').run(managerName, newId);
+    const newId = createResp.data?.data?.createPerson?.id;
+    if (newId) {
+      if (manager) {
+        db.prepare('UPDATE managers SET twenty_id = ? WHERE id = ?').run(newId, manager.id);
+      } else {
+        db.prepare('INSERT INTO managers (name, twenty_id) VALUES (?, ?)').run(managerName, newId);
+      }
     }
-  }
-  return newId;
+    return newId;
+  });
 }
 
 async function resolveCompanyAndPerson(deal, twenty) {
@@ -247,30 +274,6 @@ function createLineItemSyncDeps(warehouseCache) {
   };
 }
 
-async function updateOpportunityAmountFromLineItems(twenty, oppId) {
-  const lineItems = await listLineItemsForOpportunity(
-    gql, twenty.apiUrl, twenty.apiToken, oppId,
-  );
-  const amount = buildOpportunityAmountInputFromLineItems(lineItems);
-
-  logTwentyStep('sync.opportunity_amount', {
-    oppId,
-    amountMicros: amount.amountMicros,
-    lineItemCount: lineItems.length,
-  });
-
-  const resp = await gql(
-    twenty.apiUrl,
-    twenty.apiToken,
-    `mutation UpdateOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
-      updateOpportunity(id: $id, data: $input) { id }
-    }`,
-    { id: oppId, input: { amount } },
-  );
-  assertHttpSuccess(resp, twenty.apiUrl);
-  assertGqlSuccess(resp, 'Failed to update opportunity amount in Twenty');
-}
-
 async function updateDealInTwenty(
   dealId,
   deal,
@@ -280,62 +283,42 @@ async function updateDealInTwenty(
   neNasheBrandingList,
   neNasheDecorMkList,
   tipRules,
-  { ignoreLineItemStageProtection = false } = {},
+  { ignoreLineItemStageProtection = false, productStreams } = {},
 ) {
   const db = getDb();
   const oppId = deal.twenty_id;
-
-  logTwentyStep('update.resolve_company_person', {
-    companyCode: deal.company_code || null,
-    managerName: deal.manager_name || null,
-  });
-
-  const { companyTwentyId, personTwentyId } = await resolveCompanyAndPerson(deal, twenty);
-
-  logTwentyStep('update.resolve_company_person.done', {
-    companyTwentyId,
-    personTwentyId,
-  });
-
-  const oppInput = buildOpportunityInput(deal, items, {
-    includeStage: false,
-    companyTwentyId,
-    personTwentyId,
-    restorationList,
-    neNasheBrandingList,
-    neNasheDecorMkList,
-  });
-
-  logTwentyStep('update.opportunity', {
-    oppId,
-    eligibleItems: items.length,
-    amountMicros: oppInput.amount?.amountMicros,
-  });
-
-  const oppResp = await gql(
-    twenty.apiUrl,
-    twenty.apiToken,
-    `mutation UpdateOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
-      updateOpportunity(id: $id, data: $input) { id }
-    }`,
-    { id: oppId, input: oppInput }
-  );
-  assertHttpSuccess(oppResp, twenty.apiUrl);
-  assertGqlSuccess(oppResp, 'Failed to update opportunity in Twenty');
+  const scoped = Array.isArray(productStreams) && productStreams.length > 0;
 
   logTwentyStep('update.list_line_items', { oppId });
 
-  const existingLineItems = await listLineItemsForOpportunity(
-    gql, twenty.apiUrl, twenty.apiToken, oppId
+  const { opportunity, lineItems: existingLineItems } = await fetchOpportunityAndLineItems(
+    gql, twenty.apiUrl, twenty.apiToken, oppId, assertHttpSuccess, assertGqlSuccess,
   );
+
+  let companyTwentyId = null;
+  let personTwentyId = null;
+  if (!scoped) {
+    logTwentyStep('update.resolve_company_person', {
+      companyCode: deal.company_code || null,
+      managerName: deal.manager_name || null,
+    });
+
+    ({ companyTwentyId, personTwentyId } = await resolveCompanyAndPerson(deal, twenty));
+
+    logTwentyStep('update.resolve_company_person.done', {
+      companyTwentyId,
+      personTwentyId,
+    });
+  }
 
   logTwentyStep('update.line_items_diff', {
     existingCount: existingLineItems.length,
     eligibleCount: items.length,
+    scoped,
   });
 
   const warehouseCache = new Map();
-  await syncLineItemsDiff({
+  const diff = await syncLineItemsDiff({
     ...createLineItemSyncDeps(warehouseCache),
     apiUrl: twenty.apiUrl,
     apiToken: twenty.apiToken,
@@ -349,9 +332,63 @@ async function updateDealInTwenty(
     neNasheDecorMkList,
     tipRules,
     ignoreStageProtection: ignoreLineItemStageProtection,
+    scoped,
   });
 
-  await updateOpportunityAmountFromLineItems(twenty, oppId);
+  const nextLineItems = applyLineItemMutationsInMemory(existingLineItems, {
+    toUpdate: diff.toUpdate,
+    toDelete: diff.toDelete,
+    createdNodes: diff.createdNodes,
+  });
+  const amount = buildOpportunityAmountInputFromLineItems(nextLineItems);
+
+  const oppInput = buildOpportunityInput(deal, items, {
+    includeStage: false,
+    companyTwentyId,
+    personTwentyId,
+    restorationList,
+    neNasheBrandingList,
+    neNasheDecorMkList,
+  });
+  oppInput.amount = amount;
+
+  const lineItemsChanged = diff.toUpdate.length > 0
+    || diff.toCreate.length > 0
+    || diff.toDelete.length > 0;
+
+  const skipOpportunityWrite = scoped
+    ? !lineItemsChanged
+    : !lineItemsChanged && opportunityFieldsEqual(opportunity, oppInput);
+
+  if (skipOpportunityWrite) {
+    db.prepare(`
+      UPDATE deals SET synced_at = datetime('now'), twenty_error = NULL WHERE id = ?
+    `).run(dealId);
+
+    logSyncRun(dealId, 'success', oppId, null, 'noop');
+    logTwentyStep('update.done', { action: 'noop', itemCount: items.length });
+    return { twentyId: oppId, action: 'noop', itemCount: items.length };
+  }
+
+  const input = scoped ? { amount } : oppInput;
+
+  logTwentyStep('update.opportunity', {
+    oppId,
+    eligibleItems: items.length,
+    amountMicros: amount.amountMicros,
+    scoped,
+  });
+
+  const oppResp = await gql(
+    twenty.apiUrl,
+    twenty.apiToken,
+    `mutation UpdateOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
+      updateOpportunity(id: $id, data: $input) { id }
+    }`,
+    { id: oppId, input },
+  );
+  assertHttpSuccess(oppResp, twenty.apiUrl);
+  assertGqlSuccess(oppResp, 'Failed to update opportunity in Twenty');
 
   const action = items.length === 0 ? 'updated_empty' : 'updated';
 
@@ -417,8 +454,6 @@ async function createDealInTwenty(
     neNasheDecorMkList,
     tipRules,
   });
-
-  await updateOpportunityAmountFromLineItems(twenty, oppId);
 
   db.prepare(`
     UPDATE deals SET
@@ -488,7 +523,11 @@ export async function resyncDealIfSynced(dealId) {
 
 export async function syncDealToTwenty(
   dealId,
-  { skipPrintSheetRefresh = false, ignoreLineItemStageProtection = false } = {},
+  {
+    skipPrintSheetRefresh = false,
+    ignoreLineItemStageProtection = false,
+    productStreams,
+  } = {},
 ) {
   const twenty = requireTwentyConfig();
   const db = getDb();
@@ -502,77 +541,90 @@ export async function syncDealToTwenty(
   const neNasheDecorMkList = loadNeNasheDecorMkList(db);
   const tipRules = loadTipRules(db);
   const items = getItemsForTwenty(allItems, streamContext);
-  const mode = deal.twenty_id ? 'update' : 'create';
+  const streamFilterActive = Array.isArray(productStreams) && productStreams.length > 0;
+  const scopedItems = streamFilterActive
+    ? items.filter((item) => productStreams.includes(item.productStream))
+    : items;
 
-  beginTwentySyncContext({
+  if (streamFilterActive && scopedItems.length === 0) {
+    return { action: 'skipped', itemCount: 0 };
+  }
+
+  const mode = deal.twenty_id ? 'update' : 'create';
+  const syncCtx = {
     dealId,
     twentyId: deal.twenty_id || null,
     mode,
     title: deal.title,
-  });
+  };
 
-  logTwentyStep('sync.start', {
-    mode,
-    apiUrl: twenty.apiUrl,
-    configSource: twenty.source,
-    timeoutMs: config.twentyApiTimeoutMs,
-    totalItems: allItems.length,
-    eligibleItems: items.length,
-    eligibleNames: items.map((i) => i.name).slice(0, 10),
-  });
+  return runTwentySyncContext(syncCtx, async () => {
+    beginTwentySyncContext(syncCtx);
 
-  try {
-    let result;
-    if (deal.twenty_id) {
-      result = await updateDealInTwenty(
-        dealId,
-        deal,
-        items,
-        twenty,
-        restorationList,
-        neNasheBrandingList,
-        neNasheDecorMkList,
-        tipRules,
-        { ignoreLineItemStageProtection },
-      );
-    } else {
-      if (items.length === 0) {
-        const message = 'Нет позиций для переноса в Twenty';
-        db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(message, dealId);
-        logSyncRun(dealId, 'failed', null, message, 'created');
-        logTwenty('warn', 'sync.aborted', { reason: message });
-        throw new Error(message);
+    logTwentyStep('sync.start', {
+      mode,
+      apiUrl: twenty.apiUrl,
+      configSource: twenty.source,
+      timeoutMs: config.twentyApiTimeoutMs,
+      totalItems: allItems.length,
+      eligibleItems: scopedItems.length,
+      eligibleNames: scopedItems.map((i) => i.name).slice(0, 10),
+      productStreams: streamFilterActive ? productStreams : undefined,
+    });
+
+    try {
+      let result;
+      if (deal.twenty_id) {
+        result = await updateDealInTwenty(
+          dealId,
+          deal,
+          scopedItems,
+          twenty,
+          restorationList,
+          neNasheBrandingList,
+          neNasheDecorMkList,
+          tipRules,
+          { ignoreLineItemStageProtection, productStreams },
+        );
+      } else {
+        if (scopedItems.length === 0) {
+          const message = 'Нет позиций для переноса в Twenty';
+          db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(message, dealId);
+          logSyncRun(dealId, 'failed', null, message, 'created');
+          logTwenty('warn', 'sync.aborted', { reason: message });
+          throw new Error(message);
+        }
+
+        result = await createDealInTwenty(
+          dealId,
+          deal,
+          scopedItems,
+          twenty,
+          restorationList,
+          neNasheBrandingList,
+          neNasheDecorMkList,
+          tipRules,
+        );
       }
 
-      result = await createDealInTwenty(
-        dealId,
-        deal,
-        items,
-        twenty,
-        restorationList,
-        neNasheBrandingList,
-        neNasheDecorMkList,
-        tipRules,
-      );
+      if (!skipPrintSheetRefresh) {
+        await refreshPrintSheetAfterSync(twenty, result.twentyId);
+      }
+      return result;
+    } catch (err) {
+      logTwenty('error', 'sync.failed', { mode, error: err.message });
+      if (deal.twenty_id) {
+        db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
+        logSyncRun(dealId, 'failed', deal.twenty_id, err.message, 'updated');
+      } else {
+        db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
+        logSyncRun(dealId, 'failed', null, err.message, 'created');
+      }
+      throw err;
+    } finally {
+      endTwentySyncContext();
     }
-
-    if (!skipPrintSheetRefresh) {
-      await refreshPrintSheetAfterSync(twenty, result.twentyId);
-    }
-    return result;
-  } catch (err) {
-    logTwenty('error', 'sync.failed', { mode, error: err.message });
-    if (deal.twenty_id) {
-      db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
-      logSyncRun(dealId, 'failed', deal.twenty_id, err.message, 'updated');
-    } else {
-      db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
-      logSyncRun(dealId, 'failed', null, err.message, 'created');
-    }
-    throw err;
-  } finally {
-    endTwentySyncContext();
-  }
+  });
 }
 
 export async function restoreDealInTwenty(dealId) {
@@ -596,81 +648,82 @@ export async function restoreDealInTwenty(dealId) {
     }
   }
 
-  beginTwentySyncContext({
+  const restoreCtx = {
     dealId,
     twentyId: deal.twenty_id,
     mode: 'restore',
     title: deal.title,
-  });
+  };
 
-  logTwentyStep('restore.start', { oppId: deal.twenty_id, stage, lineItemCount: snapshot.length });
+  return runTwentySyncContext(restoreCtx, async () => {
+    beginTwentySyncContext(restoreCtx);
 
-  try {
-    const oppResp = await gql(
-      twenty.apiUrl,
-      twenty.apiToken,
-      `mutation RestoreOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
-        updateOpportunity(id: $id, data: $input) { id }
-      }`,
-      { id: deal.twenty_id, input: { stage } }
-    );
-    assertHttpSuccess(oppResp, twenty.apiUrl);
-    assertGqlSuccess(oppResp, 'Failed to restore opportunity in Twenty');
+    logTwentyStep('restore.start', { oppId: deal.twenty_id, stage, lineItemCount: snapshot.length });
 
-    const existingLineItems = await listLineItemsForOpportunity(
-      gql,
-      twenty.apiUrl,
-      twenty.apiToken,
-      deal.twenty_id,
-    );
-    const existingLineItemIds = new Set(existingLineItems.map((li) => li.id));
-
-    for (const entry of snapshot) {
-      if (!entry?.id) continue;
-      if (!existingLineItemIds.has(entry.id)) {
-        logTwentyStep('restore.line_item_skipped', { lineItemId: entry.id });
-        continue;
-      }
-      const resp = await gql(
+    try {
+      const oppResp = await gql(
         twenty.apiUrl,
         twenty.apiToken,
-        `mutation UpdateDealLineItem($id: ID!, $input: DealLineItemUpdateInput!) {
-          updateDealLineItem(id: $id, data: $input) { id }
+        `mutation RestoreOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
+          updateOpportunity(id: $id, data: $input) { id }
         }`,
-        { id: entry.id, input: { stage: entry.stage ?? null } }
+        { id: deal.twenty_id, input: { stage } }
       );
-      assertHttpSuccess(resp, twenty.apiUrl);
-      assertGqlSuccess(resp, `Failed to restore line item ${entry.id} in Twenty`);
-      if (!resp.data?.data?.updateDealLineItem?.id) {
-        logTwentyStep('restore.line_item_skipped', { lineItemId: entry.id });
-        continue;
+      assertHttpSuccess(oppResp, twenty.apiUrl);
+      assertGqlSuccess(oppResp, 'Failed to restore opportunity in Twenty');
+
+      const existingLineItems = await listLineItemsForOpportunity(
+        gql,
+        twenty.apiUrl,
+        twenty.apiToken,
+        deal.twenty_id,
+      );
+      const existingLineItemIds = new Set(existingLineItems.map((li) => li.id));
+      const restoreRows = [];
+      for (const entry of snapshot) {
+        if (!entry?.id) continue;
+        if (!existingLineItemIds.has(entry.id)) {
+          logTwentyStep('restore.line_item_skipped', { lineItemId: entry.id });
+          continue;
+        }
+        restoreRows.push({ id: entry.id, data: { stage: entry.stage ?? null } });
       }
+      if (restoreRows.length) {
+        await upsertDealLineItemsBatch({
+          gql,
+          apiUrl: twenty.apiUrl,
+          apiToken: twenty.apiToken,
+          rows: restoreRows,
+          assertHttpSuccess,
+          assertGqlSuccess,
+        });
+      }
+
+      db.prepare(`
+        UPDATE deals SET
+          twenty_stage = ?,
+          status = NULL,
+          pre_cancel_opportunity_stage = NULL,
+          line_item_stage_snapshot_json = NULL,
+          calendar_miss_streak = 0,
+          synced_at = datetime('now'),
+          twenty_error = NULL,
+          updated_at = datetime('now')
+        WHERE id = ?
+      `).run(stage, dealId);
+
+      logSyncRun(dealId, 'success', deal.twenty_id, null, 'restored');
+      logTwentyStep('restore.done', { oppId: deal.twenty_id, stage });
+      return { twentyId: deal.twenty_id, action: 'restored', stage };
+    } catch (err) {
+      logTwenty('error', 'restore.failed', { error: err.message });
+      db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
+      logSyncRun(dealId, 'failed', deal.twenty_id, err.message, 'restored');
+      throw err;
+    } finally {
+      endTwentySyncContext();
     }
-
-    db.prepare(`
-      UPDATE deals SET
-        twenty_stage = ?,
-        status = NULL,
-        pre_cancel_opportunity_stage = NULL,
-        line_item_stage_snapshot_json = NULL,
-        calendar_miss_streak = 0,
-        synced_at = datetime('now'),
-        twenty_error = NULL,
-        updated_at = datetime('now')
-      WHERE id = ?
-    `).run(stage, dealId);
-
-    logSyncRun(dealId, 'success', deal.twenty_id, null, 'restored');
-    logTwentyStep('restore.done', { oppId: deal.twenty_id, stage });
-    return { twentyId: deal.twenty_id, action: 'restored', stage };
-  } catch (err) {
-    logTwenty('error', 'restore.failed', { error: err.message });
-    db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
-    logSyncRun(dealId, 'failed', deal.twenty_id, err.message, 'restored');
-    throw err;
-  } finally {
-    endTwentySyncContext();
-  }
+  });
 }
 
 export async function cancelDealInTwenty(dealId) {
@@ -683,80 +736,84 @@ export async function cancelDealInTwenty(dealId) {
     return { twentyId: deal.twenty_id, action: 'cancelled', skipped: true };
   }
 
-  beginTwentySyncContext({
+  const cancelCtx = {
     dealId,
     twentyId: deal.twenty_id,
     mode: 'cancel',
     title: deal.title,
-  });
+  };
 
-  logTwentyStep('cancel.start', { oppId: deal.twenty_id });
+  return runTwentySyncContext(cancelCtx, async () => {
+    beginTwentySyncContext(cancelCtx);
 
-  try {
-    const existingLineItems = await listLineItemsForOpportunity(
-      gql,
-      twenty.apiUrl,
-      twenty.apiToken,
-      deal.twenty_id,
-    );
+    logTwentyStep('cancel.start', { oppId: deal.twenty_id });
 
-    const existingSnapshot = deal.line_item_stage_snapshot_json;
-    if (!existingSnapshot) {
-      const snapshot = existingLineItems.map((li) => ({ id: li.id, stage: li.stage ?? null }));
-      const snapshotWrite = db.prepare(`
-        UPDATE deals
-        SET pre_cancel_opportunity_stage = ?,
-            line_item_stage_snapshot_json = ?
-        WHERE id = ?
-          AND (line_item_stage_snapshot_json IS NULL OR line_item_stage_snapshot_json = '')
-      `).run(deal.twenty_stage ?? null, JSON.stringify(snapshot), dealId);
-      if (snapshotWrite.changes > 0) {
-        logTwentyStep('cancel.snapshot', {
-          lineItemCount: snapshot.length,
-          opportunityStage: deal.twenty_stage ?? null,
-        });
+    try {
+      const existingLineItems = await listLineItemsForOpportunity(
+        gql,
+        twenty.apiUrl,
+        twenty.apiToken,
+        deal.twenty_id,
+      );
+
+      const existingSnapshot = deal.line_item_stage_snapshot_json;
+      if (!existingSnapshot) {
+        const snapshot = existingLineItems.map((li) => ({ id: li.id, stage: li.stage ?? null }));
+        const snapshotWrite = db.prepare(`
+          UPDATE deals
+          SET pre_cancel_opportunity_stage = ?,
+              line_item_stage_snapshot_json = ?
+          WHERE id = ?
+            AND (line_item_stage_snapshot_json IS NULL OR line_item_stage_snapshot_json = '')
+        `).run(deal.twenty_stage ?? null, JSON.stringify(snapshot), dealId);
+        if (snapshotWrite.changes > 0) {
+          logTwentyStep('cancel.snapshot', {
+            lineItemCount: snapshot.length,
+            opportunityStage: deal.twenty_stage ?? null,
+          });
+        }
       }
+
+      const oppResp = await gql(
+        twenty.apiUrl,
+        twenty.apiToken,
+        `mutation CancelOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
+          updateOpportunity(id: $id, data: $input) { id }
+        }`,
+        { id: deal.twenty_id, input: { stage: CANCELLED_OPPORTUNITY_STAGE, amount: ZERO_RUB_AMOUNT } }
+      );
+      assertHttpSuccess(oppResp, twenty.apiUrl);
+      assertGqlSuccess(oppResp, 'Failed to cancel opportunity in Twenty');
+
+      const lineItemCancel = await cancelLineItemsForOpportunity(
+        gql,
+        twenty.apiUrl,
+        twenty.apiToken,
+        deal.twenty_id,
+        { assertHttpSuccess, assertGqlSuccess },
+      );
+      logTwentyStep('cancel.line_items', lineItemCancel);
+
+      db.prepare(`
+        UPDATE deals SET
+          twenty_stage = ?,
+          status = ?,
+          synced_at = datetime('now'),
+          twenty_error = NULL,
+          updated_at = datetime('now')
+        WHERE id = ?
+      `).run(CANCELLED_OPPORTUNITY_STAGE, 'отмена', dealId);
+
+      logSyncRun(dealId, 'success', deal.twenty_id, null, 'cancelled');
+      logTwentyStep('cancel.done', { oppId: deal.twenty_id });
+      return { twentyId: deal.twenty_id, action: 'cancelled' };
+    } catch (err) {
+      logTwenty('error', 'cancel.failed', { error: err.message });
+      db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
+      logSyncRun(dealId, 'failed', deal.twenty_id, err.message, 'cancelled');
+      throw err;
+    } finally {
+      endTwentySyncContext();
     }
-
-    const oppResp = await gql(
-      twenty.apiUrl,
-      twenty.apiToken,
-      `mutation CancelOpportunity($id: ID!, $input: OpportunityUpdateInput!) {
-        updateOpportunity(id: $id, data: $input) { id }
-      }`,
-      { id: deal.twenty_id, input: { stage: CANCELLED_OPPORTUNITY_STAGE, amount: ZERO_RUB_AMOUNT } }
-    );
-    assertHttpSuccess(oppResp, twenty.apiUrl);
-    assertGqlSuccess(oppResp, 'Failed to cancel opportunity in Twenty');
-
-    const lineItemCancel = await cancelLineItemsForOpportunity(
-      gql,
-      twenty.apiUrl,
-      twenty.apiToken,
-      deal.twenty_id,
-      { assertHttpSuccess, assertGqlSuccess },
-    );
-    logTwentyStep('cancel.line_items', lineItemCancel);
-
-    db.prepare(`
-      UPDATE deals SET
-        twenty_stage = ?,
-        status = ?,
-        synced_at = datetime('now'),
-        twenty_error = NULL,
-        updated_at = datetime('now')
-      WHERE id = ?
-    `).run(CANCELLED_OPPORTUNITY_STAGE, 'отмена', dealId);
-
-    logSyncRun(dealId, 'success', deal.twenty_id, null, 'cancelled');
-    logTwentyStep('cancel.done', { oppId: deal.twenty_id });
-    return { twentyId: deal.twenty_id, action: 'cancelled' };
-  } catch (err) {
-    logTwenty('error', 'cancel.failed', { error: err.message });
-    db.prepare("UPDATE deals SET twenty_error = ? WHERE id = ?").run(err.message, dealId);
-    logSyncRun(dealId, 'failed', deal.twenty_id, err.message, 'cancelled');
-    throw err;
-  } finally {
-    endTwentySyncContext();
-  }
+  });
 }

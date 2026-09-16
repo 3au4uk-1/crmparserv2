@@ -1,15 +1,21 @@
-let syncContext = null;
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+const syncContextAls = new AsyncLocalStorage();
+
+export function runTwentySyncContext(ctx, fn) {
+  return syncContextAls.run({ ...ctx, startedAt: Date.now() }, fn);
+}
 
 export function beginTwentySyncContext(ctx) {
-  syncContext = { ...ctx, startedAt: Date.now() };
+  syncContextAls.enterWith({ ...ctx, startedAt: Date.now() });
 }
 
 export function endTwentySyncContext() {
-  syncContext = null;
+  syncContextAls.enterWith(undefined);
 }
 
 export function getTwentySyncContext() {
-  return syncContext;
+  return syncContextAls.getStore() || null;
 }
 
 export function parseGqlOperation(query) {
@@ -50,8 +56,9 @@ function formatMeta(meta) {
 }
 
 export function logTwenty(level, message, meta = {}) {
-  const ctx = syncContext
-    ? { dealId: syncContext.dealId, twentyId: syncContext.twentyId, ...meta }
+  const store = syncContextAls.getStore();
+  const ctx = store
+    ? { dealId: store.dealId, twentyId: store.twentyId, ...meta }
     : meta;
   const line = `[twenty-sync] ${new Date().toISOString()} ${message}${formatMeta(ctx)}`;
   if (level === 'error') console.error(line);

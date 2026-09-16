@@ -20,21 +20,33 @@ describe('non-cancelled amount helpers', () => {
     expect(isCancelledLineItemStage(null)).toBe(false);
   });
 
-  it('sumNonCancelledLineAmountsRub skips OTMENA', () => {
+  it('sumNonCancelledLineAmountsRub multiplies unit by kolichestvo', () => {
     const sum = sumNonCancelledLineAmountsRub([
-      { stage: 'NOVYY', amount: { amountMicros: 10_000_000_000 } },
-      { stage: 'OTMENA', amount: { amountMicros: 5_000_000_000 } },
-      { stage: null, amount: { amountMicros: 2_000_000_000 } },
+      { stage: 'NOVYY', kolichestvo: 2, amount: { amountMicros: 6_000_000_000 } },
+      { stage: 'OTMENA', kolichestvo: 10, amount: { amountMicros: 5_000_000_000 } },
+      { stage: 'GOTOVO', amount: { amountMicros: 1_000_000_000 } },
     ]);
-    expect(sum).toBe(12000);
+    expect(sum).toBe(13000); // 6000*2 + 1000*1
   });
 
-  it('buildOpportunityAmountInputFromLineItems sums non-OTMENA micros', () => {
+  it('buildOpportunityAmountInputFromLineItems uses unit × qty', () => {
     const input = buildOpportunityAmountInputFromLineItems([
-      { stage: 'NOVYY', amount: { amountMicros: 10_000_000_000 } },
-      { stage: 'OTMENA', amount: { amountMicros: 5_000_000_000 } },
+      { stage: 'NOVYY', kolichestvo: 2, amount: { amountMicros: 6_000_000_000 } },
+      { stage: 'OTMENA', kolichestvo: 2, amount: { amountMicros: 9_000_000_000 } },
     ]);
-    expect(input).toEqual({ amountMicros: 10_000_000_000, currencyCode: 'RUB' });
+    expect(input).toEqual({ amountMicros: 12_000_000_000, currencyCode: 'RUB' });
+  });
+
+  it('computeLineItemTotal locked uses price × qty', () => {
+    const item = {
+      name: 'Баннер',
+      price: 6000,
+      quantity: '2',
+      quantity_num: 2,
+      sum: 6000,
+      amount_locked: 1,
+    };
+    expect(computeLineItemTotal(item, { data_source: 'tony' })).toBe(12000);
   });
 });
 
@@ -141,6 +153,17 @@ describe('buildOpportunityInput', () => {
     );
     expect(input.summaPostupleniy).toBeUndefined();
     expect(input.statusOplaty).toBe('NE_OPLACHENO');
+  });
+
+  it('puts extra Bitrix ids on secondaryLinks', () => {
+    const input = buildOpportunityInput(deal, items, {
+      bitrixLinks: [
+        { bitrixId: '111', isCanonical: true },
+        { bitrixId: '222', isCanonical: false },
+      ],
+    });
+    expect(input.bitrixLink.primaryLinkUrl).toContain('/111/');
+    expect(input.bitrixLink.secondaryLinks[0].url).toContain('/222/');
   });
 });
 

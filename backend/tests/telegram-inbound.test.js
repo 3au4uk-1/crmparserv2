@@ -1,9 +1,11 @@
 import Database from 'better-sqlite3';
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import {
+  listBotChats,
   listTelegramChats,
   listTelegramTopics,
 } from '../src/telegram/chat-store.js';
+import { clearHooksForTests, registerHook } from '../src/telegram/hooks.js';
 
 let testDb;
 
@@ -26,6 +28,24 @@ function openDb() {
       last_seen_at TEXT NOT NULL
     );
     CREATE TABLE telegram_topics (
+      chat_id TEXT NOT NULL,
+      thread_id INTEGER NOT NULL,
+      name TEXT,
+      source TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      PRIMARY KEY (chat_id, thread_id)
+    );
+    CREATE TABLE telegram_bot_chats (
+      chat_id TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      type TEXT NOT NULL DEFAULT '',
+      is_forum INTEGER NOT NULL DEFAULT 0,
+      username TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      source TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL
+    );
+    CREATE TABLE telegram_bot_topics (
       chat_id TEXT NOT NULL,
       thread_id INTEGER NOT NULL,
       name TEXT,
@@ -58,11 +78,12 @@ describe('processTelegramUpdate', () => {
 
   beforeEach(async () => {
     testDb = openDb();
+    clearHooksForTests();
     ({ processTelegramUpdate } = await import('../src/telegram/inbound.js'));
   });
 
-  it('my_chat_member member → active chat', () => {
-    processTelegramUpdate(testDb, {
+  it('my_chat_member member → active chat', async () => {
+    await processTelegramUpdate(testDb, {
       my_chat_member: {
         chat: { id: -100, title: 'Ops', type: 'supergroup', is_forum: true },
         new_chat_member: { status: 'member' },
@@ -74,10 +95,13 @@ describe('processTelegramUpdate', () => {
     expect(chats[0].title).toBe('Ops');
     expect(chats[0].active).toBe(1);
     expect(chats[0].source).toBe('webhook');
+    expect(listBotChats(testDb, { activeOnly: false })).toEqual([
+      expect.objectContaining({ chat_id: '-100', title: 'Ops', source: 'bot', active: 1 }),
+    ]);
   });
 
-  it('my_chat_member left → active=0', () => {
-    processTelegramUpdate(testDb, {
+  it('my_chat_member left → active=0', async () => {
+    await processTelegramUpdate(testDb, {
       my_chat_member: {
         chat: { id: -100, title: 'Ops', type: 'supergroup' },
         new_chat_member: { status: 'left' },
@@ -88,8 +112,8 @@ describe('processTelegramUpdate', () => {
     expect(chats[0].active).toBe(0);
   });
 
-  it('message with forum_topic_created → topic with name', () => {
-    processTelegramUpdate(testDb, {
+  it('message with forum_topic_created → topic with name', async () => {
+    await processTelegramUpdate(testDb, {
       message: {
         chat: { id: -100, title: 'Forum', type: 'supergroup', is_forum: true },
         message_thread_id: 42,
@@ -103,8 +127,8 @@ describe('processTelegramUpdate', () => {
     expect(topics[0].source).toBe('webhook');
   });
 
-  it('message with is_topic_message + message_thread_id → topic (name may be null)', () => {
-    processTelegramUpdate(testDb, {
+  it('message with is_topic_message + message_thread_id → topic (name may be null)', async () => {
+    await processTelegramUpdate(testDb, {
       message: {
         chat: { id: -100, title: 'Forum', type: 'supergroup', is_forum: true },
         message_thread_id: 7,
@@ -117,6 +141,20 @@ describe('processTelegramUpdate', () => {
     expect(topics[0].thread_id).toBe(7);
     expect(topics[0].name).toBeNull();
   });
+
+  it('emits telegram.inbound after discovery upserts', async () => {
+    const hook = vi.fn(() => {
+      expect(listTelegramChats(testDb, { activeOnly: false })).toHaveLength(1);
+    });
+    registerHook('telegram.inbound', hook);
+    const update = {
+      message: { chat: { id: -100, title: 'Ops', type: 'supergroup' }, text: 'hello' },
+    };
+
+    await processTelegramUpdate(testDb, update);
+
+    expect(hook).toHaveBeenCalledWith({ db: testDb, update });
+  });
 });
 
 describe('handleTelegramWebhook', () => {
@@ -124,23 +162,24 @@ describe('handleTelegramWebhook', () => {
 
   beforeEach(async () => {
     testDb = openDb();
+    clearHooksForTests();
     vi.resetModules();
     ({ handleTelegramWebhook } = await import('../src/telegram/inbound.js'));
   });
 
-  it('rejects wrong secret when configured', () => {
+  it('rejects wrong secret when configured', async () => {
     testDb.prepare(`INSERT INTO settings (key, value) VALUES ('telegram_webhook_secret', 's3cr3t')`).run();
     const req = {
       body: {},
       get: (h) => (h === 'X-Telegram-Bot-Api-Secret-Token' ? 'wrong' : undefined),
     };
     const res = mockRes();
-    handleTelegramWebhook(req, res);
+    await handleTelegramWebhook(req, res);
     expect(res.statusCode).toBe(401);
     expect(res.body).toEqual({ ok: false, error: 'invalid secret' });
   });
 
-  it('accepts valid secret and returns ok', () => {
+  it('accepts valid secret and returns ok', async () => {
     testDb.prepare(`INSERT INTO settings (key, value) VALUES ('telegram_webhook_secret', 's3cr3t')`).run();
     const req = {
       body: {
@@ -152,7 +191,7 @@ describe('handleTelegramWebhook', () => {
       get: (h) => (h === 'X-Telegram-Bot-Api-Secret-Token' ? 's3cr3t' : undefined),
     };
     const res = mockRes();
-    handleTelegramWebhook(req, res);
+    await handleTelegramWebhook(req, res);
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ ok: true });
     expect(listTelegramChats(testDb, { activeOnly: false })).toHaveLength(1);

@@ -2,6 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { buildWorkspaceMemberMap } from './print-sheet-responsible.js';
 import { LAYOUT_LINK_FIELD, PRINT_COMMENT_FIELD } from './print-sheet-field-names.js';
 import { V_PECHATI_LINE_ITEM_STAGE } from './print-sheet-twenty.js';
+import {
+  buildPrintSheetRowValues,
+  resolvePrintSheetDealLabel,
+} from './print-sheet-row-builder.js';
 
 const LINE_ITEM_EXPORT_FIELDS = `
   id
@@ -125,6 +129,29 @@ export function buildSessionClearPatch() {
 
 export function newPrintSheetSessionId() {
   return randomUUID();
+}
+
+/**
+ * Build print-sheet row values, resolving group parent name + canonical Bitrix
+ * once per opportunity id via labelCache.
+ */
+export function buildPrintSheetExportRowValues(lineItem, {
+  db,
+  workspaceMemberById = {},
+  labelCache = new Map(),
+} = {}) {
+  const opportunityId = lineItem?.opportunity?.id;
+  let groupLabel;
+  if (db && opportunityId) {
+    if (!labelCache.has(opportunityId)) {
+      labelCache.set(
+        opportunityId,
+        resolvePrintSheetDealLabel(db, opportunityId, lineItem.opportunity),
+      );
+    }
+    groupLabel = labelCache.get(opportunityId);
+  }
+  return buildPrintSheetRowValues(lineItem, { workspaceMemberById, groupLabel });
 }
 
 export async function loadWorkspaceMemberMap(gql, limit = 100) {

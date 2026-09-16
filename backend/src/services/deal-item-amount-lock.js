@@ -1,7 +1,7 @@
 import { findDealItemByTwentyId } from './twenty-line-item-api.js';
 import { getCachedPatternLists } from './pattern-lists-cache.js';
 import { getItemsForTwenty } from './twenty-items.js';
-import { computeDealItemsTotal, shouldZeroLineItemAmount } from './twenty-opportunity.js';
+import { computeDealItemsTotal, shouldZeroLineItemAmount, parseQuantityNum } from './twenty-opportunity.js';
 
 function assertValidAmountRub(amountRub) {
   if (typeof amountRub !== 'number' || !Number.isFinite(amountRub) || amountRub < 0) {
@@ -57,11 +57,16 @@ export function lockDealItemAmount(db, twentyLineItemId, amountRub) {
     neNasheDecorMkList,
   });
 
+  const qty = Number(item.quantity_num) > 0
+    ? Number(item.quantity_num)
+    : parseQuantityNum(item.quantity);
+  const sum = amountRub * qty;
+
   db.prepare(`
     UPDATE deal_items
-    SET amount_locked = 1, sum = ?
+    SET amount_locked = 1, price = ?, sum = ?, quantity_num = ?
     WHERE id = ?
-  `).run(amountRub, item.id);
+  `).run(amountRub, sum, qty, item.id);
 
   return {
     dealId: deal.id,

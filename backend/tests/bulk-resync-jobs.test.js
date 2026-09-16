@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import express from 'express';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -109,6 +112,21 @@ function createDb() {
       error TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE decor_mk_scan_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      status TEXT NOT NULL DEFAULT 'queued',
+      from_date TEXT NOT NULL,
+      to_date TEXT NOT NULL,
+      started_at TEXT,
+      finished_at TEXT,
+      deals_total INTEGER DEFAULT 0,
+      deals_done INTEGER DEFAULT 0,
+      deals_updated INTEGER DEFAULT 0,
+      deals_failed INTEGER DEFAULT 0,
+      errors_json TEXT,
+      error TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
     CREATE TABLE product_stream_backfill_runs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       status TEXT NOT NULL DEFAULT 'queued',
@@ -196,6 +214,31 @@ describe('bulk-resync-jobs', () => {
     expect(finished.status).toBe('completed_with_errors');
     expect(finished.errors).toEqual([{ dealId: 2, error: 'Twenty timeout' }]);
   });
+
+  it('does not delay 1s between deals and uses skipPrintSheetRefresh', async () => {
+    testDb.prepare('INSERT INTO deals (id, twenty_id, title) VALUES (1, ?, ?)').run('opp-1', 'Deal 1');
+    testDb.prepare('INSERT INTO deals (id, twenty_id, title) VALUES (2, ?, ?)').run('opp-2', 'Deal 2');
+
+    syncDealToTwentyMock.mockResolvedValue({ action: 'updated', twentyId: 'opp-1' });
+    runPrintSheetRefreshMock.mockResolvedValue({ exported: 1 });
+
+    const started = Date.now();
+    const job = createBulkResyncJob({ trigger: 'manual' });
+    const promise = executeBulkResyncJob(job.jobId);
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(syncDealToTwentyMock).toHaveBeenCalledTimes(2);
+    expect(syncDealToTwentyMock.mock.calls.every(([, opts]) => opts.skipPrintSheetRefresh)).toBe(true);
+    expect(runPrintSheetRefreshMock).toHaveBeenCalledTimes(1);
+    expect(
+      readFileSync(
+        path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/services/bulk-resync-jobs.js'),
+        'utf8',
+      ),
+    ).not.toMatch(/DELAY_MS/);
+  });
 });
 
 describe('bulk-resync routes', () => {
@@ -238,5 +281,17 @@ describe('bulk-resync routes', () => {
     const result = await requestJson(app, 'POST', '/deals/bulk-resync');
     expect(result.status).toBe(201);
     expect(result.body.jobId).toBeTruthy();
+  });
+
+  it('POST /bulk-resync returns 409 when decor-mk-scan is active', async () => {
+    const { createDecorMkScanJob } = await import('../src/services/decor-mk-scan-jobs.js');
+    createDecorMkScanJob({ from: '2026-08-01', to: '2026-08-31' });
+    const app = express();
+    app.use(express.json());
+    app.use('/deals', dealsRouter);
+
+    const result = await requestJson(app, 'POST', '/deals/bulk-resync');
+    expect(result.status).toBe(409);
+    expect(result.body.error).toBe('Проверка ключевых слов декора и МК уже выполняется');
   });
 });

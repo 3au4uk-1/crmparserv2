@@ -34,7 +34,10 @@ export const config = {
   tonyLogin: process.env.TONY_LOGIN || '',
   tonyPassword: process.env.TONY_PASSWORD || '',
   tonyRequestDelayMs: parseInt(process.env.TONY_REQUEST_DELAY_MS || '350', 10),
-  fetchConcurrency: parseInt(process.env.FETCH_CONCURRENCY || '4', 10),
+  fetchConcurrency: parseInt(process.env.FETCH_CONCURRENCY || '8', 10),
+  tonyUnchangedProbe: !['0', 'false', 'no'].includes(
+    String(process.env.TONY_UNCHANGED_PROBE ?? 'true').trim().toLowerCase()
+  ),
   parsePipeline: process.env.PARSE_PIPELINE || 'parallel',
   llmApiUrl: process.env.LLM_API_URL || '',
   llmApiKey: process.env.LLM_API_KEY || '',
@@ -42,8 +45,9 @@ export const config = {
   twentyApiUrl: process.env.TWENTY_API_URL || '',
   twentyApiToken: process.env.TWENTY_API_TOKEN || '',
   twentyApiTimeoutMs: parseInt(process.env.TWENTY_API_TIMEOUT_MS || '60000', 10),
-  twentyApiRateLimitMax: parseInt(process.env.TWENTY_API_RATE_LIMIT_MAX || '95', 10),
+  twentyApiRateLimitMax: parseInt(process.env.TWENTY_API_RATE_LIMIT_MAX || '720', 10),
   twentyApiRateLimitWindowMs: parseInt(process.env.TWENTY_API_RATE_LIMIT_WINDOW_MS || '60000', 10),
+  twentySyncConcurrency: parseInt(process.env.TWENTY_SYNC_CONCURRENCY || '6', 10),
   twentyEventsEnabled: process.env.TWENTY_EVENTS_ENABLED !== 'false',
   twentyWebhookSecret: process.env.TWENTY_WEBHOOK_SECRET || '',
   sessionSecret: process.env.SESSION_SECRET || 'dev-secret',
@@ -73,10 +77,8 @@ export const config = {
   telegramProxyUrl: process.env.TELEGRAM_PROXY_URL || '',
   /** HTTP proxy for Bot API (api.telegram.org) fetch, e.g. http://xray:1081 (empty = direct). */
   telegramHttpProxyUrl: process.env.TELEGRAM_HTTP_PROXY_URL || '',
-  /** Use getUpdates long polling instead of webhook (when inbound from Telegram is blocked). */
-  telegramPolling: ['1', 'true', 'yes'].includes(
-    String(process.env.TELEGRAM_POLLING || '').trim().toLowerCase()
-  ),
+  /** Bot API inbound is getUpdates; webhook from Telegram is blocked on this host. */
+  telegramPolling: true,
   /** User-bot dialog reconcile interval (ms). Discovery + auto-invite trigger. */
   telegramReconcileIntervalMs: parseInt(process.env.TELEGRAM_RECONCILE_INTERVAL_MS || '30000', 10),
   teamAppBaseUrl: process.env.TEAM_APP_BASE_URL || '',

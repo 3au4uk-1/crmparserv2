@@ -859,6 +859,47 @@ export function useBulkResyncJob(jobId, { enabled = true } = {}) {
   });
 }
 
+function isDecorMkScanJobRunning(status) {
+  return status === 'queued' || status === 'running';
+}
+
+export function fetchDecorMkScanPreview({ from, to }) {
+  return api.get('/deals/decor-mk-scan/preview', { params: { from, to } }).then((r) => r.data);
+}
+
+export function useStartDecorMkScan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ from, to }) => api.post('/deals/decor-mk-scan', { from, to }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['decor-mk-scan-active-job'] });
+    },
+  });
+}
+
+export function useActiveDecorMkScanJob() {
+  return useQuery({
+    queryKey: ['decor-mk-scan-active-job'],
+    queryFn: () => api.get('/deals/decor-mk-scan/jobs/active').then((r) => r.data),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return isDecorMkScanJobRunning(status) ? 2000 : false;
+    },
+  });
+}
+
+export function useDecorMkScanJob(jobId, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: ['decor-mk-scan-job', jobId],
+    queryFn: () => api.get(`/deals/decor-mk-scan/jobs/${jobId}`).then((r) => r.data),
+    enabled: enabled && !!jobId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return isDecorMkScanJobRunning(status) ? 2000 : false;
+    },
+  });
+}
+
 function isProductStreamBackfillJobRunning(status) {
   return status === 'queued' || status === 'running';
 }
@@ -1067,6 +1108,63 @@ export function useSaveTelegramMentionForward() {
   return useMutation({
     mutationFn: (body) => api.put('/telegram/mention-forward', body).then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-mention-forward'] }),
+  });
+}
+
+export function useTelegramBotChats(activeOnly = true, queryOptions = {}) {
+  return useQuery({
+    queryKey: ['telegram-bot-chats', activeOnly],
+    queryFn: () =>
+      api
+        .get('/telegram/bot-chats', { params: { active: activeOnly ? '1' : '0' } })
+        .then((r) => r.data),
+    ...queryOptions,
+  });
+}
+
+export function useTelegramBotTopics(chatId) {
+  return useQuery({
+    queryKey: ['telegram-bot-topics', chatId],
+    queryFn: () =>
+      api.get(`/telegram/bot-chats/${encodeURIComponent(chatId)}/topics`).then((r) => r.data),
+    enabled: Boolean(chatId),
+  });
+}
+
+export function useAddTelegramBotChat() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => api.post('/telegram/bot-chats', body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-bot-chats'] }),
+  });
+}
+
+export function useAddTelegramBotTopic() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ chatId, threadId, name }) =>
+      api
+        .post(`/telegram/bot-chats/${encodeURIComponent(chatId)}/topics`, { threadId, name })
+        .then((r) => r.data),
+    onSuccess: (_data, { chatId }) => {
+      qc.invalidateQueries({ queryKey: ['telegram-bot-topics', chatId] });
+    },
+  });
+}
+
+export function useTelegramWorkRequestSlots() {
+  return useQuery({
+    queryKey: ['telegram-work-request-slots'],
+    queryFn: () => api.get('/telegram/work-request-slots').then((r) => r.data),
+  });
+}
+
+export function useSaveTelegramWorkRequestSlots() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (slots) =>
+      api.put('/telegram/work-request-slots', { slots }).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['telegram-work-request-slots'] }),
   });
 }
 

@@ -30,6 +30,24 @@ function openDb() {
       last_seen_at TEXT NOT NULL,
       PRIMARY KEY (chat_id, thread_id)
     );
+    CREATE TABLE telegram_bot_chats (
+      chat_id TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      type TEXT NOT NULL DEFAULT '',
+      is_forum INTEGER NOT NULL DEFAULT 0,
+      username TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      source TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL
+    );
+    CREATE TABLE telegram_bot_topics (
+      chat_id TEXT NOT NULL,
+      thread_id INTEGER NOT NULL,
+      name TEXT,
+      source TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      PRIMARY KEY (chat_id, thread_id)
+    );
   `);
   return db;
 }

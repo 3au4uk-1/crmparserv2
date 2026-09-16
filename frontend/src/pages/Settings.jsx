@@ -37,6 +37,10 @@ import {
   useActiveBulkResyncJob,
   useBulkResyncJob,
   fetchBulkResyncPreview,
+  useStartDecorMkScan,
+  useActiveDecorMkScanJob,
+  useDecorMkScanJob,
+  fetchDecorMkScanPreview,
   useStartProductStreamBackfill,
   useActiveProductStreamBackfillJob,
   useProductStreamBackfillJob,
@@ -301,6 +305,139 @@ function ProductStreamBackfillPanel() {
       </p>
       <button type="button" onClick={onStartBackfill} disabled={running} className="btn-secondary">
         {running ? 'Обновление потоков выполняется…' : 'Вернуть потоки на все синхронизированные сделки'}
+      </button>
+
+      {(jobId || activeJob?.jobId) && (
+        <div className="mt-4 space-y-1 text-sm text-ink-muted">
+          <p>
+            Статус: <span className="font-medium text-ink">{status || 'unknown'}</span>
+          </p>
+          <p>
+            Прогресс:{' '}
+            <span className="font-medium tabular-nums text-ink">
+              {details.dealsDone ?? 0} / {details.dealsTotal ?? 0}
+            </span>
+          </p>
+          <p>
+            Обновлено: <span className="font-medium tabular-nums text-ink">{details.dealsUpdated ?? 0}</span>
+            {' · '}
+            Ошибок: <span className="font-medium tabular-nums text-ink">{details.dealsFailed ?? 0}</span>
+          </p>
+          {Array.isArray(details.errors) && details.errors.length > 0 && (
+            <ul className="mt-2 text-xs text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md space-y-1">
+              {details.errors.map((entry) => (
+                <li key={`${entry.dealId}-${entry.error}`}>
+                  Сделка #{entry.dealId}: {entry.error}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {startError && (
+        <p className="mt-3 text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md">{startError}</p>
+      )}
+      {jobError && (
+        <p className="mt-3 text-sm text-pastel-red-text bg-pastel-red-bg px-3 py-2 rounded-md">
+          {jobError.response?.data?.error || jobError.message || 'Не удалось получить статус задачи'}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function DecorMkScanPanel() {
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [jobId, setJobId] = useState('');
+  const [startError, setStartError] = useState('');
+
+  const startDecorMkScan = useStartDecorMkScan();
+  const { data: activeJob } = useActiveDecorMkScanJob();
+  const { data: job, error: jobError } = useDecorMkScanJob(jobId, { enabled: !!jobId });
+
+  useEffect(() => {
+    if (!activeJob?.jobId || jobId) return;
+    setJobId(activeJob.jobId);
+  }, [activeJob, jobId]);
+
+  const status = job?.status || activeJob?.status;
+  const running = startDecorMkScan.isPending || isBulkResyncRunning(status);
+  const details = job || activeJob || {};
+
+  async function onStartDecorMkScan() {
+    setStartError('');
+    if (!from || !to) {
+      setStartError('Укажите диапазон дат загрузки');
+      return;
+    }
+    try {
+      const preview = await fetchDecorMkScanPreview({ from, to });
+      const count = preview?.count ?? 0;
+      if (count === 0) {
+        setStartError('В выбранном диапазоне нет сделок с совпадением декора или МК');
+        return;
+      }
+      const confirmed = window.confirm(
+        `${count} сделок с load_date с ${from} по ${to}. Позиции декора и МК будут синхронизированы в Twenty на доску «МК и Декор». Продолжить?`,
+      );
+      if (!confirmed) return;
+
+      startDecorMkScan.mutate(
+        { from, to },
+        {
+          onSuccess: (data) => {
+            if (data?.jobId) setJobId(String(data.jobId));
+          },
+          onError: (err) => {
+            if (err.response?.status === 409) {
+              setStartError(
+                err.response?.data?.error || 'Проверка ключевых слов декора и МК уже выполняется',
+              );
+              return;
+            }
+            setStartError(
+              err.response?.data?.error || err.message || 'Не удалось запустить проверку',
+            );
+          },
+        },
+      );
+    } catch (err) {
+      setStartError(err.response?.data?.error || err.message || 'Не удалось получить количество сделок');
+    }
+  }
+
+  return (
+    <div className="mt-6 pt-6 border-t border-border">
+      <h4 className="text-sm font-semibold text-ink mb-1">Проверить ключевые слова декора и МК</h4>
+      <p className="text-xs text-ink-muted mb-3 max-w-xl leading-relaxed">
+        Проходит сделки с датой загрузки в диапазоне и синхронизирует позиции, совпавшие с ключевыми словами декора или МК, на доску «МК и Декор». Сделки брендинга и парсинг не требуются.
+      </p>
+      <div className="flex flex-wrap items-end gap-3 mb-3">
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-xs font-medium text-ink-muted">С</span>
+          <input
+            type="date"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            className="input-field w-auto"
+            disabled={running}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-xs font-medium text-ink-muted">По</span>
+          <input
+            type="date"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            className="input-field w-auto"
+            disabled={running}
+          />
+        </label>
+      </div>
+      <button type="button" onClick={onStartDecorMkScan} disabled={running} className="btn-secondary">
+        {running ? 'Проверка выполняется…' : 'Проверить сделки в диапазоне'}
       </button>
 
       {(jobId || activeJob?.jobId) && (
@@ -1460,6 +1597,7 @@ export default function Settings() {
               </div>
               <BulkResyncPanel />
               <ProductStreamBackfillPanel />
+              <DecorMkScanPanel />
               <RestoreMissingTwentyPanel />
             </div>
           </Section>
