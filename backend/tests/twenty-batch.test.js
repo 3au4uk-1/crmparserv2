@@ -2,7 +2,6 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   chunk,
   TWENTY_BATCH_SIZE,
-  TWENTY_ALIAS_UPDATE_MAX,
   createDealLineItemsBatch,
   deleteDealLineItemsBatch,
   upsertDealLineItemsBatch,
@@ -77,12 +76,12 @@ describe('upsertDealLineItemsBatch', () => {
     expect(query).not.toMatch(/updateDealLineItems\(/);
   });
 
-  it('falls back to at most 20 aliased updates on schema error', async () => {
+  it('falls back to one updateDealLineItem per request on schema error', async () => {
     const gql = vi.fn()
       .mockRejectedValueOnce(new Error('Cannot query field upsertDealLineItems'))
       .mockResolvedValue({
         status: 200,
-        data: { data: { u0: { id: '1' }, u1: { id: '2' } } },
+        data: { data: { updateDealLineItem: { id: 'ok' } } },
       });
     await upsertDealLineItemsBatch({
       gql,
@@ -96,9 +95,14 @@ describe('upsertDealLineItemsBatch', () => {
       assertGqlSuccess: () => {},
       allowAliasFallback: true,
     });
-    const aliasQuery = gql.mock.calls[1][2];
-    expect((aliasQuery.match(/updateDealLineItem/g) || []).length).toBe(2);
-    expect((aliasQuery.match(/updateDealLineItem/g) || []).length).toBeLessThanOrEqual(TWENTY_ALIAS_UPDATE_MAX);
+    expect(gql).toHaveBeenCalledTimes(3);
+    const updateQueries = gql.mock.calls.slice(1).map((c) => c[2]);
+    for (const query of updateQueries) {
+      expect(query).toMatch(/updateDealLineItem\(/);
+      expect((query.match(/updateDealLineItem/g) || []).length).toBe(1);
+    }
+    expect(gql.mock.calls[1][3]).toEqual({ id: '1', data: { kolichestvo: 1 } });
+    expect(gql.mock.calls[2][3]).toEqual({ id: '2', data: { kolichestvo: 2 } });
   });
 });
 

@@ -1,5 +1,4 @@
 export const TWENTY_BATCH_SIZE = 60;
-export const TWENTY_ALIAS_UPDATE_MAX = 20;
 
 export function chunk(items, size = TWENTY_BATCH_SIZE) {
   const out = [];
@@ -70,18 +69,21 @@ async function upsertOnce({ gql, apiUrl, apiToken, part, assertHttpSuccess, asse
   return resp;
 }
 
-async function aliasedUpdates({ gql, apiUrl, apiToken, rows, assertHttpSuccess, assertGqlSuccess }) {
-  for (const part of chunk(rows, TWENTY_ALIAS_UPDATE_MAX)) {
-    const fields = part.map((row, i) => (
-      `u${i}: updateDealLineItem(id: $id${i}, data: $data${i}) { id }`
-    )).join('\n');
-    const varDefs = part.map((_, i) => `$id${i}: ID!, $data${i}: DealLineItemUpdateInput!`).join(', ');
-    const variables = {};
-    part.forEach((row, i) => {
-      variables[`id${i}`] = row.id;
-      variables[`data${i}`] = row.data;
-    });
-    const resp = await gql(apiUrl, apiToken, `mutation AliasedUpdates(${varDefs}) { ${fields} }`, variables);
+/**
+ * Twenty DirectExecution forbids duplicate root resolver *names* even with
+ * GraphQL aliases (`u0: updateDealLineItem` + `u1: updateDealLineItem` →
+ * "Duplicate root resolver"). Fallback must be one update per HTTP document.
+ */
+async function sequentialUpdates({ gql, apiUrl, apiToken, rows, assertHttpSuccess, assertGqlSuccess }) {
+  for (const row of rows) {
+    const resp = await gql(
+      apiUrl,
+      apiToken,
+      `mutation UpdateDealLineItem($id: ID!, $data: DealLineItemUpdateInput!) {
+        updateDealLineItem(id: $id, data: $data) { id }
+      }`,
+      { id: row.id, data: row.data },
+    );
     assertHttpSuccess(resp, apiUrl);
     assertGqlSuccess(resp, 'Failed to update deal line items in Twenty');
   }
@@ -94,7 +96,7 @@ export async function upsertDealLineItemsBatch(args) {
       await upsertOnce({ ...args, part });
     } catch (err) {
       if (!allowAliasFallback || !isSchemaBatchError(err)) throw err;
-      await aliasedUpdates({ ...args, rows: part });
+      await sequentialUpdates({ ...args, rows: part });
     }
   }
 }
