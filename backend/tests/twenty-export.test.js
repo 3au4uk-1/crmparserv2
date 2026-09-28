@@ -766,7 +766,50 @@ describe('buildRowsFromLineItems expenses', () => {
     expect(rows.map((row) => row.positionName)).toEqual(['A', 'B']);
     expect(rows[0].rashodItogo).toBe(50);
     expect(rows[1].rashodItogo).toBeNull();
-    expect(rows[0].amountDeal).toBe(12);
+    expect(rows[0].amountDeal).toBe(2);
+    expect(rows[1].amountDeal).toBeNull();
+  });
+
+  it('sets the deal amount to the sum of branding lines, ignoring decor in the opportunity total', () => {
+    const opportunity = {
+      id: 'same',
+      name: 'Заказ',
+      closeDate: '2026-06-04',
+      stage: 'NOVYY',
+      amount: { amountMicros: 1_000_000_000 },
+    };
+    const rows = buildRowsFromLineItems(
+      [
+        {
+          name: 'Стикер',
+          stage: 'NOVYY',
+          productStream: ['BRANDING'],
+          kolichestvo: 1,
+          amount: { amountMicros: 50_000_000 },
+          opportunity,
+        },
+        {
+          name: 'Витрина',
+          stage: 'NOVYY',
+          productStream: ['DECOR'],
+          kolichestvo: 1,
+          amount: { amountMicros: 750_000_000 },
+          opportunity,
+        },
+        {
+          name: 'Баннер',
+          stage: 'NOVYY',
+          productStream: ['BRANDING'],
+          kolichestvo: 2,
+          amount: { amountMicros: 100_000_000 },
+          opportunity,
+        },
+      ],
+      { from: '2026-06-01', to: '2026-06-30', includeCancelled: false },
+    );
+
+    expect(rows.map((row) => row.positionName)).toEqual(['Баннер', 'Стикер']);
+    expect(rows[0].amountDeal).toBe(250);
     expect(rows[1].amountDeal).toBeNull();
   });
 });

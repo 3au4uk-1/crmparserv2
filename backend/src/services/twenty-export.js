@@ -141,6 +141,33 @@ function clearDealExpenses(row) {
   return next;
 }
 
+function dealRowKey(row, index) {
+  return row.opportunityId == null ? `__row_${index}` : row.opportunityId;
+}
+
+/** Deal total is the sum of exported branding line sums, not opportunity.amount. */
+export function applyBrandingDealAmounts(rows) {
+  const totals = new Map();
+  const seen = new Set();
+  rows.forEach((row, index) => {
+    const key = dealRowKey(row, index);
+    if (!seen.has(key)) {
+      seen.add(key);
+      totals.set(key, null);
+    }
+    if (row.lineSum == null || !Number.isFinite(row.lineSum)) return;
+    const current = totals.get(key);
+    totals.set(key, (current ?? 0) + row.lineSum);
+  });
+
+  return rows.map((row, index) => {
+    const total = totals.get(dealRowKey(row, index));
+    const amountDeal =
+      total == null ? null : Math.round(total * 1_000_000) / 1_000_000;
+    return { ...row, amountDeal };
+  });
+}
+
 export function attachDealExpensesOnce(rows) {
   const seen = new Set();
   return rows.map((row, index) => {
@@ -346,7 +373,7 @@ export function buildRowsFromLineItems(lineItems, options) {
     const row = mapLineItemToRow(lineItem, options);
     if (row) rows.push(row);
   }
-  return attachDealExpensesOnce(sortExportRows(rows));
+  return attachDealExpensesOnce(applyBrandingDealAmounts(sortExportRows(rows)));
 }
 
 export async function runTwentyExport(
