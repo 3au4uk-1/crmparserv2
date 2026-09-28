@@ -148,7 +148,7 @@ export default function ExportTwenty() {
     <div>
       <PageHeader
         title="Выгрузка Twenty"
-        description="Выгрузка заказов из Twenty CRM в Excel за выбранный период"
+        description="Выгрузка брендинговых позиций из Twenty CRM в Excel за выбранный период"
       />
 
       <section className="surface p-5 md:p-6 mb-6" aria-labelledby="export-twenty-form-heading">
@@ -157,7 +157,7 @@ export default function ExportTwenty() {
             Параметры выгрузки
           </h2>
           <p className="text-sm text-ink-muted mt-1 max-w-2xl">
-            Выберите диапазон дат, колонки и укажите, нужно ли включить отменённые заказы.
+            В файл попадают только позиции брендинга. Декор и МК не выгружаются. Выберите диапазон дат, колонки и укажите, нужно ли включить отменённые заказы.
           </p>
         </div>
 

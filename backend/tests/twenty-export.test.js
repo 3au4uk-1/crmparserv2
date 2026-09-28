@@ -86,6 +86,7 @@ describe('mapLineItemToRow', () => {
   const base = {
     name: 'Баннер',
     stage: 'NOVYY',
+    productStream: ['BRANDING'],
     kommentariy: 'ок',
     kommentariyDlyaPechati: null,
     kolichestvo: 2,
@@ -178,6 +179,30 @@ describe('mapLineItemToRow', () => {
         restorationList: [],
       }),
     ).not.toBeNull();
+  });
+
+  it('keeps branding and branding mixed with decor', () => {
+    expect(
+      mapLineItemToRow(
+        { ...base, productStream: 'BRANDING' },
+        { from: '2026-06-01', to: '2026-06-30', includeCancelled: false },
+      ),
+    ).not.toBeNull();
+    expect(
+      mapLineItemToRow(
+        { ...base, productStream: ['DECOR', 'BRANDING'] },
+        { from: '2026-06-01', to: '2026-06-30', includeCancelled: false },
+      ),
+    ).not.toBeNull();
+  });
+
+  it('skips decor, mk, and items without a branding stream', () => {
+    const range = { from: '2026-06-01', to: '2026-06-30', includeCancelled: false };
+    expect(mapLineItemToRow({ ...base, productStream: ['DECOR'] }, range)).toBeNull();
+    expect(mapLineItemToRow({ ...base, productStream: ['MK'] }, range)).toBeNull();
+    expect(mapLineItemToRow({ ...base, productStream: ['DECOR', 'MK'] }, range)).toBeNull();
+    expect(mapLineItemToRow({ ...base, productStream: null }, range)).toBeNull();
+    expect(mapLineItemToRow({ ...base, productStream: [] }, range)).toBeNull();
   });
 
   it('returns null lineSum when quantity missing', () => {
@@ -667,6 +692,7 @@ describe('fetchAllDealLineItems', () => {
     expect(query).toContain('rashodLogistika');
     expect(query).toContain('rashodVyezdnayaKomanda');
     expect(query).toContain('rashodBeznal');
+    expect(query).toContain('productStream');
     expect(query).not.toContain('rashodSyncedAt');
     expect(query).toMatch(/opportunity\s*\{[\s\S]*amount\s*\{\s*amountMicros/);
   });
@@ -679,6 +705,7 @@ describe('buildRowsFromLineItems', () => {
         {
           name: 'B',
           stage: 'NOVYY',
+          productStream: ['BRANDING'],
           kolichestvo: 1,
           amount: { amountMicros: 1_000_000 },
           opportunity: { name: 'Z', closeDate: '2026-06-02', stage: 'NOVYY' },
@@ -686,6 +713,7 @@ describe('buildRowsFromLineItems', () => {
         {
           name: 'A',
           stage: 'NOVYY',
+          productStream: ['BRANDING'],
           kolichestvo: 1,
           amount: { amountMicros: 1_000_000 },
           opportunity: { name: 'Z', closeDate: '2026-06-01', stage: 'NOVYY' },
@@ -705,6 +733,7 @@ describe('buildRowsFromLineItems expenses', () => {
         {
           name: 'B',
           stage: 'NOVYY',
+          productStream: ['BRANDING'],
           kolichestvo: 1,
           amount: { amountMicros: 1_000_000 },
           opportunity: {
@@ -719,6 +748,7 @@ describe('buildRowsFromLineItems expenses', () => {
         {
           name: 'A',
           stage: 'NOVYY',
+          productStream: ['BRANDING'],
           kolichestvo: 1,
           amount: { amountMicros: 1_000_000 },
           opportunity: {
@@ -861,6 +891,7 @@ describe('runTwentyExport', () => {
     const lineItem = {
       name: 'Баннер',
       stage: 'NOVYY',
+      productStream: ['BRANDING'],
       kolichestvo: 1,
       amount: { amountMicros: 1_000_000 },
       opportunity: { name: 'Test', closeDate: '2026-06-04', stage: 'NOVYY' },

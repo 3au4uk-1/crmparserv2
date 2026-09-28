@@ -11,6 +11,7 @@ import { requireTwentyConfig } from './twenty-config.js';
 import { getExportJob, setExportJobFile, updateExportJob } from './export-jobs.js';
 import { EXPENSE_FIELDS } from './expense-field-names.js';
 import { isRestorationItem, loadRestorationList } from './restoration.js';
+import { coerceProductStreams } from './product-stream.js';
 import { getDb } from '../db/connection.js';
 
 const STAGE_LABEL_BY_VALUE = Object.fromEntries(
@@ -89,6 +90,10 @@ export function mapLineItemToRow(lineItem, {
   includeRestoration = false,
   restorationList = [],
 }) {
+  if (!coerceProductStreams(lineItem?.productStream).includes('BRANDING')) {
+    return null;
+  }
+
   const opportunity = lineItem?.opportunity ?? {};
   const date = resolveEffectiveDate(opportunity);
   if (!date) return null;
@@ -248,6 +253,7 @@ const LINE_ITEM_EXPORT_FIELDS = `
   id
   name
   stage
+  productStream
   kommentariy
   ${PRINT_COMMENT_FIELD}
   kolichestvo
