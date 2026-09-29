@@ -168,6 +168,11 @@ export function buildOpportunityInput(deal, items, options = {}) {
     input.loadDate = `${deal.load_date}T${time.padStart(5, '0')}:00+03:00`;
   }
 
+  if (deal.data_source === 'tony') {
+    const address = String(deal.address ?? '').trim();
+    if (address) input.address = address;
+  }
+
   if (deal.payment_amount != null && deal.payment_amount > 0) {
     input[PAYMENT_FIELDS.amount] = {
       amountMicros: Math.round(deal.payment_amount * 1_000_000),
@@ -227,6 +232,9 @@ export function opportunityFieldsEqual(existing, next) {
   }
   if (Object.prototype.hasOwnProperty.call(next, PAYMENT_FIELDS.status)) {
     if ((existing[PAYMENT_FIELDS.status] || null) !== (next[PAYMENT_FIELDS.status] || null)) return false;
+  }
+  if (Object.prototype.hasOwnProperty.call(next, 'address')) {
+    if ((existing.address || '') !== (next.address || '')) return false;
   }
   return true;
 }

@@ -61,6 +61,21 @@ describe('opportunityFieldsEqual', () => {
     }, next)).toBe(true);
   });
 
+  it('detects an address change only when next includes address', () => {
+    expect(opportunityFieldsEqual(
+      { ...next, address: 'Старый' },
+      { ...next, address: 'Тверская 1' },
+    )).toBe(false);
+    expect(opportunityFieldsEqual(
+      { ...next, address: 'Тверская 1' },
+      { ...next, address: 'Тверская 1' },
+    )).toBe(true);
+    expect(opportunityFieldsEqual(
+      { ...next, address: 'Оставить' },
+      next,
+    )).toBe(true);
+  });
+
   it('treats offset closeDate and UTC instant as equal', () => {
     expect(opportunityFieldsEqual({
       ...next,

@@ -131,6 +131,30 @@ describe('buildOpportunityInput', () => {
     expect(input.loadDate).toBeUndefined();
   });
 
+  it('writes a trimmed Tony address and overwrites whatever Twenty had', () => {
+    const input = buildOpportunityInput(
+      { ...deal, data_source: 'tony', address: '  Тверская 1  ' },
+      items,
+      { includeStage: false },
+    );
+    expect(input.address).toBe('Тверская 1');
+  });
+
+  it('omits address when Tony sends blank or the deal is not Tony', () => {
+    const blank = buildOpportunityInput(
+      { ...deal, data_source: 'tony', address: '   ' },
+      items,
+      { includeStage: false },
+    );
+    const calendar = buildOpportunityInput(
+      { ...deal, data_source: 'calendar', address: 'Адрес календаря' },
+      items,
+      { includeStage: false },
+    );
+    expect(blank.address).toBeUndefined();
+    expect(calendar.address).toBeUndefined();
+  });
+
   it('includes payment fields when deal has payments', () => {
     const input = buildOpportunityInput(
       { title: 'T', crm_event_id: 'e1', payment_amount: 235752, payment_status: 'PREDOPLATA' },

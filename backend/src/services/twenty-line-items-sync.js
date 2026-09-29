@@ -182,6 +182,7 @@ export async function fetchOpportunityAndLineItems(
           node {
             id name companyId pointOfContactId closeDate
             arrivalTime readyTime workTime dismantleTime loadDate
+            address
             amount { amountMicros currencyCode }
             summaPostupleniy { amountMicros currencyCode }
             statusOplaty
