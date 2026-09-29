@@ -1,6 +1,6 @@
 const ADDRESS_QUERY = `query OpportunityAddress($id: ID!) {
   opportunities(filter: { id: { eq: $id } }, first: 1) {
-    edges { node { id address } }
+    edges { node { id clientAddress } }
   }
 }`;
 
@@ -44,12 +44,12 @@ export async function runTonyAddressBackfill({
       const read = await gql(apiUrl, apiToken, ADDRESS_QUERY, { id: row.twentyId });
       assertHttpSuccess(read, apiUrl);
       assertGqlSuccess(read, 'Failed to read opportunity address');
-      const current = String(read.data?.data?.opportunities?.edges?.[0]?.node?.address ?? '').trim();
+      const current = String(read.data?.data?.opportunities?.edges?.[0]?.node?.clientAddress ?? '').trim();
       if (current === row.address) {
         result.skipped += 1;
         continue;
       }
-      const variables = { id: row.twentyId, input: { address: row.address } };
+      const variables = { id: row.twentyId, input: { clientAddress: row.address } };
       const write = await gql(apiUrl, apiToken, UPDATE_ADDRESS, variables);
       assertHttpSuccess(write, apiUrl);
       assertGqlSuccess(write, 'Failed to update opportunity address');

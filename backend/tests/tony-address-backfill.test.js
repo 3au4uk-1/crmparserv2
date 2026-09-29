@@ -27,7 +27,7 @@ describe('runTonyAddressBackfill', () => {
     const updates = [];
     const gql = vi.fn(async (_url, _token, query, variables) => {
       if (query.includes('query OpportunityAddress')) {
-        return { data: { data: { opportunities: { edges: [{ node: { address: current[variables.id] } }] } } } };
+        return { data: { data: { opportunities: { edges: [{ node: { clientAddress: current[variables.id] } }] } } } };
       }
       if (variables.id === 'bad') throw new Error('twenty rejected bad');
       updates.push(variables);
@@ -41,7 +41,7 @@ describe('runTonyAddressBackfill', () => {
       assertHttpSuccess: () => {},
       assertGqlSuccess: () => {},
     });
-    expect(updates).toEqual([{ id: 'change', input: { address: 'Новый' } }]);
+    expect(updates).toEqual([{ id: 'change', input: { clientAddress: 'Новый' } }]);
     expect(result).toEqual({
       updated: 1,
       skipped: 1,

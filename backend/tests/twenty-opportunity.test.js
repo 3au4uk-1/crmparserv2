@@ -137,7 +137,7 @@ describe('buildOpportunityInput', () => {
       items,
       { includeStage: false },
     );
-    expect(input.address).toBe('Тверская 1');
+    expect(input.clientAddress).toBe('Тверская 1');
   });
 
   it('omits address when Tony sends blank or the deal is not Tony', () => {
@@ -151,8 +151,8 @@ describe('buildOpportunityInput', () => {
       items,
       { includeStage: false },
     );
-    expect(blank.address).toBeUndefined();
-    expect(calendar.address).toBeUndefined();
+    expect(blank.clientAddress).toBeUndefined();
+    expect(calendar.clientAddress).toBeUndefined();
   });
 
   it('includes payment fields when deal has payments', () => {

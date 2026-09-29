@@ -170,7 +170,7 @@ export function buildOpportunityInput(deal, items, options = {}) {
 
   if (deal.data_source === 'tony') {
     const address = String(deal.address ?? '').trim();
-    if (address) input.address = address;
+    if (address) input.clientAddress = address;
   }
 
   if (deal.payment_amount != null && deal.payment_amount > 0) {
@@ -233,8 +233,8 @@ export function opportunityFieldsEqual(existing, next) {
   if (Object.prototype.hasOwnProperty.call(next, PAYMENT_FIELDS.status)) {
     if ((existing[PAYMENT_FIELDS.status] || null) !== (next[PAYMENT_FIELDS.status] || null)) return false;
   }
-  if (Object.prototype.hasOwnProperty.call(next, 'address')) {
-    if ((existing.address || '') !== (next.address || '')) return false;
+  if (Object.prototype.hasOwnProperty.call(next, 'clientAddress')) {
+    if ((existing.clientAddress || '') !== (next.clientAddress || '')) return false;
   }
   return true;
 }

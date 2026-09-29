@@ -63,15 +63,15 @@ describe('opportunityFieldsEqual', () => {
 
   it('detects an address change only when next includes address', () => {
     expect(opportunityFieldsEqual(
-      { ...next, address: 'Старый' },
-      { ...next, address: 'Тверская 1' },
+      { ...next, clientAddress: 'Старый' },
+      { ...next, clientAddress: 'Тверская 1' },
     )).toBe(false);
     expect(opportunityFieldsEqual(
-      { ...next, address: 'Тверская 1' },
-      { ...next, address: 'Тверская 1' },
+      { ...next, clientAddress: 'Тверская 1' },
+      { ...next, clientAddress: 'Тверская 1' },
     )).toBe(true);
     expect(opportunityFieldsEqual(
-      { ...next, address: 'Оставить' },
+      { ...next, clientAddress: 'Оставить' },
       next,
     )).toBe(true);
   });
