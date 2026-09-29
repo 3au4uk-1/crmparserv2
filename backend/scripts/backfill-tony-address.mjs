@@ -1,7 +1,11 @@
-import { getDb } from '../src/db/connection.js';
+import { getDb, initDb } from '../src/db/connection.js';
+import { migrate } from '../src/db/migrate.js';
 import { gql, assertHttpSuccess, assertGqlSuccess } from '../src/services/twenty-gql.js';
 import { requireTwentyConfig } from '../src/services/twenty-config.js';
 import { runTonyAddressBackfill } from '../src/services/tony-address-backfill.js';
+
+initDb();
+migrate();
 
 const { apiUrl, apiToken } = requireTwentyConfig();
 const result = await runTonyAddressBackfill({

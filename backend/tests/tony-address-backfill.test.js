@@ -48,4 +48,25 @@ describe('runTonyAddressBackfill', () => {
       failed: [{ twentyId: 'bad', message: 'twenty rejected bad' }],
     });
   });
+
+  it('rejects on hard Twenty failures instead of recording them in failed', async () => {
+    const db = {
+      prepare: () => ({
+        all: () => [
+          { twenty_id: 'opp-hard', data_source: 'tony', address: 'Тверская 1' },
+        ],
+      }),
+    };
+    const gql = vi.fn(async () => {
+      throw new Error('Twenty API: unauthorized (401)');
+    });
+    await expect(runTonyAddressBackfill({
+      db,
+      gql,
+      apiUrl: 'http://twenty.test',
+      apiToken: 'token',
+      assertHttpSuccess: () => {},
+      assertGqlSuccess: () => {},
+    })).rejects.toThrow('Twenty API: unauthorized (401)');
+  });
 });
