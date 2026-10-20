@@ -167,6 +167,7 @@ vi.mock('../src/services/twenty-sync-log.js', async (importOriginal) => {
 
 import * as dbMock from '../src/db/connection.js';
 import { syncDealToTwenty, cancelDealInTwenty, restoreDealInTwenty } from '../src/services/twenty-sync.js';
+import { setDealLineItemUpsertSupport } from '../src/services/twenty-batch.js';
 
 function gqlOk(data) {
   return { status: 200, data: { data } };
@@ -178,6 +179,7 @@ describe('syncDealToTwenty', () => {
     dbMock.__reset();
     runPrintSheetRefreshMock.mockReset();
     logTwentyStepMock.mockReset();
+    setDealLineItemUpsertSupport(true);
   });
 
   it('updates opportunity when twenty_id exists', async () => {

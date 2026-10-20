@@ -66,12 +66,14 @@ function parseItemsTable(html) {
     }
 
     const [name, priceRaw, quantity, discountRaw] = cells;
-    items.push({
+    const item = {
       name,
       price: parsePrice(priceRaw),
       quantity,
       discount: parsePrice(discountRaw) ?? 0,
-    });
+    };
+    if ($(row).attr('data-free-entry') === '1') item.isFreeEntry = true;
+    items.push(item);
   });
 
   return items;

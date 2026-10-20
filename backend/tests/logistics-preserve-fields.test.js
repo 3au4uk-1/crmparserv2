@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import { migrate } from '../src/db/migrate.js';
 import { applyEvent } from '../src/services/parser.js';
@@ -158,6 +158,29 @@ describe('logistics re-parse keeps fields Tony cannot provide', () => {
     expect(row.payment_amount).toBe(235752);
     expect(row.payment_status).toBe('PREDOPLATA');
     expect(row.address).toBe('адрес из заказа');
+  });
+
+  it('keeps stored line items when the act has no positions', async () => {
+    insertStoredDeal('calendar');
+    db.prepare(`
+      INSERT INTO deal_items (deal_id, name, price, quantity, discount, classification)
+      VALUES (1, 'Брендинг сукна на игровой стол', 16500, '1', 0, 'keyword_match')
+    `).run();
+    const event = toCalendarEvent(order, ...window);
+    const descHtml = buildDescriptionHtml(order, []);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await applyEvent(db, event, '173157', {
+      bookingNumbers: ['169120'],
+      descHtml,
+      calParsed: parseDealDescription(descHtml),
+      calPayments: null,
+      tonyOrders: new Map(),
+    }, ctx());
+    const names = db.prepare('SELECT name FROM deal_items WHERE deal_id = 1').all().map((row) => row.name);
+    expect(names).toEqual(['Брендинг сукна на игровой стол']);
+    expect(warn.mock.calls.map((call) => call.join(' ')).join('\n')).toMatch(/173157/);
+    expect(warn.mock.calls.map((call) => call.join(' ')).join('\n')).toMatch(/keeping 1 stored line items/);
+    warn.mockRestore();
   });
 
   it('still writes budget, email, and legal entity when the description actually contains them', async () => {

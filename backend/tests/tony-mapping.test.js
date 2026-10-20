@@ -208,6 +208,26 @@ describe('disambiguateDuplicateNames', () => {
   const FREE_ENTRY_NAME =
     'БРЕНДИНГ свободная запись ( КОМЕНТАРИЙ ОБЯЗАТЕЛЕН )';
 
+  it('uses the comment as the name for generic Брендинг rows', () => {
+    const items = buildTonyItems({
+      items: [
+        { name: 'Брендинг', price: 16500, quantity: '1', discount: 0, sum: 16500, comment: 'Брендинг сукна на игровой стол' },
+        { name: 'Брендинг (#2)', price: 160, quantity: '60', discount: 0, sum: 9600, comment: 'Брендированная подарочная фишка' },
+        { name: 'Баннер', price: 10, quantity: '1', discount: 0, sum: 10, comment: 'не имя' },
+      ],
+      dates: {},
+    });
+    expect(items.map((item) => item.name)).toEqual([
+      'Брендинг сукна на игровой стол',
+      'Брендированная подарочная фишка',
+      'Баннер',
+    ]);
+    expect(items[0]).toMatchObject({ comment: '', isFreeEntry: true, quantity: '1', price: 16500 });
+    expect(items[1].isFreeEntry).toBe(true);
+    expect(items[2].isFreeEntry).toBeUndefined();
+    expect(items[2].comment).toBe('не имя');
+  });
+
   it('buildTonyItems disambiguates two free-entry with same comment', () => {
     const items = buildTonyItems({
       items: [

@@ -7,6 +7,10 @@ import {
   releaseParsingLock,
 } from '../services/parsing-lock.js';
 import { getDefaultParseRange, normalizeManualParseRange } from '../utils/crm-dates.js';
+import { cleanupGenericBrandingDuplicates } from '../services/generic-branding-duplicates.js';
+import { requireTwentyConfig } from '../services/twenty-config.js';
+import { assertGqlSuccess, assertHttpSuccess, gql } from '../services/twenty-gql.js';
+import { listLineItemsForOpportunity } from '../services/twenty-line-items-sync.js';
 
 const router = Router();
 
@@ -42,6 +46,25 @@ router.get('/runs', (req, res) => {
   const db = getDb();
   const runs = db.prepare('SELECT * FROM parse_runs ORDER BY started_at DESC LIMIT 50').all();
   res.json(runs);
+});
+
+router.post('/branding-duplicates', async (req, res, next) => {
+  try {
+    const { apiUrl, apiToken } = requireTwentyConfig();
+    const result = await cleanupGenericBrandingDuplicates({
+      db: getDb(),
+      gql,
+      apiUrl,
+      apiToken,
+      assertHttpSuccess,
+      assertGqlSuccess,
+      listLineItems: listLineItemsForOpportunity,
+      deleteDuplicates: req.body?.delete === true,
+    });
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;
