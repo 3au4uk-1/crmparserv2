@@ -33,6 +33,7 @@ import {
 } from './deal-bitrix-links.js';
 import { createPool, withRetry } from './fetch-pool.js';
 import { parseCalendarPayments, paymentContentHash, applyPaymentAggregateToDb, calendarPaymentsProvided } from './payment-parser.js';
+import { PAYMENT_STATUS } from './payment-field-names.js';
 
 /** Empty/missing Tony order should not skip the booking — fall back to calendar write. */
 export function useCalendarFallbackForTonyOrder(order) {
@@ -79,6 +80,7 @@ export function parseDescriptionResponse(data) {
   return {
     descHtml: json?.description || '',
     calPayments: json?.payments || null,
+    paymentStatus: json?.paymentStatus || null,
   };
 }
 
@@ -101,6 +103,27 @@ function persistDealPayments(db, dealId, calPayments, existing, dealsToResync) {
     dealsToResync.push(dealId);
   }
   return true;
+}
+
+const TONY_PAYMENT_STATUSES = new Set(Object.values(PAYMENT_STATUS));
+
+/** Badge status only. Amount, count, and hash stay with payment history. */
+function applyTonyPaymentStatus(db, dealId, paymentStatus, dealsToResync) {
+  if (!paymentStatus || !TONY_PAYMENT_STATUSES.has(paymentStatus)) return false;
+  const row = db.prepare('SELECT payment_status, twenty_id FROM deals WHERE id = ?').get(dealId);
+  if (!row || row.payment_status === paymentStatus) return false;
+  db.prepare(`
+    UPDATE deals SET payment_status = ?, updated_at = datetime('now') WHERE id = ?
+  `).run(paymentStatus, dealId);
+  if (row.twenty_id && !dealsToResync.includes(dealId)) dealsToResync.push(dealId);
+  return true;
+}
+
+function finishUnchangedDeal(db, dealId, calPayments, existing, paymentStatus, dealsToResync, counters) {
+  const paymentsChanged = persistDealPayments(db, dealId, calPayments, existing, dealsToResync);
+  const statusChanged = applyTonyPaymentStatus(db, dealId, paymentStatus, dealsToResync);
+  if (!paymentsChanged && !statusChanged) counters.skippedDeals++;
+  else if (statusChanged) counters.updatedDeals++;
 }
 
 function getSetting(key) {
@@ -135,7 +158,7 @@ export async function fetchEventData(event, eventId, tonyReady) {
     return null;
   }
 
-  const { descHtml, calPayments } = parseDescriptionResponse(descJson);
+  const { descHtml, calPayments, paymentStatus } = parseDescriptionResponse(descJson);
 
   if (!descHtml) return null;
 
@@ -143,7 +166,7 @@ export async function fetchEventData(event, eventId, tonyReady) {
   const tonyOrders = await resolveTonyOrders(tonyReady, bookingNumbers);
   const calParsed = parseDealDescription(descHtml);
 
-  return { bookingNumbers, descHtml, calParsed, calPayments, tonyOrders };
+  return { bookingNumbers, descHtml, calParsed, calPayments, paymentStatus, tonyOrders };
 }
 
 /** Pooled, delay-free variant of resolveTonyOrders for the parallel pipeline. */
@@ -226,13 +249,13 @@ export async function prefetchAll(events, tonyReady, startDate, endDate, run, op
         console.error(`Failed to fetch description for event ${eventId}:`, err.message);
         return;
       }
-      const { descHtml, calPayments } = parseDescriptionResponse(descJson);
+      const { descHtml, calPayments, paymentStatus } = parseDescriptionResponse(descJson);
       if (!descHtml) return;
 
       const tonyOrders = await resolveTonyOrdersPooled(tonyReady, bookingNumbers, run, options);
       const calParsed = parseDealDescription(descHtml);
 
-      map.set(eventId, { bookingNumbers, descHtml, calParsed, calPayments, tonyOrders });
+      map.set(eventId, { bookingNumbers, descHtml, calParsed, calPayments, paymentStatus, tonyOrders });
 
       done++;
       if (done % 25 === 0 || done === total) {
@@ -256,7 +279,7 @@ export function recoverStaleParseRuns(db) {
 }
 
 export async function applyEvent(db, event, eventId, data, ctx) {
-  const { bookingNumbers, descHtml, calParsed, calPayments, tonyOrders } = data;
+  const { bookingNumbers, descHtml, calParsed, calPayments, paymentStatus, tonyOrders } = data;
   const { knownCodes, keywords, llmPrompt, counters, dealsToResync } = ctx;
   const titleInfo = parseDealTitle(event.title || '', knownCodes);
   const plan = planEventReconciliation(db, eventId, bookingNumbers);
@@ -298,9 +321,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           title: event.title,
           paymentAmount: linkPaymentAmount,
         });
-        if (!persistDealPayments(db, existing.id, calPayments, existing, dealsToResync)) {
-          counters.skippedDeals++;
-        }
+        finishUnchangedDeal(db, existing.id, calPayments, existing, paymentStatus, dealsToResync, counters);
         continue;
       }
 
@@ -348,7 +369,8 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           title: event.title,
           paymentAmount: linkPaymentAmount,
         });
-        if (existing.twenty_id) dealsToResync.push(existing.id);
+        if (existing.twenty_id && !dealsToResync.includes(existing.id)) dealsToResync.push(existing.id);
+        applyTonyPaymentStatus(db, existing.id, paymentStatus, dealsToResync);
         counters.updatedDeals++;
       } else {
         const insert = db.prepare(`
@@ -378,6 +400,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           title: event.title,
           paymentAmount: linkPaymentAmount,
         });
+        applyTonyPaymentStatus(db, dealId, paymentStatus, dealsToResync);
         counters.newDeals++;
       }
     } else {
@@ -390,9 +413,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           title: event.title,
           paymentAmount: linkPaymentAmount,
         });
-        if (!persistDealPayments(db, existing.id, calPayments, existing, dealsToResync)) {
-          counters.skippedDeals++;
-        }
+        finishUnchangedDeal(db, existing.id, calPayments, existing, paymentStatus, dealsToResync, counters);
         continue;
       }
 
@@ -404,9 +425,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           title: event.title,
           paymentAmount: linkPaymentAmount,
         });
-        if (!persistDealPayments(db, existing.id, calPayments, existing, dealsToResync)) {
-          counters.skippedDeals++;
-        }
+        finishUnchangedDeal(db, existing.id, calPayments, existing, paymentStatus, dealsToResync, counters);
         continue;
       }
 
@@ -461,7 +480,8 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           title: event.title,
           paymentAmount: linkPaymentAmount,
         });
-        if (existing.twenty_id) dealsToResync.push(existing.id);
+        if (existing.twenty_id && !dealsToResync.includes(existing.id)) dealsToResync.push(existing.id);
+        applyTonyPaymentStatus(db, existing.id, paymentStatus, dealsToResync);
         counters.updatedDeals++;
       } else {
         if (classifiedItems.length === 0) {
@@ -497,6 +517,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           title: event.title,
           paymentAmount: linkPaymentAmount,
         });
+        applyTonyPaymentStatus(db, dealId, paymentStatus, dealsToResync);
         counters.newDeals++;
       }
     }

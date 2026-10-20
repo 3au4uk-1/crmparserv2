@@ -120,6 +120,69 @@ describe('payment-sync', () => {
     expect(deal.payment_status).toBe(PAYMENT_STATUS.PREPAYMENT);
   });
 
+  it('writes statusOplaty from a Tony badge without payment history or an amount', async () => {
+    const { gql } = await import('../src/services/twenty-gql.js');
+    fetchDescription.mockResolvedValue({
+      description: '<p>Статус сделки: В резерве</p>',
+      payments: null,
+      paymentStatus: PAYMENT_STATUS.PAID,
+    });
+    parseDescriptionResponse.mockImplementation((data) => ({
+      descHtml: data?.description || '',
+      calPayments: data?.payments || null,
+      paymentStatus: data?.paymentStatus || null,
+    }));
+    testDb.prepare(`
+      INSERT INTO deals (
+        crm_event_id, deal_key, title, start_date, twenty_id,
+        payment_amount, payment_status, payment_count, payment_hash
+      ) VALUES ('evt-1', 'evt-1#cal', 'Deal A', '2026-07-05', 'tw-1', 235752, 'PREDOPLATA', 2, 'keep')
+    `).run();
+
+    const result = await runPaymentSync({ from: '2026-07-01', to: '2026-07-31' });
+
+    expect(result.dealsUpdatedLocal).toBe(1);
+    expect(result.dealsUpdatedTwenty).toBe(1);
+    expect(gql).toHaveBeenCalledTimes(1);
+    expect(gql.mock.calls[0][3].input).toEqual({ statusOplaty: PAYMENT_STATUS.PAID });
+    expect(gql.mock.calls[0][3].input.summaPostupleniy).toBeUndefined();
+    const deal = testDb.prepare(`
+      SELECT payment_amount, payment_status, payment_count, payment_hash FROM deals WHERE id = 1
+    `).get();
+    expect(deal).toEqual({
+      payment_amount: 235752,
+      payment_status: PAYMENT_STATUS.PAID,
+      payment_count: 2,
+      payment_hash: 'keep',
+    });
+  });
+
+  it('does not push statusOplaty when the badge matches the stored status', async () => {
+    const { gql } = await import('../src/services/twenty-gql.js');
+    fetchDescription.mockResolvedValue({
+      description: '<p></p>',
+      payments: null,
+      paymentStatus: PAYMENT_STATUS.PREPAYMENT,
+    });
+    parseDescriptionResponse.mockImplementation((data) => ({
+      descHtml: data?.description || '',
+      calPayments: data?.payments || null,
+      paymentStatus: data?.paymentStatus || null,
+    }));
+    testDb.prepare(`
+      INSERT INTO deals (
+        crm_event_id, deal_key, title, start_date, twenty_id,
+        payment_amount, payment_status, payment_count, payment_hash
+      ) VALUES ('evt-1', 'evt-1#cal', 'Deal A', '2026-07-05', 'tw-1', 235752, 'PREDOPLATA', 2, 'keep')
+    `).run();
+
+    const result = await runPaymentSync({ from: '2026-07-01', to: '2026-07-31' });
+
+    expect(result.dealsUpdatedLocal).toBe(0);
+    expect(result.dealsUpdatedTwenty).toBe(0);
+    expect(gql).not.toHaveBeenCalled();
+  });
+
   it('does not clear stored payments when the source has no payment history', async () => {
     const { gql } = await import('../src/services/twenty-gql.js');
     fetchDescription.mockResolvedValue({ description: '<p>Статус сделки: В резерве</p>', payments: null });
