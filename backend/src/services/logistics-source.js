@@ -1,7 +1,7 @@
 import * as cheerio from 'cheerio';
 import { config } from '../config.js';
 import { crmOffsetSuffix, toInputDate } from '../utils/crm-dates.js';
-import { dmyToIsoDate } from './tony-mapping.js';
+import { dmyToIsoDate, disambiguateDuplicateNames, normalizeFreeEntryItem } from './tony-mapping.js';
 import { getTonyConfig, isTonyAuthResponse, tonyGet } from './tony-auth.js';
 import { crmFailure } from '../utils/crm-response-log.js';
 
@@ -388,9 +388,24 @@ function parseTonyRows($) {
     const quantity = cleanText(row.find('.orders_custom_edit, input.orders_edit').first().attr('value'));
     const price = cleanText(row.attr('data-price') || row.find('.price_value').attr('value'));
     const discount = cleanText(row.find('.discount_value').attr('value') || '0');
-    items.push({ name, quantity, price, discount });
+    const comment = cleanText(
+      row.find('.custom_text_value, .product_text_value').first().attr('value')
+      || row.attr('data-comment')
+      || '',
+    );
+    items.push({ name, quantity, price, discount, comment });
   });
   return items;
+}
+
+function commentFromCells(cells, used) {
+  for (const cell of cells) {
+    if (!cell || used.has(cell)) continue;
+    if (/^\d+([.,]\d+)?(\s*шт\.?)?$/i.test(cell)) continue;
+    if (/^[\d\s.,%]+$/.test(cell)) continue;
+    return cell;
+  }
+  return '';
 }
 
 /** Position names and quantities from an act (or an orders_edit table, if that markup is present). */
@@ -421,9 +436,25 @@ export function parseActPositions(html) {
       }
       if (price && discount === '0' && /\d/.test(cell)) discount = cell;
     }
-    items.push({ name, quantity, price, discount });
+    items.push({
+      name,
+      quantity,
+      price,
+      discount,
+      comment: commentFromCells(rest, new Set([quantity, price, discount].filter(Boolean))),
+    });
   });
   return items;
+}
+
+/** Same name rule as the old free-entry catalog rows: comment becomes the item name. */
+export function prepareActPositions(positions) {
+  return disambiguateDuplicateNames(
+    (positions || []).map((item) => normalizeFreeEntryItem({
+      ...item,
+      comment: item.comment ?? '',
+    })),
+  );
 }
 
 function describedLine(label, value) {
@@ -448,9 +479,10 @@ export function buildDescriptionHtml(order, positions) {
   for (const warehouse of order.warehouses || []) {
     lines.push(`Склад: ${esc(warehouse)}`);
   }
-  const rows = (positions || []).map((item) => (
-    `<tr><td>${esc(item.name)}</td><td>${esc(item.price || '')}</td><td>${esc(item.quantity || '')}</td><td>${esc(item.discount || '0')}</td></tr>`
-  )).join('');
+  const rows = (positions || []).map((item) => {
+    const freeEntry = item.isFreeEntry ? ' data-free-entry="1"' : '';
+    return `<tr${freeEntry}><td>${esc(item.name)}</td><td>${esc(item.price || '')}</td><td>${esc(item.quantity || '')}</td><td>${esc(item.discount || '0')}</td></tr>`;
+  }).join('');
   return `<p>${lines.join('\n')}</p><table class="table-caption"><tbody>${rows}</tbody></table>`;
 }
 
@@ -530,10 +562,12 @@ export async function fetchLogisticDescription(eventId) {
   if (isTonyAuthResponse(resp) || isTonyAuthResponse({ status: resp.status, headers: resp.headers, data: html })) {
     throw crmFailure('logistics', `Order ${eventId} act is not authorized`, { ...resp, data: html });
   }
-  const positions = parseActPositions(html);
-  const hasTable = /<table\b/i.test(html) || /data-id=/i.test(html);
-  if (!positions.length && !hasTable) {
-    crmFailure('logistics', `Order ${eventId} act had no position table`, { ...resp, data: html });
+  const positions = prepareActPositions(parseActPositions(html));
+  if (!positions.length) {
+    const hasTable = /<table\b/i.test(html) || /data-id=/i.test(html);
+    console.warn(
+      `[logistics] order ${eventId} act has no positions${hasTable ? '' : ' (no position table)'}`,
+    );
   }
   const order = orderCache.get(String(eventId)) || { id: String(eventId), dealStatus: RESERVE_DEAL_STATUS };
   return {

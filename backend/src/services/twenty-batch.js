@@ -1,5 +1,55 @@
 export const TWENTY_BATCH_SIZE = 60;
 
+const LINE_ITEM_UPSERT_CAPABILITY_QUERY = `query DealLineItemWriteCapability {
+  upsertInput: __type(name: "DealLineItemUpsertInput") { name }
+  mutationFields: __type(name: "Mutation") { fields { name } }
+}`;
+
+let cachedUpsertSupport = null;
+let upsertSupportInflight = null;
+
+export function resetDealLineItemUpsertSupport() {
+  cachedUpsertSupport = null;
+  upsertSupportInflight = null;
+}
+
+export function setDealLineItemUpsertSupport(value) {
+  cachedUpsertSupport = value;
+  upsertSupportInflight = null;
+}
+
+export function dealLineItemUpsertSupported(data) {
+  const typeName = data?.upsertInput?.name;
+  const fields = data?.mutationFields?.fields || [];
+  return Boolean(typeName) && fields.some((field) => field?.name === 'upsertDealLineItems');
+}
+
+async function resolveDealLineItemUpsertSupport({
+  gql, apiUrl, apiToken, assertHttpSuccess,
+}) {
+  if (cachedUpsertSupport != null) return cachedUpsertSupport;
+  if (!upsertSupportInflight) {
+    upsertSupportInflight = (async () => {
+      try {
+        const resp = await gql(apiUrl, apiToken, LINE_ITEM_UPSERT_CAPABILITY_QUERY, {});
+        assertHttpSuccess(resp, apiUrl);
+        if (resp.data?.errors?.length) {
+          cachedUpsertSupport = false;
+          return false;
+        }
+        cachedUpsertSupport = dealLineItemUpsertSupported(resp.data?.data);
+        return cachedUpsertSupport;
+      } catch (err) {
+        cachedUpsertSupport = false;
+        return false;
+      } finally {
+        upsertSupportInflight = null;
+      }
+    })();
+  }
+  return upsertSupportInflight;
+}
+
 export function chunk(items, size = TWENTY_BATCH_SIZE) {
   const out = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
@@ -91,11 +141,18 @@ async function sequentialUpdates({ gql, apiUrl, apiToken, rows, assertHttpSucces
 
 export async function upsertDealLineItemsBatch(args) {
   const { allowAliasFallback = true } = args;
+  let supported = await resolveDealLineItemUpsertSupport(args);
   for (const part of chunk(args.rows, TWENTY_BATCH_SIZE)) {
+    if (!supported) {
+      await sequentialUpdates({ ...args, rows: part });
+      continue;
+    }
     try {
       await upsertOnce({ ...args, part });
     } catch (err) {
       if (!allowAliasFallback || !isSchemaBatchError(err)) throw err;
+      supported = false;
+      setDealLineItemUpsertSupport(false);
       await sequentialUpdates({ ...args, rows: part });
     }
   }

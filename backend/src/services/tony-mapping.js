@@ -4,16 +4,25 @@ import { parseQuantityNum } from './twenty-opportunity.js';
 
 const DMY_RE = /^(\d{2})\.(\d{2})\.(\d{4})$/;
 const FREE_ENTRY_RE = /свободная запись/i;
+/** Catalog placeholder «Брендинг» / «Брендинг (#N)»; the real name is the comment. */
+const GENERIC_BRANDING_RE = /^брендинг(?:\s*\(#\d+\))?$/i;
+
+export function isGenericBrandingName(name) {
+  return GENERIC_BRANDING_RE.test(String(name ?? '').trim());
+}
 
 export function normalizeFreeEntryItem(item) {
-  if (!FREE_ENTRY_RE.test(item.name ?? '')) {
-    return item;
+  const trimmedComment = String(item.comment ?? '').trim();
+  if (FREE_ENTRY_RE.test(item.name ?? '')) {
+    if (trimmedComment) {
+      return { ...item, name: trimmedComment, comment: '', isFreeEntry: true };
+    }
+    return { ...item, comment: '', isFreeEntry: true };
   }
-  const trimmedComment = (item.comment ?? '').trim();
-  if (trimmedComment) {
+  if (isGenericBrandingName(item.name) && trimmedComment) {
     return { ...item, name: trimmedComment, comment: '', isFreeEntry: true };
   }
-  return { ...item, comment: '', isFreeEntry: true };
+  return item;
 }
 
 /** "16.06.2026" -> "2026-06-16" (or '' when not parseable). */

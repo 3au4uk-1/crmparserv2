@@ -449,7 +449,13 @@ export async function applyEvent(db, event, eventId, data, ctx) {
           existing.id
         );
         const existingItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(existing.id);
-        replaceDealItemsPreservingOverrides(db, existing.id, classifiedItems, buildOverrideMap(existingItems));
+        if (classifiedItems.length === 0 && existingItems.length > 0) {
+          console.warn(
+            `[logistics] order ${eventId} act has no positions; keeping ${existingItems.length} stored line items`,
+          );
+        } else {
+          replaceDealItemsPreservingOverrides(db, existing.id, classifiedItems, buildOverrideMap(existingItems));
+        }
         attachEventBitrixLink(db, existing.id, {
           leadId: event.leadid,
           title: event.title,
@@ -458,6 +464,9 @@ export async function applyEvent(db, event, eventId, data, ctx) {
         if (existing.twenty_id) dealsToResync.push(existing.id);
         counters.updatedDeals++;
       } else {
+        if (classifiedItems.length === 0) {
+          console.warn(`[logistics] order ${eventId} act has no positions`);
+        }
         const insert = db.prepare(`
               INSERT INTO deals (
                 crm_event_id, deal_key, data_source, crm_lead_id, title, company_code, manager_name,

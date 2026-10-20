@@ -26,6 +26,19 @@ describe('isProtectedLineItemStage', () => {
 });
 
 describe('computeLineItemDiff', () => {
+  it('matches a comment-derived branding name and does not create a generic duplicate', () => {
+    const existing = [
+      { id: 'real', name: 'Брендинг сукна на игровой стол', stage: 'V_PECHATI' },
+      { id: 'dup', name: 'Брендинг', stage: 'NOVYY' },
+    ];
+    const eligible = [{ id: 1, name: 'Брендинг сукна на игровой стол', price: 16500 }];
+    const diff = computeLineItemDiff(existing, eligible);
+    expect(diff.toCreate).toEqual([]);
+    expect(diff.toUpdate).toEqual([]);
+    expect(diff.toDelete).toEqual(['dup']);
+    expect(diff.preserved).toEqual([]);
+  });
+
   it('marks existing names for update and new names for create', () => {
     const existing = [
       { id: 'li-1', name: 'Баннер', stage: null },

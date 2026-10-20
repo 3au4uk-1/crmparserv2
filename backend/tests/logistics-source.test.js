@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { classifyByKeywords } from '../src/services/classifier.js';
 import { parseDealDescription } from '../src/services/html-parser.js';
+import { resolveItemProductStreams } from '../src/services/twenty-items.js';
 import { parseDealTitle } from '../src/services/title-parser.js';
 import { isEventInRange } from '../src/utils/crm-dates.js';
 
@@ -27,6 +29,7 @@ import {
   filterOrdersByBitrixStage,
   normalizeBitrixStageName,
   parseActPositions,
+  prepareActPositions,
   parseLogisticList,
   parseOrderStatusCodes,
   parseReserveStatusCode,
@@ -166,6 +169,68 @@ describe('logistics order source', () => {
     expect(description.payments).toBeNull();
     expect(parseDealDescription(description.description).items).toHaveLength(2);
     expect(tonyGet.mock.calls.at(-1)[0]).toBe('https://crm.apihide.com/orders/orders_act/?id=169120');
+  });
+
+  it('names generic branding positions from the act comment', () => {
+    const html = `
+      <table>
+        <tr data-id="1" data-price="16500">
+          <td><input class="custom_name_value" value="Брендинг"></td>
+          <td><input class="orders_custom_edit" value="1"></td>
+          <td><input class="price_value" value="16500"></td>
+          <td><input class="custom_text_value" value="Брендинг сукна на игровой стол"></td>
+        </tr>
+        <tr data-id="2" data-price="160">
+          <td><a class="item_name_link">Брендинг (#2)</a></td>
+          <td><input class="orders_edit" value="60"></td>
+          <td><input class="price_value" value="160"></td>
+          <td><input class="product_text_value" value="Брендированная подарочная фишка"></td>
+        </tr>
+        <tr data-id="3" data-price="900">
+          <td><a class="item_name_link">Ролл-ап</a></td>
+          <td><input class="orders_edit" value="1"></td>
+          <td><input class="price_value" value="900"></td>
+          <td><input class="custom_text_value" value="не подменять"></td>
+        </tr>
+      </table>
+    `;
+    const positions = prepareActPositions(parseActPositions(html));
+    expect(positions.map((item) => item.name)).toEqual([
+      'Брендинг сукна на игровой стол',
+      'Брендированная подарочная фишка',
+      'Ролл-ап',
+    ]);
+    expect(positions[0]).toMatchObject({ quantity: '1', price: '16500', comment: '', isFreeEntry: true });
+    expect(positions[1]).toMatchObject({ quantity: '60', price: '160', isFreeEntry: true });
+    expect(positions[2].isFreeEntry).toBeUndefined();
+
+    const parsed = parseDealDescription(buildDescriptionHtml({ id: '197462' }, positions));
+    const classified = classifyByKeywords(parsed.items, ['брендинг', 'баннер']);
+    expect(classified.map((item) => item.name)).toEqual(positions.map((item) => item.name));
+    expect(classified[0].classification).toBe('keyword_match');
+    expect(classified[1].classification).toBe('keyword_match');
+    expect(resolveItemProductStreams(classified[0], {
+      brandingKeywords: ['брендинг'],
+      decorKeywords: ['гирлянда'],
+    })).toEqual(['BRANDING']);
+    expect(resolveItemProductStreams(classified[1], {
+      brandingKeywords: ['брендинг'],
+      decorKeywords: ['гирлянда'],
+    })).toEqual(['BRANDING']);
+
+    const garland = prepareActPositions([{
+      name: 'Брендинг (#3)',
+      quantity: '2',
+      price: '500',
+      comment: 'Гирлянда на стол',
+    }]);
+    const garlandClass = classifyByKeywords(garland, ['брендинг']);
+    expect(garlandClass[0].name).toBe('Гирлянда на стол');
+    expect(garlandClass[0].classification).toBe('keyword_match');
+    expect(resolveItemProductStreams(garlandClass[0], {
+      brandingKeywords: ['брендинг'],
+      decorKeywords: ['гирлянда'],
+    })).toEqual(['DECOR']);
   });
 
   it('reads «В резерве» from the filter checkbox and falls back to 5', () => {
