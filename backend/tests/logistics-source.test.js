@@ -49,7 +49,7 @@ describe('logistics order source', () => {
     expect(orders.map((order) => order.id)).toEqual(['169120', '170000', '169121']);
 
     const events = selectLogisticEvents(orders, ...loadWindow);
-    expect(events).toHaveLength(1);
+    expect(events.map((event) => event.id)).toEqual(['169120', '170000']);
     expect(events[0]).toMatchObject({
       original_id: '169120',
       id: '169120',
@@ -110,7 +110,7 @@ describe('logistics order source', () => {
     });
 
     const events = await fetchLogisticEvents(...loadWindow);
-    expect(events).toHaveLength(1);
+    expect(events.map((event) => event.id)).toEqual(['169120', '170000']);
     const url = decodeURIComponent(tonyGet.mock.calls[0][0]);
     expect(url).toContain('https://crm.apihide.com/logistic/?');
     expect(url).toContain('date_range=16.06.2026');
@@ -187,6 +187,52 @@ describe('logistics order source', () => {
     expect(tonyGet).toHaveBeenCalledTimes(2);
     expect(decodeURIComponent(tonyGet.mock.calls[0][0])).toContain('status[]=5');
     expect(decodeURIComponent(tonyGet.mock.calls[1][0])).toContain('status[]=7');
-    expect(events.map((event) => event.id)).toEqual(['169120']);
+    expect(events.map((event) => event.id)).toEqual(['169120', '170000']);
+  });
+
+  it('keeps every card from the reserve page and ignores logistics badges', () => {
+    const html = `
+      <form>
+        <input name="date_range">
+        <div class="checkbox">
+          <input type="checkbox" name="status[]" value="5">
+          <span>В&nbsp;РЕЗЕРВЕ</span>
+        </div>
+      </form>
+      <div class="order-card" data-order-id="180001" data-deal-id="9" data-order-status="in_progress">
+        <div class="card-header"><div class="ref"><a href="/orders/orders_edit/?id=180001">ID: ПРО/20.10/180001/Иванов / Клиент</a></div></div>
+        <div class="status-indicator" data-status="new">В работе</div>
+        <div class="meta"><div class="order-info-line">📅 Загрузка: 20.10.2026 09:00 ➡️ Возврат: 21.10.2026 18:00 - 19:00</div></div>
+      </div>
+      <div class="order-card" data-order-id="180002" data-deal-id="10" data-order-status="done">
+        <div class="card-header"><div class="ref"><a href="/orders/orders_edit/?id=180002">ID: АРТ/20.10/180002/Петров / Клиент</a></div></div>
+        <div class="status-indicator" data-status="done">Выполнен</div>
+        <div class="meta"><div class="order-info-line">📅 Загрузка: 20.10.2026 10:00 ➡️ Возврат: 20.10.2026 12:00 - 13:00</div></div>
+      </div>
+    `;
+    const orders = parseLogisticList(html, { status: 200, headers: {} });
+    const events = selectLogisticEvents(orders, '2026-10-20T00:00:00+03:00', '2026-11-03T23:59:59+03:00');
+    expect(events.map((event) => event.id)).toEqual(['180001', '180002']);
+    for (const order of orders) order.dealStatus = 'В резерве';
+    expect(parseDealDescription(buildDescriptionHtml(orders[0], [])).meta.status).toBe('В резерве');
+    expect(parseReserveStatusCode(html)).toBe('5');
+  });
+
+  it('reads a nested or sibling «резерв» label in any case', () => {
+    expect(parseReserveStatusCode(`
+      <label><input type="checkbox" name="status[]" value="8"><span>В РЕЗЕРВЕ</span></label>
+    `)).toBe('8');
+    expect(parseReserveStatusCode(`
+      <table><tr>
+        <td><input type="checkbox" name="status[]" value="3"></td>
+        <td><span>в резерве</span></td>
+      </tr></table>
+    `)).toBe('3');
+    expect(parseReserveStatusCode(`
+      <div class="filter">
+        <label for="st"><span>Резерв</span></label>
+        <input id="st" type="checkbox" name="status[]" value="9">
+      </div>
+    `)).toBe('9');
   });
 });

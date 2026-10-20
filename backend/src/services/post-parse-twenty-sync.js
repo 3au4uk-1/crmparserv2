@@ -51,11 +51,11 @@ export async function runPostParseTwentySync({
   });
   await runDealSyncPool(autoApproveDealIds, (id) => syncDealToTwenty(id, { skipPrintSheetRefresh: true }), { onDealSettled: onSettle });
 
-  try {
-    await runPrintSheetRefresh();
-  } catch (err) {
+  // Do not await this. Google Sheets read-back can sit on a per-minute quota,
+  // and the parsing lock stays held until runParsing returns.
+  Promise.resolve(runPrintSheetRefresh()).catch((err) => {
     console.warn('[twenty-sync] print_sheet.refresh.failed', err.message);
-  }
+  });
 
   const counters = getTwentyGqlCounters();
   const summary = {

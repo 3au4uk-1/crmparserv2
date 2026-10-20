@@ -21,40 +21,84 @@ function normalizeLabel(value) {
   return cleanText(value).toLowerCase().replace(/ё/g, 'е');
 }
 
-function statusInputLabel($, input) {
+function isStatusFilterName(name) {
+  const n = String(name || '').replace(/\s+/g, '').toLowerCase();
+  return n === 'status[]' || n.includes('status[]') || /^status\[\d*\]$/.test(n);
+}
+
+function nearbyStatusText($, input) {
   const chunks = [];
-  const wrapping = input.closest('label');
-  if (wrapping.length) chunks.push(wrapping.text());
+  const push = (value) => {
+    if (value) chunks.push(value);
+  };
+  push(input.attr('aria-label'));
+  push(input.attr('title'));
+  push(input.attr('data-label'));
   const id = input.attr('id');
-  if (id) chunks.push($(`label[for="${String(id).replace(/"/g, '')}"]`).text());
-  const next = input.next();
-  if (next.length && !next.is('input')) chunks.push(next.text());
+  if (id) {
+    const safe = String(id).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    push($(`label[for="${safe}"]`).text());
+  }
+  const wrapping = input.closest('label');
+  if (wrapping.length) push(wrapping.text());
+
   const parent = input.parent();
-  if (parent.length && parent.find('input[name="status[]"]').length === 1) {
-    chunks.push(parent.text());
+  parent.contents().each((_, node) => {
+    if (node === input.get(0)) return;
+    if (node.type === 'text') push(node.data);
+    else if (node.type === 'tag' && node.name !== 'input') push($(node).text());
+  });
+
+  let hop = input;
+  for (let depth = 0; depth < 4; depth += 1) {
+    hop = hop.parent();
+    if (!hop.length || hop.is('body, form, html')) break;
+    const boxes = hop.find('input').toArray().filter((el) => isStatusFilterName($(el).attr('name')));
+    if (boxes.length === 1) push(hop.text());
   }
   return chunks.join(' ');
 }
 
+function reserveCodeFromRawHtml(html) {
+  const inputRe = /<input\b[^>]*>/gi;
+  let match;
+  while ((match = inputRe.exec(html))) {
+    const tag = match[0];
+    const name = /name\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1] || '';
+    if (!isStatusFilterName(name)) continue;
+    const value = /value\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1] || '';
+    if (!value) continue;
+    const start = Math.max(0, match.index - 350);
+    const end = Math.min(html.length, match.index + tag.length + 350);
+    const windowText = html.slice(start, end)
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;|&#160;|&#xa0;/gi, ' ');
+    if (normalizeLabel(windowText).includes('резерв')) return cleanText(value);
+  }
+  return '';
+}
+
 /**
- * Read the logistics filter checkbox whose label is «В резерве».
+ * Read the logistics filter checkbox whose label contains «резерв».
  * Falls back to LOGISTIC_STATUS, then 5, when the form has no such checkbox.
+ * Card badges are not order statuses and are not consulted here.
  */
 export function parseReserveStatusCode(html, fallback = reserveStatusCode()) {
   const fb = String(fallback || '5').trim() || '5';
   if (!html || typeof html !== 'string') return fb;
   const $ = cheerio.load(html);
   const matches = [];
-  $('input[name="status[]"]').each((_, el) => {
+  $('input').each((_, el) => {
     const input = $(el);
+    if (!isStatusFilterName(input.attr('name'))) return;
     const value = cleanText(input.attr('value'));
     if (!value) return;
-    const label = normalizeLabel(statusInputLabel($, input));
+    const label = normalizeLabel(nearbyStatusText($, input));
     if (label.includes('резерв')) matches.push({ value, label });
   });
-  if (!matches.length) return fb;
+  if (!matches.length) return reserveCodeFromRawHtml(html) || fb;
   matches.sort((a, b) => a.label.length - b.label.length);
-  const exact = matches.find((item) => item.label === 'в резерве');
+  const exact = matches.find((item) => item.label === 'в резерве' || /(^|\s)в резерве(\s|$)/.test(item.label));
   return (exact || matches[0]).value;
 }
 
@@ -97,15 +141,6 @@ export function dealTitleFromCard(linkText, orderId) {
   if (id && title && !title.includes(id)) title = `${title} ${id}`;
   if (!title && id) title = id;
   return { title, client };
-}
-
-export function isReserveOrder(order, statusCode = reserveStatusCode()) {
-  const code = cleanText(order?.statusCode);
-  const label = cleanText(order?.statusLabel).toLowerCase();
-  if (label.includes('резерв')) return true;
-  if (code && code === String(statusCode)) return true;
-  if (!code && !label) return true;
-  return false;
 }
 
 function parseSchedule(text) {
@@ -188,6 +223,8 @@ export function parseLogisticList(html, resp = {}) {
   return orders;
 }
 
+const RESERVE_DEAL_STATUS = 'В резерве';
+
 /** One calendar event when the load day or the return day falls in the range. Middle days are skipped. */
 export function toCalendarEvent(order, startDate, endDate) {
   const loadIn = ymdInRange(order.loadDate, startDate, endDate);
@@ -209,10 +246,14 @@ export function toCalendarEvent(order, startDate, endDate) {
   };
 }
 
-export function selectLogisticEvents(orders, startDate, endDate, statusCode = reserveStatusCode()) {
+/**
+ * Every card on the page is already a reserve order: /logistic/ is requested
+ * with status[] set to «В резерве». Card badges (new / in_progress / done)
+ * are the logistics line status and must not drop the order.
+ */
+export function selectLogisticEvents(orders, startDate, endDate) {
   const events = [];
   for (const order of orders) {
-    if (!isReserveOrder(order, statusCode)) continue;
     if (!order.loadDate && !order.returnDate) {
       console.warn(`[logistics] order ${order.id} has no load or return date; skipped`);
       continue;
@@ -287,7 +328,7 @@ function describedLine(label, value) {
 
 export function buildDescriptionHtml(order, positions) {
   const lines = [
-    describedLine('Статус сделки', order.statusLabel || 'В резерве'),
+    describedLine('Статус сделки', order.dealStatus || RESERVE_DEAL_STATUS),
     describedLine('Контактное лицо', order.contactName),
     describedLine('Компания', order.client),
     describedLine('Контактный телефон', order.contactPhone),
@@ -339,8 +380,9 @@ export async function fetchLogisticEvents(startDate, endDate) {
     page = await requestLogisticList(startDate, endDate, statusCode);
   }
   const orders = parseLogisticList(page.html, page.resp);
+  for (const order of orders) order.dealStatus = RESERVE_DEAL_STATUS;
   orderCache.clear();
-  const events = selectLogisticEvents(orders, startDate, endDate, statusCode);
+  const events = selectLogisticEvents(orders, startDate, endDate);
   for (const event of events) {
     const order = orders.find((item) => String(item.id) === event.id);
     if (order) orderCache.set(event.id, order);
@@ -361,7 +403,7 @@ export async function fetchLogisticDescription(eventId) {
   if (!positions.length && !hasTable) {
     crmFailure('logistics', `Order ${eventId} act had no position table`, { ...resp, data: html });
   }
-  const order = orderCache.get(String(eventId)) || { id: String(eventId), statusLabel: '' };
+  const order = orderCache.get(String(eventId)) || { id: String(eventId), dealStatus: RESERVE_DEAL_STATUS };
   return {
     description: buildDescriptionHtml(order, positions),
     payments: null,

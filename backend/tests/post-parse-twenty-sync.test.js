@@ -101,4 +101,16 @@ describe('runPostParseTwentySync', () => {
     expect(summary.rate_limited).toBe(1);
     expect(typeof summary.duration_ms).toBe('number');
   });
+
+  it('returns while print sheet refresh is still running', async () => {
+    runPrintSheetRefresh.mockImplementation(() => new Promise(() => {}));
+    const summary = await runPostParseTwentySync({
+      resyncDealIds: [],
+      cancelDealIds: [],
+      restoreDealIds: [],
+      autoApproveDealIds: [],
+    });
+    expect(runPrintSheetRefresh).toHaveBeenCalledTimes(1);
+    expect(summary.deals).toBe(0);
+  });
 });
