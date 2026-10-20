@@ -120,6 +120,25 @@ describe('payment-sync', () => {
     expect(deal.payment_status).toBe(PAYMENT_STATUS.PREPAYMENT);
   });
 
+  it('does not clear stored payments when the source has no payment history', async () => {
+    const { gql } = await import('../src/services/twenty-gql.js');
+    fetchDescription.mockResolvedValue({ description: '<p>Статус сделки: В резерве</p>', payments: null });
+    testDb.prepare(`
+      INSERT INTO deals (
+        crm_event_id, deal_key, title, start_date, twenty_id,
+        payment_amount, payment_status, payment_count, payment_hash
+      ) VALUES ('evt-1', 'evt-1#cal', 'Deal A', '2026-07-05', 'tw-1', 235752, 'PREDOPLATA', 2, 'keep')
+    `).run();
+
+    const result = await runPaymentSync({ from: '2026-07-01', to: '2026-07-31' });
+
+    expect(result.dealsUpdatedLocal).toBe(0);
+    expect(result.dealsUpdatedTwenty).toBe(0);
+    expect(gql).not.toHaveBeenCalled();
+    const deal = testDb.prepare('SELECT payment_amount, payment_status, payment_hash FROM deals WHERE id = 1').get();
+    expect(deal).toEqual({ payment_amount: 235752, payment_status: 'PREDOPLATA', payment_hash: 'keep' });
+  });
+
   it('runPaymentSync pushes grouped event deals to canonical and parent only', async () => {
     const { gql } = await import('../src/services/twenty-gql.js');
 

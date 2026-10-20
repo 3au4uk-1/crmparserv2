@@ -33,6 +33,8 @@ export const config = {
   tonyBaseUrl: process.env.TONY_BASE_URL || 'https://crm.apihide.com',
   tonyLogin: process.env.TONY_LOGIN || '',
   tonyPassword: process.env.TONY_PASSWORD || '',
+  /** Logistics list filter. 5 = «В резерве» on /logistic/ (Новый…В резерве are 1..5). */
+  logisticReserveStatus: process.env.LOGISTIC_STATUS || '5',
   tonyRequestDelayMs: parseInt(process.env.TONY_REQUEST_DELAY_MS || '350', 10),
   fetchConcurrency: parseInt(process.env.FETCH_CONCURRENCY || '8', 10),
   tonyUnchangedProbe: !['0', 'false', 'no'].includes(
