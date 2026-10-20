@@ -4,6 +4,7 @@ import { authenticate } from './auth.js';
 import { fetchDescription, parseDescriptionResponse } from './parser.js';
 import {
   applyPaymentAggregateToDb,
+  calendarPaymentsProvided,
   parseCalendarPayments,
 } from './payment-parser.js';
 import { requireTwentyConfig } from './twenty-config.js';
@@ -143,6 +144,19 @@ export async function runPaymentSync({ from, to, onProgress } = {}) {
     try {
       const descJson = await fetchDescription(eventId);
       const { calPayments } = parseDescriptionResponse(descJson);
+      if (!calendarPaymentsProvided(calPayments)) {
+        dealsProcessed += eventDeals.length;
+        reportProgress(onProgress, {
+          stage: 'fetching_calendar',
+          dealsTargeted: deals.length,
+          dealsProcessed,
+          dealsUpdatedLocal,
+          dealsUpdatedTwenty,
+          dealsFailed,
+        });
+        await delay(config.tonyRequestDelayMs || 350);
+        continue;
+      }
       aggregate = parseCalendarPayments(calPayments);
     } catch (err) {
       dealsFailed += eventDeals.length;

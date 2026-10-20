@@ -32,7 +32,7 @@ import {
   mirrorCanonicalCrmLeadId,
 } from './deal-bitrix-links.js';
 import { createPool, withRetry } from './fetch-pool.js';
-import { parseCalendarPayments, paymentContentHash, applyPaymentAggregateToDb } from './payment-parser.js';
+import { parseCalendarPayments, paymentContentHash, applyPaymentAggregateToDb, calendarPaymentsProvided } from './payment-parser.js';
 
 /** Empty/missing Tony order should not skip the booking — fall back to calendar write. */
 export function useCalendarFallbackForTonyOrder(order) {
@@ -82,7 +82,15 @@ export function parseDescriptionResponse(data) {
   };
 }
 
+/** Blank, null, and undefined mean the source did not send the field. Keep the stored value. */
+export function keepStored(next, existing) {
+  if (next == null) return existing ?? null;
+  if (typeof next === 'string' && next.trim() === '') return existing ?? null;
+  return next;
+}
+
 function persistDealPayments(db, dealId, calPayments, existing, dealsToResync) {
+  if (!calendarPaymentsProvided(calPayments)) return false;
   const aggregate = parseCalendarPayments(calPayments);
   const hash = paymentContentHash(aggregate);
   if (existing?.payment_hash === hash) return false;
@@ -252,8 +260,15 @@ export async function applyEvent(db, event, eventId, data, ctx) {
   const { knownCodes, keywords, llmPrompt, counters, dealsToResync } = ctx;
   const titleInfo = parseDealTitle(event.title || '', knownCodes);
   const plan = planEventReconciliation(db, eventId, bookingNumbers);
-  const paymentAggregate = parseCalendarPayments(calPayments);
-  const paymentHash = paymentContentHash(paymentAggregate);
+  const paymentsKnown = calendarPaymentsProvided(calPayments);
+  const paymentAggregate = paymentsKnown ? parseCalendarPayments(calPayments) : null;
+  const paymentHash = paymentsKnown ? paymentContentHash(paymentAggregate) : null;
+  const paymentValues = (row) => (
+    paymentsKnown
+      ? [paymentAggregate.paymentAmount, paymentAggregate.paymentStatus, paymentAggregate.paymentCount, paymentHash]
+      : [row?.payment_amount ?? null, row?.payment_status ?? null, row?.payment_count ?? null, row?.payment_hash ?? null]
+  );
+  const linkPaymentAmount = paymentsKnown ? paymentAggregate.paymentAmount : undefined;
 
   // Relink a lone calendar deal to a single new booking: change only its key/booking,
   // keeping its data_source so the per-target logic below decides the source.
@@ -281,7 +296,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
         attachEventBitrixLink(db, existing.id, {
           leadId: event.leadid,
           title: event.title,
-          paymentAmount: paymentAggregate.paymentAmount,
+          paymentAmount: linkPaymentAmount,
         });
         if (!persistDealPayments(db, existing.id, calPayments, existing, dealsToResync)) {
           counters.skippedDeals++;
@@ -307,13 +322,23 @@ export async function applyEvent(db, event, eventId, data, ctx) {
               WHERE id = ?
             `).run(
           event.title, titleInfo.companyCode, titleInfo.managerName,
-          fields.start_date, fields.end_date, event.department,
-          calContact.name, calContact.email, calContact.company, calContact.phone,
-          fields.address, fields.work_time, fields.arrival_time, fields.dismantle_time,
-          fields.load_date, fields.load_time, fields.budget,
+          keepStored(fields.start_date, existing.start_date),
+          keepStored(fields.end_date, existing.end_date),
+          keepStored(event.department, existing.department),
+          keepStored(calContact.name, existing.contact_name),
+          keepStored(calContact.email, existing.contact_email),
+          keepStored(calContact.company, existing.contact_company),
+          keepStored(calContact.phone, existing.contact_phone),
+          keepStored(fields.address, existing.address),
+          keepStored(fields.work_time, existing.work_time),
+          keepStored(fields.arrival_time, existing.arrival_time),
+          keepStored(fields.dismantle_time, existing.dismantle_time),
+          keepStored(fields.load_date, existing.load_date),
+          keepStored(fields.load_time, existing.load_time),
+          keepStored(calParsed.meta?.budget, existing.budget),
           hash, order.tonyUpdatedAt ?? null, target.bookingNumber,
-          hasCanonical ? existing.crm_lead_id : event.leadid,
-          paymentAggregate.paymentAmount, paymentAggregate.paymentStatus, paymentAggregate.paymentCount, paymentHash,
+          hasCanonical ? existing.crm_lead_id : keepStored(event.leadid, existing.crm_lead_id),
+          ...paymentValues(existing),
           existing.id
         );
         const existingItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(existing.id);
@@ -321,7 +346,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
         attachEventBitrixLink(db, existing.id, {
           leadId: event.leadid,
           title: event.title,
-          paymentAmount: paymentAggregate.paymentAmount,
+          paymentAmount: linkPaymentAmount,
         });
         if (existing.twenty_id) dealsToResync.push(existing.id);
         counters.updatedDeals++;
@@ -336,10 +361,12 @@ export async function applyEvent(db, event, eventId, data, ctx) {
               ) VALUES (?, ?, 'tony', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `).run(
           eventId, target.dealKey, null, event.title, titleInfo.companyCode, titleInfo.managerName,
-          fields.start_date, fields.end_date, event.department, calContact.name, calContact.email, calContact.company, calContact.phone,
-          fields.address, fields.work_time, fields.arrival_time, fields.dismantle_time, fields.load_date, fields.load_time, fields.budget,
+          keepStored(fields.start_date, null), keepStored(fields.end_date, null), keepStored(event.department, null),
+          keepStored(calContact.name, null), keepStored(calContact.email, null), keepStored(calContact.company, null), keepStored(calContact.phone, null),
+          keepStored(fields.address, null), keepStored(fields.work_time, null), keepStored(fields.arrival_time, null), keepStored(fields.dismantle_time, null),
+          keepStored(fields.load_date, null), keepStored(fields.load_time, null), keepStored(calParsed.meta?.budget, null),
           target.bookingNumber, hash, order.tonyUpdatedAt ?? null, descHtml,
-          paymentAggregate.paymentAmount, paymentAggregate.paymentStatus, paymentAggregate.paymentCount, paymentHash
+          ...paymentValues(null)
         );
         const dealId = insert.lastInsertRowid;
         for (const item of classifiedItems) {
@@ -349,7 +376,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
         attachEventBitrixLink(db, dealId, {
           leadId: event.leadid,
           title: event.title,
-          paymentAmount: paymentAggregate.paymentAmount,
+          paymentAmount: linkPaymentAmount,
         });
         counters.newDeals++;
       }
@@ -361,7 +388,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
         attachEventBitrixLink(db, existing.id, {
           leadId: event.leadid,
           title: event.title,
-          paymentAmount: paymentAggregate.paymentAmount,
+          paymentAmount: linkPaymentAmount,
         });
         if (!persistDealPayments(db, existing.id, calPayments, existing, dealsToResync)) {
           counters.skippedDeals++;
@@ -375,7 +402,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
         attachEventBitrixLink(db, existing.id, {
           leadId: event.leadid,
           title: event.title,
-          paymentAmount: paymentAggregate.paymentAmount,
+          paymentAmount: linkPaymentAmount,
         });
         if (!persistDealPayments(db, existing.id, calPayments, existing, dealsToResync)) {
           counters.skippedDeals++;
@@ -399,13 +426,26 @@ export async function applyEvent(db, event, eventId, data, ctx) {
                 updated_at = datetime('now')
               WHERE id = ?
             `).run(
-          event.title, titleInfo.companyCode, titleInfo.managerName, event.start, event.end, event.department,
-          parsed.meta.status, parsed.meta.legalEntity, parsed.meta.invoiceNumber, parsed.meta.budget, parsed.meta.discount,
-          parsed.contact.name, parsed.contact.email, parsed.contact.company, parsed.contact.phone,
-          parsed.event.address, parsed.event.venueType, parsed.event.arrivalTime || null, parsed.event.readyTime || null,
-          parsed.event.workTime || null, parsed.event.dismantleTime || null,
-          hash, descHtml, hasCanonical ? existing.crm_lead_id : event.leadid, calTonyOrderId,
-          paymentAggregate.paymentAmount, paymentAggregate.paymentStatus, paymentAggregate.paymentCount, paymentHash,
+          event.title, titleInfo.companyCode, titleInfo.managerName, event.start, event.end,
+          keepStored(event.department, existing.department),
+          keepStored(parsed.meta.status, existing.status),
+          keepStored(parsed.meta.legalEntity, existing.legal_entity),
+          keepStored(parsed.meta.invoiceNumber, existing.invoice_number),
+          keepStored(parsed.meta.budget, existing.budget),
+          keepStored(parsed.meta.discount, existing.discount),
+          keepStored(parsed.contact.name, existing.contact_name),
+          keepStored(parsed.contact.email, existing.contact_email),
+          keepStored(parsed.contact.company, existing.contact_company),
+          keepStored(parsed.contact.phone, existing.contact_phone),
+          keepStored(parsed.event.address, existing.address),
+          keepStored(parsed.event.venueType, existing.venue_type),
+          keepStored(parsed.event.arrivalTime, existing.arrival_time),
+          keepStored(parsed.event.readyTime, existing.ready_time),
+          keepStored(parsed.event.workTime, existing.work_time),
+          keepStored(parsed.event.dismantleTime, existing.dismantle_time),
+          hash, descHtml, hasCanonical ? existing.crm_lead_id : keepStored(event.leadid, existing.crm_lead_id),
+          calTonyOrderId,
+          ...paymentValues(existing),
           existing.id
         );
         const existingItems = db.prepare('SELECT * FROM deal_items WHERE deal_id = ?').all(existing.id);
@@ -413,7 +453,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
         attachEventBitrixLink(db, existing.id, {
           leadId: event.leadid,
           title: event.title,
-          paymentAmount: paymentAggregate.paymentAmount,
+          paymentAmount: linkPaymentAmount,
         });
         if (existing.twenty_id) dealsToResync.push(existing.id);
         counters.updatedDeals++;
@@ -428,11 +468,15 @@ export async function applyEvent(db, event, eventId, data, ctx) {
               ) VALUES (?, ?, 'calendar', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `).run(
           eventId, target.dealKey, null, event.title, titleInfo.companyCode, titleInfo.managerName,
-          event.start, event.end, event.department, parsed.meta.status, parsed.meta.legalEntity, parsed.meta.invoiceNumber,
-          parsed.meta.budget, parsed.meta.discount, parsed.contact.name, parsed.contact.email, parsed.contact.company, parsed.contact.phone,
-          parsed.event.address, parsed.event.venueType, parsed.event.arrivalTime || null, parsed.event.readyTime || null,
-          parsed.event.workTime || null, parsed.event.dismantleTime || null, calTonyOrderId, hash, descHtml,
-          paymentAggregate.paymentAmount, paymentAggregate.paymentStatus, paymentAggregate.paymentCount, paymentHash
+          event.start, event.end, keepStored(event.department, null),
+          keepStored(parsed.meta.status, null), keepStored(parsed.meta.legalEntity, null), keepStored(parsed.meta.invoiceNumber, null),
+          keepStored(parsed.meta.budget, null), keepStored(parsed.meta.discount, null),
+          keepStored(parsed.contact.name, null), keepStored(parsed.contact.email, null), keepStored(parsed.contact.company, null), keepStored(parsed.contact.phone, null),
+          keepStored(parsed.event.address, null), keepStored(parsed.event.venueType, null),
+          keepStored(parsed.event.arrivalTime, null), keepStored(parsed.event.readyTime, null),
+          keepStored(parsed.event.workTime, null), keepStored(parsed.event.dismantleTime, null),
+          calTonyOrderId, hash, descHtml,
+          ...paymentValues(null)
         );
         const dealId = insert.lastInsertRowid;
         for (const item of classifiedItems) {
@@ -442,7 +486,7 @@ export async function applyEvent(db, event, eventId, data, ctx) {
         attachEventBitrixLink(db, dealId, {
           leadId: event.leadid,
           title: event.title,
-          paymentAmount: paymentAggregate.paymentAmount,
+          paymentAmount: linkPaymentAmount,
         });
         counters.newDeals++;
       }

@@ -17,6 +17,47 @@ export function reserveStatusCode() {
   return String(config.logisticReserveStatus || '5').trim() || '5';
 }
 
+function normalizeLabel(value) {
+  return cleanText(value).toLowerCase().replace(/ё/g, 'е');
+}
+
+function statusInputLabel($, input) {
+  const chunks = [];
+  const wrapping = input.closest('label');
+  if (wrapping.length) chunks.push(wrapping.text());
+  const id = input.attr('id');
+  if (id) chunks.push($(`label[for="${String(id).replace(/"/g, '')}"]`).text());
+  const next = input.next();
+  if (next.length && !next.is('input')) chunks.push(next.text());
+  const parent = input.parent();
+  if (parent.length && parent.find('input[name="status[]"]').length === 1) {
+    chunks.push(parent.text());
+  }
+  return chunks.join(' ');
+}
+
+/**
+ * Read the logistics filter checkbox whose label is «В резерве».
+ * Falls back to LOGISTIC_STATUS, then 5, when the form has no such checkbox.
+ */
+export function parseReserveStatusCode(html, fallback = reserveStatusCode()) {
+  const fb = String(fallback || '5').trim() || '5';
+  if (!html || typeof html !== 'string') return fb;
+  const $ = cheerio.load(html);
+  const matches = [];
+  $('input[name="status[]"]').each((_, el) => {
+    const input = $(el);
+    const value = cleanText(input.attr('value'));
+    if (!value) return;
+    const label = normalizeLabel(statusInputLabel($, input));
+    if (label.includes('резерв')) matches.push({ value, label });
+  });
+  if (!matches.length) return fb;
+  matches.sort((a, b) => a.label.length - b.label.length);
+  const exact = matches.find((item) => item.label === 'в резерве');
+  return (exact || matches[0]).value;
+}
+
 function isoToDmy(iso) {
   const [year, month, day] = String(iso || '').split('-');
   if (!year || !month || !day) return '';
@@ -165,7 +206,6 @@ export function toCalendarEvent(order, startDate, endDate) {
     title: order.title || String(order.id),
     start: crmIso(startYmd, startTime),
     end: crmIso(endYmd, endTime),
-    department: '',
   };
 }
 
@@ -239,17 +279,23 @@ export function parseActPositions(html) {
   return items;
 }
 
+function describedLine(label, value) {
+  const text = cleanText(value);
+  if (!text) return null;
+  return `${label}: ${esc(text)}`;
+}
+
 export function buildDescriptionHtml(order, positions) {
   const lines = [
-    `Статус сделки: ${esc(order.statusLabel || 'В резерве')}`,
-    `Контактное лицо: ${esc(order.contactName || '')}`,
-    `Компания: ${esc(order.client || '')}`,
-    `Контактный телефон: ${esc(order.contactPhone || '')}`,
-    `Адрес проведения: ${esc(order.address || '')}`,
-    `Время приезда: ${esc(order.loadTime || '')}`,
-    `Время работы: ${esc([order.returnTime, order.returnEnd].filter(Boolean).join(' - '))}`,
-    `Время демонтажа: ${esc(order.returnEnd || order.returnTime || '')}`,
-  ];
+    describedLine('Статус сделки', order.statusLabel || 'В резерве'),
+    describedLine('Контактное лицо', order.contactName),
+    describedLine('Компания', order.client),
+    describedLine('Контактный телефон', order.contactPhone),
+    describedLine('Адрес проведения', order.address),
+    describedLine('Время приезда', order.loadTime),
+    describedLine('Время работы', [order.returnTime, order.returnEnd].filter(Boolean).join(' - ')),
+    describedLine('Время демонтажа', order.returnEnd || order.returnTime),
+  ].filter(Boolean);
   if (order.bitrixStage) lines.push(`Bitrix: ${esc(order.bitrixStage)}`);
   if (order.paymentText) lines.push(`Оплата: ${esc(order.paymentText)}`);
   for (const warehouse of order.warehouses || []) {
@@ -271,19 +317,30 @@ function bodyText(data) {
   }
 }
 
-export async function fetchLogisticEvents(startDate, endDate) {
+async function requestLogisticList(startDate, endDate, statusCode) {
   const { baseUrl } = getTonyConfig();
   const params = new URLSearchParams();
   params.set('date_range', isoToDmy(toInputDate(startDate)));
   params.set('date_range2', isoToDmy(toInputDate(endDate)));
   params.set('company', '0');
-  params.append('status[]', reserveStatusCode());
+  params.append('status[]', String(statusCode));
   const url = `${baseUrl}/logistic/?${params.toString()}`;
   const resp = await tonyGet(url);
-  const html = bodyText(resp.data);
-  const orders = parseLogisticList(html, resp);
+  return { resp, html: bodyText(resp.data) };
+}
+
+export async function fetchLogisticEvents(startDate, endDate) {
+  const fallback = reserveStatusCode();
+  let statusCode = fallback;
+  let page = await requestLogisticList(startDate, endDate, statusCode);
+  const parsedCode = parseReserveStatusCode(page.html, fallback);
+  if (parsedCode !== statusCode) {
+    statusCode = parsedCode;
+    page = await requestLogisticList(startDate, endDate, statusCode);
+  }
+  const orders = parseLogisticList(page.html, page.resp);
   orderCache.clear();
-  const events = selectLogisticEvents(orders, startDate, endDate);
+  const events = selectLogisticEvents(orders, startDate, endDate, statusCode);
   for (const event of events) {
     const order = orders.find((item) => String(item.id) === event.id);
     if (order) orderCache.set(event.id, order);
@@ -307,6 +364,6 @@ export async function fetchLogisticDescription(eventId) {
   const order = orderCache.get(String(eventId)) || { id: String(eventId), statusLabel: '' };
   return {
     description: buildDescriptionHtml(order, positions),
-    payments: { history: '' },
+    payments: null,
   };
 }

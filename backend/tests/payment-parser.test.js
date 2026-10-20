@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import {
   aggregatePayments,
+  calendarPaymentsProvided,
   parseCalendarPayments,
   parsePaymentHistoryHtml,
   paymentContentHash,
@@ -78,6 +79,17 @@ describe('aggregatePayments', () => {
     const result = aggregatePayments([]);
     expect(result.paymentAmount).toBe(0);
     expect(result.paymentStatus).toBe(PAYMENT_STATUS.NONE);
+  });
+});
+
+describe('calendarPaymentsProvided', () => {
+  it('treats null, missing, and blank history as absent', () => {
+    expect(calendarPaymentsProvided(null)).toBe(false);
+    expect(calendarPaymentsProvided(undefined)).toBe(false);
+    expect(calendarPaymentsProvided({})).toBe(false);
+    expect(calendarPaymentsProvided({ history: '' })).toBe(false);
+    expect(calendarPaymentsProvided({ history: '   ' })).toBe(false);
+    expect(calendarPaymentsProvided({ history: '<ul></ul>' })).toBe(true);
   });
 });
 

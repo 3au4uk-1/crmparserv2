@@ -24,6 +24,7 @@ import {
   fetchLogisticEvents,
   parseActPositions,
   parseLogisticList,
+  parseReserveStatusCode,
   resetLogisticsCache,
   selectLogisticEvents,
 } from '../src/services/logistics-source.js';
@@ -56,8 +57,8 @@ describe('logistics order source', () => {
       title: 'ПРО/16.06-20.06/ПЛОЩАДКА/169120/Шунькин',
       start: '2026-06-16T04:00:00+03:00',
       end: '2026-06-20T21:00:00+03:00',
-      department: '',
     });
+    expect(events[0].department).toBeUndefined();
     expect(parseDealTitle(events[0].title).companyCode).toBe('ПРО');
     expect(parseDealTitle(events[0].title).managerName).toBe('Шунькин');
     expect(isEventInRange(events[0], ...loadWindow)).toBe(true);
@@ -92,6 +93,13 @@ describe('logistics order source', () => {
       { name: 'Баннер', price: 1500, quantity: '2 шт.', discount: 0 },
       { name: 'Ролл-ап', price: 900, quantity: '1', discount: 10 },
     ]);
+    expect(parsed.contact.email).toBe('');
+    expect(parsed.meta.legalEntity).toBe('');
+    expect(parsed.meta.invoiceNumber).toBe('');
+    expect(parsed.meta.budget).toBeNull();
+    expect(parsed.meta.discount).toBe('');
+    const html = buildDescriptionHtml(order, positions);
+    expect(html).not.toMatch(/E-Mail|Юр\.|№ cчета|Бюджет|Скидка:/);
   });
 
   it('requests only reserve orders and logs a masked snippet when the page is not the list', async () => {
@@ -145,8 +153,40 @@ describe('logistics order source', () => {
     });
 
     const description = await fetchLogisticDescription(order.id);
-    expect(description.payments).toEqual({ history: '' });
+    expect(description.payments).toBeNull();
     expect(parseDealDescription(description.description).items).toHaveLength(2);
     expect(tonyGet.mock.calls.at(-1)[0]).toBe('https://crm.apihide.com/orders/orders_act/?id=169120');
+  });
+
+  it('reads «В резерве» from the filter checkbox and falls back to 5', () => {
+    const labeled = `
+      <label><input type="checkbox" name="status[]" value="5"> Вернулся</label>
+      <label><input type="checkbox" name="status[]" value="7"> В резерве</label>
+    `;
+    expect(parseReserveStatusCode(labeled)).toBe('7');
+    expect(parseReserveStatusCode('<label><input type="checkbox" name="status[]" value="4" id="s4"></label><label for="s4">В резерве</label>')).toBe('4');
+    expect(parseReserveStatusCode(listHtml)).toBe('5');
+    expect(parseReserveStatusCode('<form><input name="date_range"></form>', '5')).toBe('5');
+  });
+
+  it('refetches the list once when the reserve checkbox is not 5', async () => {
+    const form = `
+      <form>
+        <input name="date_range" value="16.06.2026">
+        <input name="date_range2" value="20.06.2026">
+        <label><input type="checkbox" name="status[]" value="1"> Новый</label>
+        <label><input type="checkbox" name="status[]" value="7"> В резерве</label>
+      </form>
+    `;
+    const card = listHtml.replace('data-order-status="5"', 'data-order-status="7"');
+    tonyGet
+      .mockResolvedValueOnce({ status: 200, headers: { 'content-type': 'text/html' }, data: form })
+      .mockResolvedValueOnce({ status: 200, headers: { 'content-type': 'text/html' }, data: `${form}${card}` });
+
+    const events = await fetchLogisticEvents(...loadWindow);
+    expect(tonyGet).toHaveBeenCalledTimes(2);
+    expect(decodeURIComponent(tonyGet.mock.calls[0][0])).toContain('status[]=5');
+    expect(decodeURIComponent(tonyGet.mock.calls[1][0])).toContain('status[]=7');
+    expect(events.map((event) => event.id)).toEqual(['169120']);
   });
 });

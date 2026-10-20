@@ -79,6 +79,15 @@ export function aggregatePayments(payments) {
   };
 }
 
+/** True when the source actually sent a payment history. Null, missing, and blank history are absent. */
+export function calendarPaymentsProvided(paymentsPayload) {
+  if (paymentsPayload == null) return false;
+  const history = paymentsPayload.history;
+  if (history == null) return false;
+  if (typeof history === 'string' && history.trim() === '') return false;
+  return true;
+}
+
 export function parseCalendarPayments(paymentsPayload) {
   const historyHtml = paymentsPayload?.history ?? '';
   return aggregatePayments(parsePaymentHistoryHtml(historyHtml));
