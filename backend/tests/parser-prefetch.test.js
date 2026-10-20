@@ -14,8 +14,16 @@ vi.mock('../src/services/tony-auth.js', () => ({
 vi.mock('../src/config.js', () => ({
   config: { crmBaseUrl: 'https://apihide.com/bitrix/calendar/', fetchConcurrency: 4, parsePipeline: 'parallel', tonyUnchangedProbe: false },
 }));
+vi.mock('../src/services/logistics-source.js', () => ({
+  fetchLogisticEvents: vi.fn(async () => []),
+  fetchLogisticDescription: vi.fn(async () => ({
+    description: '<div>contact</div>',
+    payments: null,
+  })),
+}));
 
 import { createPool } from '../src/services/fetch-pool.js';
+import { fetchLogisticDescription } from '../src/services/logistics-source.js';
 import { fetchEventData, prefetchAll } from '../src/services/parser.js';
 
 const DESC = JSON.stringify({ description: '<div>contact</div>' });
@@ -81,8 +89,7 @@ describe('prefetchAll Tony unchanged skip', () => {
     expect(axios.get.mock.calls.some((c) => String(c[0]).includes('orders_edit'))).toBe(false);
     const listPosts = axios.post.mock.calls.filter((c) => String(c[0]).includes('order_products_list.php'));
     expect(listPosts).toHaveLength(0);
-    const descPosts = axios.post.mock.calls.filter((c) => String(c[0]).includes('cal_description.php'));
-    expect(descPosts.length).toBeGreaterThan(0);
+    expect(fetchLogisticDescription).toHaveBeenCalled();
   });
 
   it('omits booking and counts probe fail when order_get_info is unusable', async () => {

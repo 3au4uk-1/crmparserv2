@@ -33,9 +33,14 @@ export function getTonyCookies() {
 export function getTonyConfig() {
   return {
     baseUrl: (getSetting('tony_base_url') || config.tonyBaseUrl).replace(/\/$/, ''),
-    login: getSetting('tony_login') || config.tonyLogin,
-    password: getSetting('tony_password') || config.tonyPassword,
+    login: getSetting('tony_login') || config.tonyLogin || config.crmLogin,
+    password: getSetting('tony_password') || config.tonyPassword || config.crmPassword,
   };
+}
+
+function loginErrorMessage(data) {
+  if (!data || typeof data !== 'object' || data.success !== false) return '';
+  return String(data.error_message || 'rejected').replace(/\s+/g, ' ').trim().slice(0, 200);
 }
 
 export async function tonyLogin(options = {}) {
@@ -46,7 +51,11 @@ export async function tonyLogin(options = {}) {
 
   const resp = await axios.post(
     `${baseUrl.replace(/\/$/, '')}/ajax/login.php`,
-    new URLSearchParams({ login, password }).toString(),
+    new URLSearchParams({
+      login,
+      password,
+      redirect: '/logistic/',
+    }).toString(),
     {
       headers: { ...BROWSER_HEADERS, 'Content-Type': 'application/x-www-form-urlencoded' },
       maxRedirects: 0,
@@ -54,6 +63,11 @@ export async function tonyLogin(options = {}) {
       timeout: 30000,
     }
   );
+
+  const rejected = loginErrorMessage(resp.data);
+  if (rejected) {
+    throw new Error(`Tony login failed: ${rejected}`);
+  }
 
   const setCookie = resp.headers?.['set-cookie'];
   if (!setCookie || setCookie.length === 0) {
@@ -66,4 +80,41 @@ export async function tonyLogin(options = {}) {
 
 export function tonyRequestHeaders() {
   return { ...BROWSER_HEADERS, Cookie: tonyCookies };
+}
+
+export async function ensureTonySession() {
+  if (!tonyCookies) await tonyLogin();
+  return tonyCookies;
+}
+
+export function isTonyAuthResponse(resp) {
+  const status = Number(resp?.status || 0);
+  const location = String(resp?.headers?.location || resp?.headers?.Location || '');
+  if (status >= 300 && status < 400 && /\/auth\/?/i.test(location)) return true;
+  if (typeof resp?.data !== 'string') return false;
+  const head = resp.data.slice(0, 8000).toLowerCase();
+  if (head.includes('id="form_auth"') || head.includes("id='form_auth'")) return true;
+  return head.includes('name="password"') && head.includes('/ajax/login.php');
+}
+
+/** GET with the Tony session. On a redirect to /auth/, log in once and retry. */
+export async function tonyGet(url) {
+  await ensureTonySession();
+  const resp = await axios.get(url, {
+    headers: tonyRequestHeaders(),
+    timeout: 30000,
+    maxRedirects: 0,
+    validateStatus: () => true,
+  });
+  if (!isTonyAuthResponse(resp)) return resp;
+
+  resetTonyAuth();
+  await tonyLogin();
+  const retry = await axios.get(url, {
+    headers: tonyRequestHeaders(),
+    timeout: 30000,
+    maxRedirects: 0,
+    validateStatus: () => true,
+  });
+  return retry;
 }

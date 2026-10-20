@@ -2,6 +2,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { config } from '../config.js';
 import { getDb } from '../db/connection.js';
+import { ensureTonySession, getTonyCookies } from './tony-auth.js';
 
 let sessionCookies = '';
 let calToken = '';
@@ -168,43 +169,10 @@ function startKeepAlive() {
 }
 
 export async function authenticate() {
-  const mode = getAuthMode();
-
-  if (mode === 'cookies') {
-    sessionCookies = getCrmCookies();
-    if (!sessionCookies) {
-      throw new Error('Cookie mode selected but no cookies configured');
-    }
-  } else {
-    let attempts = 0;
-    let lastError;
-    while (attempts < 3) {
-      try {
-        await loginWithCredentials();
-        break;
-      } catch (err) {
-        lastError = err;
-        attempts++;
-        if (attempts < 3) await new Promise(r => setTimeout(r, 2000));
-      }
-    }
-    if (attempts >= 3) {
-      console.error('Auto-login failed 3 times, switching to cookie fallback');
-      const db = getDb();
-      db.prepare("UPDATE settings SET value = 'cookies' WHERE key = 'auth_mode'").run();
-      sessionCookies = getCrmCookies();
-      if (!sessionCookies) {
-        throw new Error(
-          `Auto-login failed (${lastError?.message}) and no fallback cookies available`
-        );
-      }
-    }
-  }
-
-  await extractToken();
-  startKeepAlive();
-
-  return { cookies: sessionCookies, token: calToken };
+  // The calendar host no longer serves orders. Parsing uses the Tony logistics session.
+  stopKeepAlive();
+  await ensureTonySession();
+  return { cookies: getTonyCookies(), token: '' };
 }
 
 export function getSessionCookies() {

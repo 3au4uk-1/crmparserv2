@@ -1,8 +1,8 @@
-import axios from 'axios';
 import crypto from 'crypto';
 import { config } from '../config.js';
 import { getDb } from '../db/connection.js';
-import { authenticate, getCalToken, getCrmRequestHeaders } from './auth.js';
+import { authenticate } from './auth.js';
+import { fetchLogisticDescription, fetchLogisticEvents } from './logistics-source.js';
 import { parseDealDescription } from './html-parser.js';
 import { parseDealTitle } from './title-parser.js';
 import { loadCompanyCodes } from './companies.js';
@@ -58,11 +58,6 @@ export function attachEventBitrixLink(db, dealId, { leadId, title, paymentAmount
   mirrorCanonicalCrmLeadId(db, dealId);
 }
 
-function buildUrl(path) {
-  const base = config.crmBaseUrl.replace(/\/$/, '');
-  return `${base}/${path}`;
-}
-
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -71,62 +66,12 @@ function contentHash(str) {
   return crypto.createHash('sha256').update(str).digest('hex');
 }
 
-function normalizeEventsResponse(data) {
-  if (Array.isArray(data)) return data;
-
-  if (typeof data === 'string') {
-    const trimmed = data.trim();
-    if (trimmed.startsWith('[')) {
-      return JSON.parse(trimmed);
-    }
-    if (trimmed.startsWith('<')) {
-      throw new Error(
-        'CRM returned HTML instead of events JSON. Session may be invalid — refresh PHPSESSID cookies.'
-      );
-    }
-  }
-
-  throw new Error(`CRM returned unexpected events format: ${typeof data}`);
-}
-
 export async function fetchEvents(startDate, endDate) {
-  const token = getCalToken();
-  const start = formatCrmDateTime(startDate);
-  const end = formatCrmDateTime(endDate);
-  const url = buildUrl(
-    `includes/cal_events.php?token=${encodeURIComponent(token)}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`
-  );
-
-  const resp = await axios.get(url, {
-    headers: {
-      ...getCrmRequestHeaders(),
-      Accept: 'application/json, text/javascript, */*; q=0.01',
-    },
-    timeout: 30000,
-  });
-
-  return normalizeEventsResponse(resp.data);
+  return fetchLogisticEvents(startDate, endDate);
 }
 
 export async function fetchDescription(eventId) {
-  const url = buildUrl('includes/cal_description.php');
-
-  const resp = await axios.post(
-    url,
-    new URLSearchParams({
-      id: eventId,
-      mode: 'edit',
-    }).toString(),
-    {
-      headers: {
-        ...getCrmRequestHeaders(),
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      timeout: 30000,
-    }
-  );
-
-  return resp.data;
+  return fetchLogisticDescription(eventId);
 }
 
 export function parseDescriptionResponse(data) {
