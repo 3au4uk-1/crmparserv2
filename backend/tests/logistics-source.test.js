@@ -19,11 +19,16 @@ vi.mock('../src/services/tony-auth.js', () => ({
 }));
 
 import {
+  allowedBitrixStages,
   buildDescriptionHtml,
+  fallbackOrderStatuses,
   fetchLogisticDescription,
   fetchLogisticEvents,
+  filterOrdersByBitrixStage,
+  normalizeBitrixStageName,
   parseActPositions,
   parseLogisticList,
+  parseOrderStatusCodes,
   parseReserveStatusCode,
   resetLogisticsCache,
   selectLogisticEvents,
@@ -102,7 +107,7 @@ describe('logistics order source', () => {
     expect(html).not.toMatch(/E-Mail|Юр\.|№ cчета|Бюджет|Скидка:/);
   });
 
-  it('requests only reserve orders and logs a masked snippet when the page is not the list', async () => {
+  it('requests В работе and В резерве and logs a masked snippet when the page is not the list', async () => {
     tonyGet.mockResolvedValue({
       status: 200,
       headers: { 'content-type': 'text/html' },
@@ -110,13 +115,17 @@ describe('logistics order source', () => {
     });
 
     const events = await fetchLogisticEvents(...loadWindow);
-    expect(events.map((event) => event.id)).toEqual(['169120', '170000']);
-    const url = decodeURIComponent(tonyGet.mock.calls[0][0]);
-    expect(url).toContain('https://crm.apihide.com/logistic/?');
-    expect(url).toContain('date_range=16.06.2026');
-    expect(url).toContain('date_range2=20.06.2026');
-    expect(url).toContain('company=0');
-    expect(url).toContain('status[]=5');
+    expect(events.map((event) => event.id)).toEqual(['169120']);
+    expect(tonyGet).toHaveBeenCalledTimes(2);
+    const urls = tonyGet.mock.calls.map((call) => decodeURIComponent(call[0]));
+    expect(urls[0]).toContain('https://crm.apihide.com/logistic/?');
+    expect(urls[0]).toContain('date_range=16.06.2026');
+    expect(urls[0]).toContain('date_range2=20.06.2026');
+    expect(urls[0]).toContain('company=0');
+    expect(urls[0]).toContain('status[]=2');
+    expect(urls[0].match(/status\[\]=/g)).toHaveLength(1);
+    expect(urls[1]).toContain('status[]=5');
+    expect(urls[1].match(/status\[\]=/g)).toHaveLength(1);
 
     const body = 'Session PHPSESSID=abc123session hash=secrethash call +7 (999) 123-45-67';
     tonyGet.mockResolvedValue({
@@ -140,12 +149,13 @@ describe('logistics order source', () => {
 
   it('loads act positions into the description response', async () => {
     const [order] = parseLogisticList(listHtml, { status: 200, headers: {} });
-    tonyGet.mockResolvedValueOnce({
+    tonyGet.mockResolvedValue({
       status: 200,
       headers: { 'content-type': 'text/html' },
       data: listHtml,
     });
     await fetchLogisticEvents(...loadWindow);
+    tonyGet.mockReset();
     tonyGet.mockResolvedValueOnce({
       status: 200,
       headers: { 'content-type': 'text/html' },
@@ -185,9 +195,9 @@ describe('logistics order source', () => {
 
     const events = await fetchLogisticEvents(...loadWindow);
     expect(tonyGet).toHaveBeenCalledTimes(2);
-    expect(decodeURIComponent(tonyGet.mock.calls[0][0])).toContain('status[]=5');
+    expect(decodeURIComponent(tonyGet.mock.calls[0][0])).toContain('status[]=2');
     expect(decodeURIComponent(tonyGet.mock.calls[1][0])).toContain('status[]=7');
-    expect(events.map((event) => event.id)).toEqual(['169120', '170000']);
+    expect(events.map((event) => event.id)).toEqual(['169120']);
   });
 
   it('keeps every card from the reserve page and ignores logistics badges', () => {
@@ -235,4 +245,96 @@ describe('logistics order source', () => {
       </div>
     `)).toBe('9');
   });
+
+  it('fetches В работе and В резерве separately and keeps only two Bitrix stages', async () => {
+    const logs = [];
+    vi.spyOn(console, 'log').mockImplementation((line) => logs.push(String(line)));
+    const form = `
+      <form>
+        <input name="date_range" value="20.10.2026">
+        <label><input type="checkbox" name="status[]" value="4"><span>В РАБОТЕ</span></label>
+        <label><input type="checkbox" name="status[]" value="8"><span>В резерве</span></label>
+      </form>
+    `;
+    const work = `${form}
+      <div class="order-card" data-order-id="1" data-deal-id="11" data-order-status="in_progress">
+        <div class="card-header"><div class="ref"><a href="/orders/orders_edit/?id=1">ID: ПРО/20.10/1/Иванов / Клиент</a></div></div>
+        <div class="status-indicator" data-status="new">Новый</div>
+        <div data-bitrix-stage="Отправили КП" class="bitrix-stage-label">Стадия в Битриксе: Отправили КП</div>
+        <div class="order-info-line">Загрузка: 20.10.2026 09:00 Возврат: 21.10.2026 18:00 - 19:00</div>
+      </div>
+      <div class="order-card" data-order-id="2" data-deal-id="12" data-order-status="done">
+        <div class="card-header"><div class="ref"><a href="/orders/orders_edit/?id=2">ID: АРТ/20.10/2/Петров / Клиент</a></div></div>
+        <div class="status-indicator">Выполнен</div>
+        <div class="bitrix-stage-label">мероприятие   подтверждено</div>
+        <div class="order-info-line">Загрузка: 20.10.2026 10:00 Возврат: 20.10.2026 12:00 - 13:00</div>
+      </div>
+      <div class="order-card" data-order-id="4" data-deal-id="14">
+        <div class="card-header"><div class="ref"><a href="/orders/orders_edit/?id=4">ID: ПРО/20.10/4/Сидоров / Клиент</a></div></div>
+        <div class="bitrix-stage-label">Стадия в Битриксе: Мероприятие проведено</div>
+        <div class="order-info-line">Загрузка: 20.10.2026 11:00 Возврат: 20.10.2026 15:00 - 16:00</div>
+      </div>
+    `;
+    const reserve = `${form}
+      <div class="order-card" data-order-id="2" data-deal-id="12">
+        <div class="card-header"><div class="ref"><a href="/orders/orders_edit/?id=2">ID: АРТ/20.10/2/Петров / Клиент</a></div></div>
+        <div class="bitrix-stage-label">Мероприятие подтверждено</div>
+        <div class="order-info-line">Загрузка: 20.10.2026 10:00 Возврат: 20.10.2026 12:00 - 13:00</div>
+      </div>
+      <div class="order-card" data-order-id="3" data-deal-id="13">
+        <div class="card-header"><div class="ref"><a href="/orders/orders_edit/?id=3">ID: ПРО/20.10/3/Орлов / Клиент</a></div></div>
+        <div class="bitrix-stage-label">Стадия в Битриксе: Отправили КП</div>
+        <div class="order-info-line">Загрузка: 22.10.2026 10:00 Возврат: 22.10.2026 18:00 - 19:00</div>
+      </div>
+    `;
+    tonyGet
+      .mockResolvedValueOnce({ status: 200, headers: { 'content-type': 'text/html' }, data: work })
+      .mockResolvedValueOnce({ status: 200, headers: { 'content-type': 'text/html' }, data: work })
+      .mockResolvedValueOnce({ status: 200, headers: { 'content-type': 'text/html' }, data: reserve });
+
+    const events = await fetchLogisticEvents('2026-10-20T00:00:00+03:00', '2026-11-03T23:59:59+03:00');
+    expect(tonyGet).toHaveBeenCalledTimes(3);
+    expect(decodeURIComponent(tonyGet.mock.calls[0][0])).toContain('status[]=2');
+    expect(decodeURIComponent(tonyGet.mock.calls[1][0])).toContain('status[]=4');
+    expect(decodeURIComponent(tonyGet.mock.calls[2][0])).toContain('status[]=8');
+    expect(events.map((event) => event.id)).toEqual(['1', '2', '3']);
+
+    tonyGet.mockResolvedValue({ status: 200, headers: {}, data: '<p></p>' });
+    const described = await fetchLogisticDescription('2');
+    expect(parseDealDescription(described.description).meta.status).toBe('В работе');
+
+    const line = logs.find((item) => item.includes('fetched_per_status'));
+    expect(line).toContain('"status":"В работе"');
+    expect(line).toContain('"fetched":3');
+    expect(line).toContain('"status":"В резерве"');
+    expect(line).toContain('kept_after_stage=3');
+    expect(line).toContain('Мероприятие проведено');
+  });
+
+  it('matches Bitrix stage names loosely and reads both status labels', () => {
+    expect(normalizeBitrixStageName('  Стадия в Битриксе: Отправили КП ')).toBe('Отправили КП');
+    expect(bitrixKept('МЕРОПРИЯТИЕ ПОДТВЕРЖДЕНО')).toBe(true);
+    expect(bitrixKept('Мероприятие проведено')).toBe(false);
+    expect(fallbackOrderStatuses('В работе=4|В резерве=8')).toEqual([
+      { label: 'В работе', code: '4' },
+      { label: 'В резерве', code: '8' },
+    ]);
+    expect(allowedBitrixStages('Отправили КП|Счёт оплачен')).toEqual(['Отправили КП', 'Счёт оплачен']);
+    const codes = parseOrderStatusCodes(`
+      <label><input name="status[]" value="4"><span>В работе</span></label>
+      <div><input name="status[]" value="8"><span>В резерве</span></div>
+    `, [
+      { label: 'В работе', code: '2' },
+      { label: 'В резерве', code: '5' },
+    ]);
+    expect(codes).toEqual([
+      { label: 'В работе', code: '4' },
+      { label: 'В резерве', code: '8' },
+    ]);
+  });
 });
+
+function bitrixKept(stage) {
+  const { kept } = filterOrdersByBitrixStage([{ id: '1', bitrixStage: normalizeBitrixStageName(stage) }]);
+  return kept.length === 1;
+}

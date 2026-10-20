@@ -13,8 +13,45 @@ export function resetLogisticsCache() {
   orderCache.clear();
 }
 
+const DEFAULT_BITRIX_STAGES = ['Отправили КП', 'Мероприятие подтверждено'];
+
 export function reserveStatusCode() {
   return String(config.logisticReserveStatus || '5').trim() || '5';
+}
+
+export function fallbackOrderStatuses(raw = config.logisticStatuses, reserveCode = reserveStatusCode()) {
+  const text = String(raw || '').trim();
+  if (!text) {
+    return [
+      { label: 'В работе', code: '2' },
+      { label: 'В резерве', code: String(reserveCode || '5').trim() || '5' },
+    ];
+  }
+  const chunks = (text.includes('|') || text.includes('\n') ? text.split(/[|\n]/) : text.split(','))
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const parsed = [];
+  for (const chunk of chunks) {
+    const match = chunk.match(/^(.+?)\s*[=:]\s*([^\s=]+)\s*$/);
+    if (!match) continue;
+    parsed.push({ label: match[1].trim(), code: match[2].trim() });
+  }
+  if (!parsed.length) {
+    return [
+      { label: 'В работе', code: '2' },
+      { label: 'В резерве', code: String(reserveCode || '5').trim() || '5' },
+    ];
+  }
+  return parsed;
+}
+
+export function allowedBitrixStages(raw = config.logisticBitrixStages) {
+  const text = String(raw || '').trim();
+  if (!text) return [...DEFAULT_BITRIX_STAGES];
+  const parts = (text.includes('|') || text.includes('\n') ? text.split(/[|\n]/) : text.split(','))
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.length ? parts : [...DEFAULT_BITRIX_STAGES];
 }
 
 function normalizeLabel(value) {
@@ -59,23 +96,66 @@ function nearbyStatusText($, input) {
   return chunks.join(' ');
 }
 
-function reserveCodeFromRawHtml(html) {
+function statusLabelMatches(normalizedLabel, wantedLabel) {
+  const want = normalizeLabel(wantedLabel);
+  if (!want || !normalizedLabel) return false;
+  if (want.includes('резерв')) return normalizedLabel.includes('резерв');
+  if (want.includes('работ')) return normalizedLabel.includes('в работе');
+  return normalizedLabel.includes(want);
+}
+
+function statusCandidatesFromHtml(html) {
+  if (!html || typeof html !== 'string') return [];
+  const $ = cheerio.load(html);
+  const candidates = [];
+  $('input').each((_, el) => {
+    const input = $(el);
+    if (!isStatusFilterName(input.attr('name'))) return;
+    const value = cleanText(input.attr('value'));
+    if (!value) return;
+    candidates.push({ value, label: normalizeLabel(nearbyStatusText($, input)) });
+  });
+
   const inputRe = /<input\b[^>]*>/gi;
   let match;
   while ((match = inputRe.exec(html))) {
     const tag = match[0];
     const name = /name\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1] || '';
     if (!isStatusFilterName(name)) continue;
-    const value = /value\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1] || '';
+    const value = cleanText(/value\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1] || '');
     if (!value) continue;
-    const start = Math.max(0, match.index - 350);
-    const end = Math.min(html.length, match.index + tag.length + 350);
-    const windowText = html.slice(start, end)
+    const after = html.slice(match.index + tag.length);
+    const nextInput = after.search(/<input\b/i);
+    const following = after.slice(0, nextInput === -1 ? 180 : Math.min(nextInput, 180))
       .replace(/<[^>]+>/g, ' ')
       .replace(/&nbsp;|&#160;|&#xa0;/gi, ' ');
-    if (normalizeLabel(windowText).includes('резерв')) return cleanText(value);
+    candidates.push({ value, label: normalizeLabel(following) });
   }
-  return '';
+  return candidates;
+}
+
+function pickStatusCode(candidates, wantedLabel, fallbackCode) {
+  const hits = candidates.filter((item) => statusLabelMatches(item.label, wantedLabel));
+  if (!hits.length) return String(fallbackCode);
+  const want = normalizeLabel(wantedLabel);
+  const others = ['в работе', 'в резерве', 'новый', 'выполнен', 'отказ', 'вернулся']
+    .filter((phrase) => phrase !== want);
+  const focused = hits.filter((item) => !others.some((phrase) => item.label.includes(phrase)));
+  const pool = focused.length ? focused : hits;
+  pool.sort((a, b) => a.label.length - b.label.length);
+  return pool[0].value;
+}
+
+/**
+ * Codes for the order-status checkboxes we fetch.
+ * Each wanted label is matched independently; a missing label keeps its fallback code.
+ */
+export function parseOrderStatusCodes(html, fallbacks = fallbackOrderStatuses()) {
+  const candidates = statusCandidatesFromHtml(html);
+  return fallbacks.map((item) => ({
+    label: item.label,
+    code: pickStatusCode(candidates, item.label, item.code),
+  }));
 }
 
 /**
@@ -84,22 +164,37 @@ function reserveCodeFromRawHtml(html) {
  * Card badges are not order statuses and are not consulted here.
  */
 export function parseReserveStatusCode(html, fallback = reserveStatusCode()) {
-  const fb = String(fallback || '5').trim() || '5';
-  if (!html || typeof html !== 'string') return fb;
-  const $ = cheerio.load(html);
-  const matches = [];
-  $('input').each((_, el) => {
-    const input = $(el);
-    if (!isStatusFilterName(input.attr('name'))) return;
-    const value = cleanText(input.attr('value'));
-    if (!value) return;
-    const label = normalizeLabel(nearbyStatusText($, input));
-    if (label.includes('резерв')) matches.push({ value, label });
-  });
-  if (!matches.length) return reserveCodeFromRawHtml(html) || fb;
-  matches.sort((a, b) => a.label.length - b.label.length);
-  const exact = matches.find((item) => item.label === 'в резерве' || /(^|\s)в резерве(\s|$)/.test(item.label));
-  return (exact || matches[0]).value;
+  const [reserve] = parseOrderStatusCodes(html, [{ label: 'В резерве', code: String(fallback || '5').trim() || '5' }]);
+  return reserve.code;
+}
+
+export function normalizeBitrixStageName(raw) {
+  return cleanText(String(raw ?? '').replace(/^\s*стадия\s+в\s+битрикс[еа]?\s*:\s*/iu, ''));
+}
+
+export function bitrixStageAllowed(stage, allowed = allowedBitrixStages()) {
+  const name = normalizeLabel(normalizeBitrixStageName(stage));
+  if (!name || name === '-' || name === 'нет информации') return false;
+  return allowed.some((item) => normalizeLabel(item) === name);
+}
+
+export function filterOrdersByBitrixStage(orders, allowed = allowedBitrixStages()) {
+  const kept = [];
+  const dropped = [];
+  for (const order of orders || []) {
+    if (bitrixStageAllowed(order?.bitrixStage, allowed)) kept.push(order);
+    else dropped.push(order);
+  }
+  return { kept, dropped };
+}
+
+export function droppedBitrixStageCounts(orders) {
+  const counts = {};
+  for (const order of orders || []) {
+    const name = order?.bitrixStage || '(none)';
+    counts[name] = (counts[name] || 0) + 1;
+  }
+  return counts;
 }
 
 function isoToDmy(iso) {
@@ -216,11 +311,22 @@ export function parseLogisticList(html, resp = {}) {
       statusLabel,
       statusCode,
       paymentText: cleanText(card.find('.fact-of-payment').first().text()),
-      bitrixStage: cleanText(card.find('.bitrix-stage-label').first().text()),
+      bitrixStage: extractBitrixStage($, card),
       warehouses,
     });
   });
   return orders;
+}
+
+function extractBitrixStage($, card) {
+  const badge = cleanText(card.find('.bitrix-stage-label, .bitrix-stage-badge, .bitrix-stage').first().text());
+  const attr = cleanText(card.attr('data-bitrix-stage') || card.find('[data-bitrix-stage]').first().attr('data-bitrix-stage'));
+  let raw = badge || attr;
+  if (!raw) {
+    const line = card.find('*').filter((__, el) => /стадия\s+в\s+битрикс/i.test($(el).text()) && $(el).children().length === 0).first().text();
+    raw = cleanText(line || '');
+  }
+  return normalizeBitrixStageName(raw);
 }
 
 const RESERVE_DEAL_STATUS = 'В резерве';
@@ -247,9 +353,9 @@ export function toCalendarEvent(order, startDate, endDate) {
 }
 
 /**
- * Every card on the page is already a reserve order: /logistic/ is requested
- * with status[] set to «В резерве». Card badges (new / in_progress / done)
- * are the logistics line status and must not drop the order.
+ * Cards on a status[] page are that order status. `.status-indicator` and
+ * `data-order-status` are the logistics line status and must not drop the order.
+ * Bitrix stage is applied separately from the card badge.
  */
 export function selectLogisticEvents(orders, startDate, endDate) {
   const events = [];
@@ -367,24 +473,50 @@ async function requestLogisticList(startDate, endDate, statusCode) {
   params.append('status[]', String(statusCode));
   const url = `${baseUrl}/logistic/?${params.toString()}`;
   const resp = await tonyGet(url);
-  return { resp, html: bodyText(resp.data) };
+  return { resp, html: bodyText(resp.data), url };
 }
 
 export async function fetchLogisticEvents(startDate, endDate) {
-  const fallback = reserveStatusCode();
-  let statusCode = fallback;
-  let page = await requestLogisticList(startDate, endDate, statusCode);
-  const parsedCode = parseReserveStatusCode(page.html, fallback);
-  if (parsedCode !== statusCode) {
-    statusCode = parsedCode;
-    page = await requestLogisticList(startDate, endDate, statusCode);
+  const fallbacks = fallbackOrderStatuses();
+  const probeCode = fallbacks[0]?.code || '2';
+  const probe = await requestLogisticList(startDate, endDate, probeCode);
+  const statuses = parseOrderStatusCodes(probe.html, fallbacks);
+
+  const byId = new Map();
+  const fetched = [];
+  for (let index = 0; index < statuses.length; index += 1) {
+    const status = statuses[index];
+    const page = index === 0 && String(status.code) === String(probeCode)
+      ? probe
+      : await requestLogisticList(startDate, endDate, status.code);
+    const orders = parseLogisticList(page.html, page.resp);
+    let unique = 0;
+    for (const order of orders) {
+      if (byId.has(order.id)) continue;
+      order.dealStatus = status.label;
+      byId.set(order.id, order);
+      unique += 1;
+    }
+    fetched.push({
+      status: status.label,
+      code: String(status.code),
+      fetched: orders.length,
+      unique,
+    });
   }
-  const orders = parseLogisticList(page.html, page.resp);
-  for (const order of orders) order.dealStatus = RESERVE_DEAL_STATUS;
+
+  const combined = [...byId.values()];
+  const { kept, dropped } = filterOrdersByBitrixStage(combined);
+  console.log(
+    `[logistics] fetched_per_status=${JSON.stringify(fetched)} ` +
+    `kept_after_stage=${kept.length} ` +
+    `dropped_by_stage=${JSON.stringify(droppedBitrixStageCounts(dropped))}`,
+  );
+
   orderCache.clear();
-  const events = selectLogisticEvents(orders, startDate, endDate);
+  const events = selectLogisticEvents(kept, startDate, endDate);
   for (const event of events) {
-    const order = orders.find((item) => String(item.id) === event.id);
+    const order = kept.find((item) => String(item.id) === event.id);
     if (order) orderCache.set(event.id, order);
   }
   return events;

@@ -33,8 +33,19 @@ export const config = {
   tonyBaseUrl: process.env.TONY_BASE_URL || 'https://crm.apihide.com',
   tonyLogin: process.env.TONY_LOGIN || '',
   tonyPassword: process.env.TONY_PASSWORD || '',
-  /** Logistics list filter. 5 = «В резерве» on /logistic/ (Новый…В резерве are 1..5). */
+  /** Fallback code for «В резерве» when the logistics form has no matching checkbox. */
   logisticReserveStatus: process.env.LOGISTIC_STATUS || '5',
+  /**
+   * Fallback order-status filters when checkbox labels are missing.
+   * Pairs separated by | : `В работе=2|В резерве=5`.
+   * Empty uses В работе=2 and В резерве=LOGISTIC_STATUS.
+   */
+  logisticStatuses: process.env.LOGISTIC_STATUSES || '',
+  /**
+   * Bitrix stages kept from the card badge. Separated by | .
+   * Empty keeps «Отправили КП» and «Мероприятие подтверждено».
+   */
+  logisticBitrixStages: process.env.LOGISTIC_BITRIX_STAGES || '',
   tonyRequestDelayMs: parseInt(process.env.TONY_REQUEST_DELAY_MS || '350', 10),
   fetchConcurrency: parseInt(process.env.FETCH_CONCURRENCY || '8', 10),
   tonyUnchangedProbe: !['0', 'false', 'no'].includes(
