@@ -1,10 +1,13 @@
+import crypto from 'crypto';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import { migrate } from '../src/db/migrate.js';
 import { applyEvent } from '../src/services/parser.js';
 import { parseDealDescription } from '../src/services/html-parser.js';
 import { buildDescriptionHtml, toCalendarEvent } from '../src/services/logistics-source.js';
+import { tonyContentHash } from '../src/services/tony-mapping.js';
 import { buildOpportunityInput } from '../src/services/twenty-opportunity.js';
+import { PAYMENT_STATUS } from '../src/services/payment-field-names.js';
 
 const window = ['2026-06-16T00:00:00+03:00', '2026-06-20T23:59:59+03:00'];
 
@@ -125,6 +128,167 @@ describe('logistics re-parse keeps fields Tony cannot provide', () => {
     );
     expect(opportunity.summaPostupleniy).toEqual({ amountMicros: 235752_000_000, currencyCode: 'RUB' });
     expect(opportunity.statusOplaty).toBe('PREDOPLATA');
+  });
+
+  it('stores a mapped fact-of-payment badge without changing the amount', async () => {
+    insertStoredDeal('calendar');
+    db.prepare('UPDATE deals SET twenty_id = ? WHERE id = 1').run('tw-1');
+    const event = toCalendarEvent(order, ...window);
+    const run = ctx();
+
+    await applyEvent(db, event, '169120', {
+      ...logisticsData(),
+      paymentStatus: PAYMENT_STATUS.PAID,
+    }, run);
+
+    const row = storedRow();
+    expect(row.payment_status).toBe(PAYMENT_STATUS.PAID);
+    expect(row.payment_amount).toBe(235752);
+    expect(row.payment_count).toBe(2);
+    expect(row.payment_hash).toBe('keep-hash');
+    expect(row.legal_entity).toBe('ООО Старое');
+    expect(row.contact_email).toBe('old@example.com');
+    expect(run.dealsToResync).toEqual([1]);
+
+    const opportunity = buildOpportunityInput(
+      db.prepare('SELECT * FROM deals WHERE id = 1').get(),
+      [],
+      { bitrixLinks: [] },
+    );
+    expect(opportunity.statusOplaty).toBe(PAYMENT_STATUS.PAID);
+    expect(opportunity.summaPostupleniy).toEqual({ amountMicros: 235752_000_000, currencyCode: 'RUB' });
+  });
+
+  it('updates payment status on an unchanged card and queues a Twenty sync', async () => {
+    insertStoredDeal('calendar');
+    const data = logisticsData();
+    const hash = crypto.createHash('sha256').update(data.descHtml).digest('hex');
+    db.prepare('UPDATE deals SET content_hash = ?, twenty_id = ? WHERE id = 1').run(hash, 'tw-1');
+    const run = ctx();
+
+    await applyEvent(db, toCalendarEvent(order, ...window), '169120', {
+      ...data,
+      paymentStatus: PAYMENT_STATUS.NONE,
+    }, run);
+
+    const row = storedRow();
+    expect(row.title).toBe('OLD TITLE');
+    expect(row.payment_status).toBe(PAYMENT_STATUS.NONE);
+    expect(row.payment_amount).toBe(235752);
+    expect(row.payment_count).toBe(2);
+    expect(row.payment_hash).toBe('keep-hash');
+    expect(run.dealsToResync).toEqual([1]);
+    expect(run.counters.skippedDeals).toBe(0);
+    expect(run.counters.updatedDeals).toBe(1);
+  });
+
+  it('lets the badge replace a Tony-order hash match without touching the amount', async () => {
+    insertStoredDeal('tony');
+    const tonyOrder = {
+      items: [{ name: 'Баннер', price: 10, quantity: '1', discount: 0, sum: 10, comment: '' }],
+      dates: { loadDate: '16.06.2026' },
+      address: 'старый адрес',
+      budget: null,
+    };
+    db.prepare('UPDATE deals SET content_hash = ?, twenty_id = ? WHERE id = 1')
+      .run(tonyContentHash(tonyOrder), 'tw-9');
+    const run = ctx();
+
+    await applyEvent(db, toCalendarEvent(order, ...window), '169120', {
+      ...logisticsData('', tonyOrder),
+      paymentStatus: PAYMENT_STATUS.PAID,
+    }, run);
+
+    const row = storedRow();
+    expect(row.title).toBe('OLD TITLE');
+    expect(row.address).toBe('старый адрес');
+    expect(row.payment_status).toBe(PAYMENT_STATUS.PAID);
+    expect(row.payment_amount).toBe(235752);
+    expect(row.payment_hash).toBe('keep-hash');
+    expect(run.dealsToResync).toEqual([1]);
+    expect(run.counters.skippedDeals).toBe(0);
+  });
+
+  it('updates payment status when Tony order data is kept during an outage', async () => {
+    insertStoredDeal('tony');
+    db.prepare('UPDATE deals SET twenty_id = ? WHERE id = 1').run('tw-1');
+    const run = ctx();
+
+    await applyEvent(db, toCalendarEvent(order, ...window), '169120', {
+      ...logisticsData(),
+      paymentStatus: PAYMENT_STATUS.PAID,
+    }, run);
+
+    const row = storedRow();
+    expect(row.title).toBe('OLD TITLE');
+    expect(row.payment_status).toBe(PAYMENT_STATUS.PAID);
+    expect(row.payment_amount).toBe(235752);
+    expect(run.dealsToResync).toEqual([1]);
+    expect(run.counters.skippedDeals).toBe(0);
+  });
+
+  it('leaves payment status unchanged when the badge is absent', async () => {
+    insertStoredDeal('calendar');
+    const data = logisticsData();
+    const hash = crypto.createHash('sha256').update(data.descHtml).digest('hex');
+    db.prepare('UPDATE deals SET content_hash = ?, twenty_id = ? WHERE id = 1').run(hash, 'tw-1');
+    const run = ctx();
+
+    await applyEvent(db, toCalendarEvent(order, ...window), '169120', {
+      ...data,
+      paymentStatus: null,
+    }, run);
+
+    const row = storedRow();
+    expect(row.payment_status).toBe('PREDOPLATA');
+    expect(row.payment_amount).toBe(235752);
+    expect(run.dealsToResync).toEqual([]);
+    expect(run.counters.skippedDeals).toBe(1);
+  });
+
+  it('sets payment status on a new deal and leaves the amount empty', async () => {
+    await applyEvent(db, toCalendarEvent(order, ...window), '169120', {
+      ...logisticsData(),
+      paymentStatus: PAYMENT_STATUS.NONE,
+    }, ctx());
+
+    const row = db.prepare(`
+      SELECT payment_amount, payment_status, payment_count, payment_hash FROM deals
+    `).get();
+    expect(row).toEqual({
+      payment_amount: null,
+      payment_status: PAYMENT_STATUS.NONE,
+      payment_count: null,
+      payment_hash: null,
+    });
+    const opportunity = buildOpportunityInput(
+      db.prepare('SELECT * FROM deals').get(),
+      [],
+      { bitrixLinks: [] },
+    );
+    expect(opportunity.statusOplaty).toBe(PAYMENT_STATUS.NONE);
+    expect(opportunity.summaPostupleniy).toBeUndefined();
+  });
+
+  it('keeps a real payment amount and lets the badge win the status', async () => {
+    insertStoredDeal('calendar');
+    const history = `
+      <ul id="payment-history">
+        <li data-payid="9">
+          <span class="paysum">100 000.00</span>
+          <select class="paystatus"><option value="1" selected>Предоплата</option></select>
+        </li>
+      </ul>`;
+    await applyEvent(db, toCalendarEvent(order, ...window), '169120', {
+      ...logisticsData(),
+      calPayments: { history },
+      paymentStatus: PAYMENT_STATUS.PAID,
+    }, ctx());
+
+    const row = storedRow();
+    expect(row.payment_amount).toBe(100000);
+    expect(row.payment_status).toBe(PAYMENT_STATUS.PAID);
+    expect(row.payment_count).toBe(1);
   });
 
   it('does not replace the stored budget with a Tony item sum', async () => {

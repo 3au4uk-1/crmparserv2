@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio';
 import { config } from '../config.js';
 import { crmOffsetSuffix, toInputDate } from '../utils/crm-dates.js';
 import { dmyToIsoDate, disambiguateDuplicateNames, normalizeFreeEntryItem } from './tony-mapping.js';
+import { isUnknownFactOfPayment, mapFactOfPayment } from './payment-field-names.js';
 import { getTonyConfig, isTonyAuthResponse, tonyGet } from './tony-auth.js';
 import { crmFailure } from '../utils/crm-response-log.js';
 
@@ -570,8 +571,15 @@ export async function fetchLogisticDescription(eventId) {
     );
   }
   const order = orderCache.get(String(eventId)) || { id: String(eventId), dealStatus: RESERVE_DEAL_STATUS };
+  const paymentStatus = mapFactOfPayment(order.paymentText);
+  if (isUnknownFactOfPayment(order.paymentText)) {
+    console.warn(
+      `[logistics] order ${eventId} unknown fact-of-payment "${cleanText(order.paymentText)}"; statusOplaty unchanged`,
+    );
+  }
   return {
     description: buildDescriptionHtml(order, positions),
     payments: null,
+    paymentStatus,
   };
 }

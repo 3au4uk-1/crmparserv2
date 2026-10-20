@@ -167,8 +167,36 @@ describe('logistics order source', () => {
 
     const description = await fetchLogisticDescription(order.id);
     expect(description.payments).toBeNull();
+    expect(description.paymentStatus).toBe('OPLACHENO_POLNOSTYU');
     expect(parseDealDescription(description.description).items).toHaveLength(2);
     expect(tonyGet.mock.calls.at(-1)[0]).toBe('https://crm.apihide.com/orders/orders_act/?id=169120');
+  });
+
+  it('logs an unknown fact-of-payment badge and does not assign a status', async () => {
+    const html = listHtml.replace('полная оплата', 'Нет информации');
+    tonyGet.mockResolvedValue({
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+      data: html,
+    });
+    await fetchLogisticEvents(...loadWindow);
+    tonyGet.mockReset();
+    tonyGet.mockResolvedValueOnce({
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+      data: actHtml,
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const description = await fetchLogisticDescription('169120');
+
+    expect(description.paymentStatus).toBeNull();
+    expect(description.payments).toBeNull();
+    const logged = warn.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(logged).toMatch(/order 169120 unknown fact-of-payment/);
+    expect(logged).toMatch(/Нет информации/);
+    expect(logged).toMatch(/statusOplaty unchanged/);
+    warn.mockRestore();
   });
 
   it('names generic branding positions from the act comment', () => {

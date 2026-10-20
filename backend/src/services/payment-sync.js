@@ -8,6 +8,7 @@ import {
   parseCalendarPayments,
 } from './payment-parser.js';
 import { requireTwentyConfig } from './twenty-config.js';
+import { PAYMENT_FIELDS, PAYMENT_STATUS } from './payment-field-names.js';
 import { buildPaymentFieldsInput } from './twenty-opportunity.js';
 import { gql, assertHttpSuccess, assertGqlSuccess } from './twenty-gql.js';
 import { normalizeExportRange } from '../utils/crm-dates.js';
@@ -97,6 +98,20 @@ export function resolvePaymentTwentyTargets(db, eventDeals) {
   return [...targets];
 }
 
+export async function pushPaymentStatusToTwenty(twenty, twentyId, paymentStatus) {
+  const resp = await gql(
+    twenty.apiUrl,
+    twenty.apiToken,
+    UPDATE_OPPORTUNITY_PAYMENTS_MUTATION,
+    {
+      id: twentyId,
+      input: { [PAYMENT_FIELDS.status]: paymentStatus },
+    },
+  );
+  assertHttpSuccess(resp, twenty.apiUrl);
+  assertGqlSuccess(resp, `Failed to update payment status for Twenty opportunity ${twentyId}`);
+}
+
 export async function pushPaymentToTwenty(twenty, twentyId, aggregate) {
   const resp = await gql(
     twenty.apiUrl,
@@ -112,6 +127,43 @@ export async function pushPaymentToTwenty(twenty, twentyId, aggregate) {
   );
   assertHttpSuccess(resp, twenty.apiUrl);
   assertGqlSuccess(resp, `Failed to update payments for Twenty opportunity ${twentyId}`);
+}
+
+const PAYMENT_STATUS_VALUES = new Set(Object.values(PAYMENT_STATUS));
+
+async function syncBadgeStatus({ db, twenty, eventDeals, paymentStatus, errors }) {
+  let dealsUpdatedLocal = 0;
+  let dealsUpdatedTwenty = 0;
+  let dealsFailed = 0;
+  let changed = false;
+
+  for (const deal of eventDeals) {
+    if (deal.payment_status === paymentStatus) continue;
+    try {
+      db.prepare(`
+        UPDATE deals SET payment_status = ?, updated_at = datetime('now') WHERE id = ?
+      `).run(paymentStatus, deal.id);
+      dealsUpdatedLocal += 1;
+      changed = true;
+    } catch (err) {
+      dealsFailed += 1;
+      errors.push(`Сделка ${deal.id} (${deal.title || deal.crm_event_id}): ${err.message}`);
+    }
+  }
+
+  if (!changed) return { dealsUpdatedLocal, dealsUpdatedTwenty, dealsFailed };
+
+  const twentyTargets = resolvePaymentTwentyTargets(db, eventDeals);
+  for (const twentyId of twentyTargets) {
+    try {
+      await pushPaymentStatusToTwenty(twenty, twentyId, paymentStatus);
+      dealsUpdatedTwenty += 1;
+    } catch (err) {
+      dealsFailed += 1;
+      errors.push(`Twenty ${twentyId}: ${err.message}`);
+    }
+  }
+  return { dealsUpdatedLocal, dealsUpdatedTwenty, dealsFailed };
 }
 
 export async function runPaymentSync({ from, to, onProgress } = {}) {
@@ -143,8 +195,16 @@ export async function runPaymentSync({ from, to, onProgress } = {}) {
     let aggregate;
     try {
       const descJson = await fetchDescription(eventId);
-      const { calPayments } = parseDescriptionResponse(descJson);
+      const { calPayments, paymentStatus } = parseDescriptionResponse(descJson);
       if (!calendarPaymentsProvided(calPayments)) {
+        if (paymentStatus && PAYMENT_STATUS_VALUES.has(paymentStatus)) {
+          const statusResult = await syncBadgeStatus({
+            db, twenty, eventDeals, paymentStatus, errors,
+          });
+          dealsUpdatedLocal += statusResult.dealsUpdatedLocal;
+          dealsUpdatedTwenty += statusResult.dealsUpdatedTwenty;
+          dealsFailed += statusResult.dealsFailed;
+        }
         dealsProcessed += eventDeals.length;
         reportProgress(onProgress, {
           stage: 'fetching_calendar',
@@ -158,6 +218,9 @@ export async function runPaymentSync({ from, to, onProgress } = {}) {
         continue;
       }
       aggregate = parseCalendarPayments(calPayments);
+      if (paymentStatus && PAYMENT_STATUS_VALUES.has(paymentStatus)) {
+        aggregate = { ...aggregate, paymentStatus };
+      }
     } catch (err) {
       dealsFailed += eventDeals.length;
       errors.push(`Событие ${eventId}: ${err.message}`);
