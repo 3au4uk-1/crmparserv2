@@ -1,6 +1,6 @@
 import { getDb } from '../db/connection.js';
 import { writePrintSheetRow } from './print-sheet-append.js';
-import { fetchPrintSheetRow, extractReadbackFromRow } from './print-sheet-readback.js';
+import { fetchPrintSheetRows, extractReadbackFromRow, rowKey } from './print-sheet-readback.js';
 import { buildCurrentMonthTabName } from './print-sheet-tabs.js';
 import { V_PECHATI_LINE_ITEM_STAGE } from './print-sheet-twenty.js';
 import {
@@ -55,6 +55,7 @@ export async function runPrintSheetCycle(gql) {
   }
 
   const active = await listActivePrintSheetSessions(gql);
+  const readTargets = [];
 
   for (const lineItem of active) {
     if (lineItem.stage !== V_PECHATI_LINE_ITEM_STAGE) {
@@ -70,9 +71,25 @@ export async function runPrintSheetCycle(gql) {
     const tab = lineItem.printSheetTabName;
     const row = lineItem.printSheetRowNumber;
     if (!tab || !row) continue;
+    readTargets.push(lineItem);
+  }
 
+  let cellsByKey = new Map();
+  if (readTargets.length) {
     try {
-      const cells = await fetchPrintSheetRow(tab, row);
+      cellsByKey = await fetchPrintSheetRows(readTargets.map((lineItem) => ({
+        tabName: lineItem.printSheetTabName,
+        rowNumber: lineItem.printSheetRowNumber,
+      })));
+    } catch (err) {
+      console.error('[print-sheet] batched read-back failed:', err.message);
+      return { exported, readbackUpdated, sessionsCleared };
+    }
+  }
+
+  for (const lineItem of readTargets) {
+    try {
+      const cells = cellsByKey.get(rowKey(lineItem.printSheetTabName, lineItem.printSheetRowNumber)) ?? [];
       const readback = extractReadbackFromRow(cells);
       const input = buildReadbackUpdateInput(lineItem, readback);
       if (Object.keys(input).length === 0) continue;

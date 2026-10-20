@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const listPendingMock = vi.fn();
 const listActiveMock = vi.fn();
 const appendMock = vi.fn();
-const fetchRowMock = vi.fn();
+const fetchRowsMock = vi.fn();
 const updateMock = vi.fn();
 
 vi.mock('../src/services/print-sheet-export-twenty.js', () => ({
@@ -46,7 +46,8 @@ vi.mock('../src/services/print-sheet-append.js', () => ({
 }));
 
 vi.mock('../src/services/print-sheet-readback.js', () => ({
-  fetchPrintSheetRow: (...args) => fetchRowMock(...args),
+  fetchPrintSheetRows: (...args) => fetchRowsMock(...args),
+  rowKey: (tabName, rowNumber) => `${tabName}\0${rowNumber}`,
   extractReadbackFromRow: () => ({
     plenkaText: 'Item - 1',
     vzatoVRabotu: true,
@@ -75,7 +76,8 @@ describe('runPrintSheetCycle', () => {
     listPendingMock.mockReset();
     listActiveMock.mockReset();
     appendMock.mockReset();
-    fetchRowMock.mockReset();
+    fetchRowsMock.mockReset();
+    fetchRowsMock.mockResolvedValue(new Map());
     updateMock.mockReset();
   });
 
@@ -92,9 +94,9 @@ describe('runPrintSheetCycle', () => {
       },
     ]);
     appendMock.mockResolvedValue({ rowNumber: 10 });
-    fetchRowMock.mockResolvedValue([
-      '1', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 'TRUE', 'FALSE',
-    ]);
+    fetchRowsMock.mockResolvedValue(new Map([
+      ['Июнь 2026\u00005', ['1']],
+    ]));
 
     const result = await runPrintSheetCycle(gql);
 
@@ -205,5 +207,34 @@ describe('runPrintSheetCycle', () => {
       printSheetTabName: null,
       printSheetRowNumber: null,
     });
+  });
+
+  it('reads every active row in one batch', async () => {
+    listPendingMock.mockResolvedValue([]);
+    listActiveMock.mockResolvedValue([
+      {
+        id: 'li-a',
+        stage: 'V_PECHATI',
+        printSheetTabName: 'Июнь 2026',
+        printSheetRowNumber: 5,
+        plenka: { markdown: '' },
+      },
+      {
+        id: 'li-b',
+        stage: 'V_PECHATI',
+        printSheetTabName: 'Июль 2026',
+        printSheetRowNumber: 9,
+        plenka: { markdown: '' },
+      },
+    ]);
+
+    const result = await runPrintSheetCycle(gql);
+
+    expect(fetchRowsMock).toHaveBeenCalledTimes(1);
+    expect(fetchRowsMock.mock.calls[0][0]).toEqual([
+      { tabName: 'Июнь 2026', rowNumber: 5 },
+      { tabName: 'Июль 2026', rowNumber: 9 },
+    ]);
+    expect(result.readbackUpdated).toBe(2);
   });
 });
